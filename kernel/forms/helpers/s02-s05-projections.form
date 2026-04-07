@@ -1,0 +1,190 @@
+; S-02 and S-05 field projections — second projection batch
+;
+; Six tiny Forms: two S-02 projections (proj_holder, proj_generation)
+; and four S-05 projections (proj_cap_id, proj_mind_id,
+; proj_budget_remaining, proj_cap_view). Each follows the same
+; pattern as s04-projections.form: STORE arg, READ, READSLOT to
+; the schema-helper layer, CALL, RET.
+;
+; This batch demonstrates that the schema-helper indirection
+; established in schema-helpers.form is reusable across primary
+; Forms — the same Schema/verify_type_tag + Schema/bytes_in_range
+; primitives serve every projection's needs.
+;
+; Synthesis chain:
+;   provocation:  STUBS.md catalogues two S-02 projections and
+;                 four S-05 projections as pending. The
+;                 schema-helpers.form file just landed; this
+;                 batch is the next step in v0.2.0-helpers.
+;   grounding:    same as s04-projections.form — A1.2, A6.1,
+;                 A0.6
+;   composes_with: kernel/forms/helpers/schema-helpers.form
+;                 (CapEntry_proj_holder, CapEntry_proj_generation,
+;                  AttentionRecord_proj_cap_id,
+;                  AttentionRecord_proj_mind_id,
+;                  AttentionRecord_proj_budget_remaining,
+;                  AttentionRecord_proj_cap_view)
+
+; ============================================================
+; S-02/proj/holder
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S02_proj_holder"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0                       ; CapEntry hash
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "CapEntry/proj/holder"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s02-s05-projections-rationale
+)
+
+; ============================================================
+; S-02/proj/generation
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S02_proj_generation"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "CapEntry/proj/generation"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s02-s05-projections-rationale
+)
+
+; ============================================================
+; S-05/proj/cap_id
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S05_proj_cap_id"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0                       ; AttentionRecord hash
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "AttentionRecord/proj/cap_id"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s02-s05-projections-rationale
+)
+
+; ============================================================
+; S-05/proj/mind_id
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S05_proj_mind_id"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "AttentionRecord/proj/mind_id"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s02-s05-projections-rationale
+)
+
+; ============================================================
+; S-05/proj/budget_remaining
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S05_proj_budget_remaining"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "AttentionRecord/proj/budget_remaining"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s02-s05-projections-rationale
+)
+
+; ============================================================
+; S-05/proj/cap_view
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S05_proj_cap_view"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "AttentionRecord/proj/cap_view"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s02-s05-projections-rationale
+)
+
+(exports
+  (S02_proj_holder              (Hash) → MindId)
+  (S02_proj_generation          (Hash) → Nat)
+  (S05_proj_cap_id              (Hash) → CapId)
+  (S05_proj_mind_id             (Hash) → MindId)
+  (S05_proj_budget_remaining    (Hash) → Nat)
+  (S05_proj_cap_view            (Hash) → Vec{CapId}))

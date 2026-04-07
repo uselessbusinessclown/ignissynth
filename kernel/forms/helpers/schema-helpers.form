@@ -1,0 +1,505 @@
+; Schema helpers — the byte-layout level
+;
+; These Forms implement the rows of kernel/types/SCHEMA.md. Each
+; one reads a sealed substance, verifies the type tag, and
+; returns the field at a known offset. They are the indirection
+; targets for the field projections in s04-projections.form,
+; s02-projections.form, s05-projections.form, etc.
+;
+; Synthesis chain:
+;   provocation:  the field-projection helpers in
+;                 s04-projections.form, s02-projections.form,
+;                 and s05-projections.form delegate to
+;                 "Entry/proj/*", "CapEntry/proj/*",
+;                 "AttentionRecord/proj/*", "Vec/len", and
+;                 "Bytes/len" sub-helpers. Without those
+;                 sub-helpers encoded, the projections have
+;                 pending CALL leaves and cannot be exercised
+;                 against the v0.3.0 simulation harness.
+;   grounding:    A1.1 (substance is named by hash), A1.2
+;                 (type is intrinsic), A1.3 (sealing is
+;                 permanent — bytes don't move once sealed)
+;   composes_with: nothing — these are the leaves at the
+;                 bottom of the projection indirection
+;
+; Each helper has the same shape:
+;   :declared-caps (S-03/ROOT_RO)        ; only READ
+;   :declared-traps (ETYPE)              ; trap on tag mismatch
+;   :arity 1                             ; (substance hash)
+;   body: READ → verify type tag → return field at offset → RET
+;
+; The "byte_at_offset" and "bytes_in_range" primitives below
+; are themselves implemented in IL using SUB and structural
+; bytes operations. They are not new opcodes; they are pure
+; functions over the bytes returned by READ.
+
+; ============================================================
+; Entry/proj/prev — read entry.prev (offset 21, 32 bytes)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "Entry_proj_prev"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      3
+  :code (
+    STORE   0                       ; substance bytes
+    LOAD    0
+    PUSH    "WeaveEntry/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → Bool, traps ETYPE on false
+    POP                             ; consume the unit-true result
+
+    LOAD    0
+    PUSH    21                      ; offset
+    PUSH    32                      ; length
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                ; → Hash bytes
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/schema-helpers-rationale
+)
+
+; ============================================================
+; Entry/proj/kind — read entry.kind (offset 13, 8 bytes)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "Entry_proj_kind"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "WeaveEntry/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+    LOAD    0
+    PUSH    13
+    PUSH    8
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/schema-helpers-rationale
+)
+
+; ============================================================
+; Entry/proj/grounding — read entry.grounding (Synthesized only)
+;
+; Computes the grounding offset (depends on outputs_n at offset 53)
+; and returns a Vec{AxiomId} starting there.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "Entry_proj_grounding"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      4
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "WeaveEntry/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+
+    ;; outputs_n at offset 53 (4 bytes)
+    LOAD    0
+    PUSH    53
+    PUSH    "Schema/nat_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   1                       ; outputs_n
+
+    ;; grounding_n offset = 57 + 32 * outputs_n
+    LOAD    1
+    PUSH    32
+    PUSH    "Schema/mul"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    PUSH    57
+    ADD
+    STORE   2                       ; grounding offset
+
+    LOAD    0
+    LOAD    2
+    PUSH    "Schema/vec_from_offset"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → Vec{AxiomId}
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/schema-helpers-rationale
+)
+
+; ============================================================
+; Entry/proj/rationale — read entry.rationale (the tail Hash)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "Entry_proj_rationale"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "WeaveEntry/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+
+    LOAD    0
+    PUSH    "Schema/tail_hash"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                ; → last 32 bytes as Hash
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/schema-helpers-rationale
+)
+
+; ============================================================
+; Entry/proj/outputs — read entry.outputs (Vec{Hash} at offset 53)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "Entry_proj_outputs"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "WeaveEntry/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+
+    LOAD    0
+    PUSH    53
+    PUSH    "Schema/vec_from_offset"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/schema-helpers-rationale
+)
+
+; ============================================================
+; CapEntry/proj/holder — read cap.holder (offset 107, 32 bytes)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "CapEntry_proj_holder"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "CapEntry/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+    LOAD    0
+    PUSH    107
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/schema-helpers-rationale
+)
+
+; ============================================================
+; CapEntry/proj/generation — read cap.generation (offset 139, 8 bytes)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "CapEntry_proj_generation"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "CapEntry/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+    LOAD    0
+    PUSH    139
+    PUSH    "Schema/nat_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/schema-helpers-rationale
+)
+
+; ============================================================
+; AttentionRecord/proj/cap_id — read attention.cap_id (offset 82, 32 bytes)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "AttentionRecord_proj_cap_id"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "AttentionRecord/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+    LOAD    0
+    PUSH    82
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/schema-helpers-rationale
+)
+
+; ============================================================
+; AttentionRecord/proj/mind_id — offset 50, 32 bytes
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "AttentionRecord_proj_mind_id"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "AttentionRecord/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+    LOAD    0
+    PUSH    50
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/schema-helpers-rationale
+)
+
+; ============================================================
+; AttentionRecord/proj/budget_remaining — tail-8 offset, 8 bytes
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "AttentionRecord_proj_budget_remaining"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "AttentionRecord/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+    LOAD    0
+    PUSH    "Schema/tail_minus_8_nat"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                ; → Nat from tail-8 offset
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/schema-helpers-rationale
+)
+
+; ============================================================
+; AttentionRecord/proj/cap_view — Vec{CapId} starting at offset 118
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "AttentionRecord_proj_cap_view"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "AttentionRecord/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+    LOAD    0
+    PUSH    118
+    PUSH    "Schema/vec_from_offset"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/schema-helpers-rationale
+)
+
+; ============================================================
+; Vec/len — number of elements in a Vec substance
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "Vec_len"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "Vec/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+    LOAD    0
+    PUSH    6                       ; offset of n
+    PUSH    "Schema/nat_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/schema-helpers-rationale
+)
+
+; ============================================================
+; Bytes/len — number of bytes in a Bytes substance
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "Bytes_len"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "Bytes/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+    LOAD    0
+    PUSH    8
+    PUSH    "Schema/nat_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/schema-helpers-rationale
+)
+
+(exports
+  (Entry_proj_prev                      (Bytes) → Hash)
+  (Entry_proj_kind                      (Bytes) → EntryKind)
+  (Entry_proj_grounding                 (Bytes) → Vec{AxiomId})
+  (Entry_proj_rationale                 (Bytes) → Hash)
+  (Entry_proj_outputs                   (Bytes) → Vec{Hash})
+  (CapEntry_proj_holder                 (Bytes) → MindId)
+  (CapEntry_proj_generation             (Bytes) → Nat)
+  (AttentionRecord_proj_cap_id          (Bytes) → CapId)
+  (AttentionRecord_proj_mind_id         (Bytes) → MindId)
+  (AttentionRecord_proj_budget_remaining(Bytes) → Nat)
+  (AttentionRecord_proj_cap_view        (Bytes) → Vec{CapId})
+  (Vec_len                              (Bytes) → Nat)
+  (Bytes_len                            (Bytes) → Nat))
+
+; ============================================================
+; Notes on the Schema/* primitives
+;
+; This file references several "Schema/*" primitives:
+;   - Schema/verify_type_tag (Bytes, TypeTag) → Bool (traps)
+;   - Schema/bytes_in_range  (Bytes, Nat, Nat) → Bytes
+;   - Schema/nat_at          (Bytes, Nat) → Nat
+;   - Schema/mul             (Nat, Nat) → Nat
+;   - Schema/tail_hash       (Bytes) → Hash
+;   - Schema/tail_minus_8_nat(Bytes) → Nat
+;   - Schema/vec_from_offset (Bytes, Nat) → Vec
+;
+; These are pure structural helpers over byte vectors. They are
+; smaller than the projections themselves (each is 3-5
+; instructions of IL: SUB or LOAD + structural cast). They
+; will be encoded in a sibling file in a subsequent v0.2.0
+; batch as kernel/forms/helpers/schema-primitives.form. Until
+; then, the projections have one pending leaf at the inner
+; CALL — but the indirection is now complete at the schema
+; layer, and the schema layer's pending leaves are at a known,
+; finite, well-specified set of primitives.
+; ============================================================
