@@ -153,33 +153,28 @@ work has dependencies that are not yet catalogued. None of these
 are course corrections — the discipline held — but each is a
 real gap that should be visible to any agent picking up the work.
 
-### Gap 1: the abstract-model lemma library is referenced everywhere but does not yet exist
+### Gap 1: the abstract-model lemma library — RESOLVED
 
-Every `kernel/forms/S-XX-*.proof` artifact's footer lists
-"Lemmas this proof draws from the abstract-model lemma
-library", and the proofs reference `LEMMA_LIBRARY_HASH` as a
-sealed substance the walker reads at every `LemmaApp` leaf.
-**That substance does not yet exist as a content-addressed
-artifact.** The lemmas are defined implicitly across the proof
-artifacts, never collected in one place, never sealed, never
-verified by the kernel-author identities as a unit.
+> **Status**: `kernel/lemma-library.md` produced (105 lemmas
+> across 14 source groups). Every `LemmaApp` head referenced
+> across the eleven proof artifacts now has a named entry
+> with a structural-reading discharge. The S-08 inspection
+> record's checklist item 5 now points at the document. The
+> sealed substance is post-v0.5.0 build work (the document
+> is the source; the sealed bytes are produced by the build
+> process).
 
-The S-08 inspection record's checklist item 5 ("the abstract-
-model lemma library") names the library as a review target,
-but the reviewer would have nothing to review.
+**Original gap**: every `kernel/forms/S-XX-*.proof` artifact's
+footer lists "Lemmas this proof draws from the abstract-model
+lemma library", but the substance did not yet exist.
 
-**Severity: high.** This is the single largest unmet
-dependency in v0.1.0. Every proof artifact's end-to-end
-checkability assumes the library exists.
-
-**Resolution**: produce `kernel/lemma-library.md` (a structured
-list of every lemma referenced across the eleven proof
-artifacts, with each lemma's discharge being a "look at the
-body of {Form} at {lines}" structural reading) and a sealed
-substance `kernel/lemma-library.json` whose hash replaces the
-`LEMMA_LIBRARY_HASH` placeholder. This is **a v0.2.0
-prerequisite** that should land before any further helper
-encoding.
+**What landed**: a 105-entry document organising lemmas by
+source (IL, canon, generic, Slot, S-02..S-11), each with the
+shape `{name, source, claim, discharge}`. The discharge is a
+one- or two-sentence structural reading pointing at specific
+lines of an encoded source. The walker, at every `LemmaApp`
+leaf, looks up the entry and accepts iff the source still
+hashes to the manifest version.
 
 ### Gap 2: Schema/* primitives are referenced but not catalogued
 
@@ -297,11 +292,11 @@ a clear scope for the inspection-record review.
 
 ## Action items from the audit (in dependency order)
 
-1. **Catalogue Schema/* primitives in STUBS.md** (low effort, low risk)
-2. **Add the helper exemption to PROTOCOL.md** (low effort, philosophical)
-3. **Produce `kernel/lemma-library.md`** (high effort, high value — the biggest unmet dependency)
-4. **Encode Schema/* primitives** (next v0.2.0 batch)
-5. **Encode the IL parser** (`S-07/parse_form` — foundational; mid v0.2.0)
+1. ~~**Catalogue Schema/* primitives in STUBS.md**~~ ✓ done
+2. ~~**Add the helper exemption to PROTOCOL.md**~~ ✓ done
+3. ~~**Produce `kernel/lemma-library.md`**~~ ✓ done (105 lemmas; sealing is post-v0.5.0)
+4. **Encode the IL parser** (`S-07/parse_form` — foundational; next priority)
+5. **Encode Schema/* primitives** (small batch; unblocks schema-helpers)
 6. **Write `kernel/types/Trie.md`, `Treap.md`, `Forest.md`** (alongside their helper batches)
 7. **Write `kernel/LOADER.md`** (no later than v0.5.0 start)
 

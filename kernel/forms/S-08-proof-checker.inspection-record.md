@@ -124,17 +124,18 @@ faithful to their stated purpose:
 
 The lemma library is sealed under `LEMMA_LIBRARY_HASH` (a
 placeholder in the current manifest, to be resolved by the
-build process). Each lemma in the library is named in one or
-more of the proof artifacts under `kernel/forms/S-XX-*.proof`,
-and each lemma's discharge is "look at the body of the named
-Form at the named lines".
+build process). The source document is `kernel/lemma-library.md`,
+which collects all 105 lemma entries (98 `LemmaApp` heads
+referenced across the proof artifacts plus 7 implicit
+composition lemmas). Each lemma's discharge is "look at the
+body of the named Form at the named lines".
 
 **Reviewer checklist:**
 
-- [ ] I have walked the union of all `LemmaApp :lemma` heads
-      across the eleven proof artifacts and verified that each
-      lemma corresponds to a structural fact about an encoded
-      Form's body or about the IL specification.
+- [ ] I have read every entry in `kernel/lemma-library.md` (all
+      105 lemmas across 14 source groups) and verified that
+      each lemma corresponds to a structural fact about an
+      encoded Form's body or about the IL specification.
 - [ ] I have verified that no lemma in the library makes a
       claim that cannot be discharged by reading at most one
       Form's body and the IL specification.
@@ -142,6 +143,10 @@ Form at the named lines".
       lemma is defined in terms of another lemma whose own
       discharge would require additional structural reading
       not declared in this document.
+- [ ] For each lemma whose source is "the helper Form when
+      encoded", I have either verified the encoded helper or
+      noted that the lemma is provisional pending the
+      helper's encoding.
 
 ### 6. The manifest (`kernel/manifest.json`)
 
