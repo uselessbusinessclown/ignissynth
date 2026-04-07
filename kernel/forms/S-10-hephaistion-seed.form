@@ -1,0 +1,236 @@
+; S-10: hephaistion_seed
+;
+; The reflexive sub-mind. A long-running mind whose body is the
+; observe-hypothesise-propose-stage-compare-promote-vigil cycle.
+; Its cap_view at ignition contains exactly four caps: read_weave,
+; read_metrics, propose_synthesis, and a tightly attenuated
+; mutate_kernel whose predicate excludes the proof_checker.
+;
+; Single export: epoch. Each call performs one observe-through-
+; vigil cycle and emits at minimum a Heartbeat weave entry.
+;
+; Synthesis chain:
+;   provocation:  breakdown/S-10-hephaistion-seed.md
+;   grounding:    A0.1 A0.4 A0.7 A0.8 A2.2 A2.6 A4.* A5.* A7.* A8.*
+;   selected:     Candidate A — Long-running mind with one root
+;                 attention and per-epoch sub-attentions
+;   proof:        kernel/forms/S-10-hephaistion-seed.proof  (eight
+;                 obligations: cap closure, heartbeat liveness,
+;                 heartbeat absence visibility, no self-promotion,
+;                 bounded epoch budget, bootstrap-locked respect,
+;                 vigil hand-off completeness, authorship grounding)
+
+; ============================================================
+; epoch(epoch_index) → ()
+;
+; Heartbeat is appended FIRST in the cycle, against a reserved
+; quantum that no other sub-attention can consume. This is the
+; structural discharge of obligation 2 (heartbeat liveness): even
+; if the rest of the cycle exhausts its budget, the heartbeat is
+; already in the weave.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "epoch"
+  :declared-caps (HEPHAISTION/READ_WEAVE HEPHAISTION/READ_METRICS
+                   HEPHAISTION/PROPOSE_SYNTHESIS
+                   HEPHAISTION/MUTATE_KERNEL_GATED
+                   S-04/APPEND S-05/FOREST_RW)
+  :declared-traps ()                            ; epoch is total — failures are weave entries, not traps
+  :arity         1
+  :locals-n      14
+  :code (
+
+    STORE   0                                   ; epoch_index
+
+    ;; ----------------------------------------------------------------
+    ;; Step 1 (FIRST, by reservation): emit Heartbeat.
+    ;;
+    ;; The IL allocator (S-05) was given a reservation rule at
+    ;; ignition: hephaistion's root attention always has at least
+    ;; HEARTBEAT_QUANTUM units of budget reserved for heartbeats.
+    ;; This Form's first instructions consume exactly that
+    ;; reservation, so even if the rest of the body traps or
+    ;; loops, the heartbeat is already in the weave.
+    ;; ----------------------------------------------------------------
+
+    LOAD    0
+    SELFHASH
+    MAKEVEC 2
+    PUSH    "Heartbeat"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+
+    ;; ----------------------------------------------------------------
+    ;; Step 2: Observe. Advance hephaistion's tail-cursor on the
+    ;; weave; fold new entries into a per-Form summary structure.
+    ;; The cursor is held under "S-10/cursor".
+    ;; ----------------------------------------------------------------
+
+    PUSH    "S-10/cursor"
+    SEAL    Hash
+    READSLOT
+    STORE   1                                   ; cursor before
+
+    LOAD    1
+    PUSH    "S-10/observe/fold"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                            ; → Pair{new_cursor, summary}
+    STORE   2
+
+    LOAD    2
+    FST
+    STORE   3
+    PUSH    "S-10/cursor"
+    SEAL    Hash
+    LOAD    3
+    BINDSLOT
+
+    LOAD    2
+    SND
+    STORE   4                                   ; summary substance
+
+    ;; ----------------------------------------------------------------
+    ;; Step 3: Hypothesise. Rank Forms by composite score; pick the
+    ;; top-ranked target Form. If the top is the proof_checker,
+    ;; SKIP this epoch's hypothesis (bootstrap-locked respect,
+    ;; obligation 6) and move on.
+    ;; ----------------------------------------------------------------
+
+    LOAD    4
+    PUSH    "S-10/hypothesise/rank_top"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                            ; → Hash or BOTTOM
+    STORE   5
+
+    LOAD    5
+    PUSH    BOTTOM_HASH
+    EQ
+    JMPZ    +have_target
+    JMP     +done                               ; nothing to hypothesise about
+
+    :have_target
+
+    LOAD    5
+    PUSH    PROOF_CHECKER_HASH
+    EQ
+    JMPZ    +target_ok
+
+    ;; Target is the proof checker — skip with a RejectedHypothesis
+    ;; weave entry (visible to vigil holders for audit).
+    LOAD    5
+    PUSH    "EBOOTSTRAPLOCKED"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+    JMP     +done
+
+    :target_ok
+
+    ;; Build a Hypothesis substance and append a Hypothesised entry.
+    LOAD    5
+    LOAD    4
+    PUSH    "S-10/hypothesise/build"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                            ; → Hypothesis
+    STORE   6
+
+    LOAD    6
+    PUSH    "Hypothesised"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+
+    ;; ----------------------------------------------------------------
+    ;; Step 4: Propose. Build a Provocation substance whose author
+    ;; is hephaistion's mind id and whose grounding is *inherited*
+    ;; from the target's own original Stage 2 grounding via the
+    ;; why-query (obligation 8: authorship grounding). Hephaistion
+    ;; does not invent axiom citations.
+    ;; ----------------------------------------------------------------
+
+    LOAD    6
+    LOAD    5
+    PUSH    "S-10/propose/build_inheriting_grounding"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                            ; → Provocation hash
+    STORE   7
+
+    LOAD    7
+    PUSH    "S-09/synthesize"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                            ; → SynthResult
+    STORE   8
+
+    ;; ----------------------------------------------------------------
+    ;; Step 5: Stage in shadow.
+    ;;
+    ;; If the synthesis succeeded, the Stage 7 binding has already
+    ;; advanced to the *primary* binding by S-09's body. Hephaistion's
+    ;; mutate_kernel cap predicate refines this: instead of
+    ;; advancing the primary binding directly, the cap rewrites
+    ;; the BINDSLOT target to a shadow name. So the Stage 7 BINDSLOT
+    ;; in S-09 actually wrote to "shadow:<name>" rather than
+    ;; "<name>". (The cap predicate is what makes that rewrite
+    ;; happen — see hephaistion_caps.md spec sibling.)
+    ;;
+    ;; Hephaistion records the shadow binding in its own per-epoch
+    ;; pending list, queued for comparison.
+    ;; ----------------------------------------------------------------
+
+    LOAD    8
+    LOAD    0
+    PUSH    "S-10/staged/append"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+
+    ;; ----------------------------------------------------------------
+    ;; Step 6: Compare. For each pending shadow binding whose K
+    ;; comparison epochs have elapsed, sample the metric the
+    ;; provocation cited from both primary and shadow, seal a
+    ;; Verdict substance, and raise a *second* synthesis act
+    ;; (Promote or Rollback).
+    ;; ----------------------------------------------------------------
+
+    LOAD    0
+    PUSH    "S-10/compare/run_due_comparisons"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    POP
+
+    ;; ----------------------------------------------------------------
+    ;; Step 7: Vigil. Process anomaly events that have arrived on
+    ;; hephaistion's vigil-event queue since the last epoch. The
+    ;; queue is itself a sealed substance under "S-10/vigil/queue"
+    ;; that S-04, S-05, and S-08 each push to when they detect an
+    ;; anomaly naming a Form whose vigil holder is hephaistion.
+    ;; ----------------------------------------------------------------
+
+    PUSH    "S-10/vigil/process"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=0
+    POP
+
+    :done
+    PUSH    ()
+    RET
+  )
+  :rationale-hash BREAKDOWN_S10_HASH
+)
+
+(exports
+  (epoch (Nat) → ()))
