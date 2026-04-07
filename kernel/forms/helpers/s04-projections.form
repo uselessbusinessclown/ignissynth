@@ -1,0 +1,259 @@
+; S-04 weave_log field projections
+;
+; Six tiny Forms, one per Entry field that S-04/append projects
+; in its body. Each is 5-10 instructions of IL: read the entry,
+; project the named field, return.
+;
+; The encoded primary Form S-04-weave-log.form references each
+; of these via READSLOT name + CALL. STUBS.md catalogues each
+; one as v0.2.0-helpers work; this is the first batch.
+;
+; Synthesis chain:
+;   provocation:  STUBS.md item "Helpers required by S-04
+;                 weave_log" lists six projection helpers as
+;                 pending. Each one is small enough that the
+;                 design has only one candidate; the breakdown
+;                 dependence is "the projection extracts the
+;                 named field from the Entry record per the
+;                 weave entry layout".
+;   grounding:    A1.2 (type is intrinsic — the projection
+;                 trusts the type tag), A6.1 (a unit of code is
+;                 a substance — these are small Forms like any
+;                 other), A0.6 (code is thought, not artifact)
+;   composes_with: nothing — these are pure leaves
+;
+; Each projection has the same shape:
+;   :declared-caps (S-03/ROOT_RO)        ; only needs READ
+;   :declared-traps (ETYPE)              ; trap if not an Entry
+;   :arity 1                             ; (entry_hash) on stack
+;   body: READ → project field → RET
+;
+; The projections are sealed individually so each can be
+; verified by S-08 against its declared-caps line in isolation.
+; A reviewer of the inspection record can verify all six in
+; under a minute by enumerating their bodies.
+
+; ============================================================
+; S-04/proj/prev — extract entry.prev
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "proj_prev"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0                   ; entry hash
+    LOAD    0
+    READ                        ; → entry bytes
+    STORE   1
+    LOAD    1
+    PUSH    "Entry/proj/prev"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1            ; → field bytes via the entry-record schema helper
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s04-projections-rationale
+)
+
+; ============================================================
+; S-04/proj/kind — extract entry.kind
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "proj_kind"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "Entry/proj/kind"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s04-projections-rationale
+)
+
+; ============================================================
+; S-04/proj/grounding — extract entry.grounding
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "proj_grounding"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "Entry/proj/grounding"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s04-projections-rationale
+)
+
+; ============================================================
+; S-04/proj/rationale — extract entry.rationale_hash
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "proj_rationale"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "Entry/proj/rationale"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s04-projections-rationale
+)
+
+; ============================================================
+; S-04/proj/outputs — extract entry.outputs
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "proj_outputs"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "Entry/proj/outputs"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s04-projections-rationale
+)
+
+; ============================================================
+; S-04/vec/len — length of a sealed Vec
+;
+; The only non-projection helper in this file. Used by
+; S-04/append's grounding-non-empty check (lines ~62-68 of
+; S-04-weave-log.form). Bound here because it shares the
+; "tiny pure helper, S-03/ROOT_RO only" shape with the
+; projections.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "vec_len"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0                   ; vec hash
+    LOAD    0
+    READ                        ; → sealed vec bytes
+    STORE   1
+    LOAD    1
+    PUSH    "Vec/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1            ; → Nat via the vec layout helper
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s04-projections-rationale
+)
+
+; ============================================================
+; S-04/bytes/len — length of a sealed byte vector
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "bytes_len"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "Bytes/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s04-projections-rationale
+)
+
+(exports
+  (proj_prev      (Hash) → Hash)
+  (proj_kind      (Hash) → EntryKind)
+  (proj_grounding (Hash) → Vec{AxiomId})
+  (proj_rationale (Hash) → Hash)
+  (proj_outputs   (Hash) → Vec{Hash})
+  (vec_len        (Hash) → Nat)
+  (bytes_len      (Hash) → Nat))
+
+; ============================================================
+; Notes on the schema-helper indirection
+;
+; Each projection delegates to a "Entry/proj/{field}" or
+; "Vec/len" or "Bytes/len" sub-helper that knows the byte
+; layout of the named substance type. This indirection is
+; deliberate:
+;
+;   - The byte layout of Entry, Vec, and Bytes is part of the
+;     substance type system, not part of S-04. Putting it in
+;     a sub-helper means changing the layout doesn't require
+;     re-synthesizing every projection.
+;
+;   - The sub-helpers are themselves tiny Forms (one READ +
+;     one byte-offset arithmetic + one structural cast each)
+;     and will be encoded in a sibling helper file as part of
+;     v0.2.0-helpers.
+;
+;   - The proof artifacts that cite these projections compose
+;     against the schema helpers' obligations transitively;
+;     each schema helper's body is a one-line structural lemma.
+;
+; Until the schema helpers are encoded, these projection
+; bodies have a pending leaf at the inner CALL. STUBS.md will
+; be updated to catalogue the schema helpers as a separate
+; v0.2.0 batch.
+; ============================================================

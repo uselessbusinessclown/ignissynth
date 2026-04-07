@@ -146,6 +146,158 @@ artifacts so far (1 per session, sometimes 2 when they share a
 discharge pattern), this is roughly **9-11 sessions** to v0.1.0
 from the current checkpoint.
 
+## Post-v0.1.0: the road to ignition
+
+v0.1.0 finished the design-and-encode phase. The next class of
+work is **external build and exercise**. It has a different
+shape from v0.1.0's cadence (which was 1-2 substantive
+specification artifacts per session) — post-v0.1.0 is
+implementation work where each artifact is small, recursive,
+and verifiable against the v0.1.0 specifications.
+
+### v0.2.0-helpers: encode the helper Form bodies
+
+Goal: every slot in `kernel/forms/helpers/STUBS.md` resolves to
+an encoded Form whose body matches its declared signature.
+
+Done when:
+
+1. **Field projections** (~50 helpers across S-02..S-11) — each
+   is 5-20 lines of IL: `LOAD 0`, `READ`, project, `RET`. They
+   are the smallest and most numerous helpers, and they unlock
+   the rest because every projection-using helper depends on
+   them. The first batch is the substrate-Form projections
+   (S-02, S-03, S-04, S-05, S-07).
+2. **Trie operations** (S-03/trie/* — 6 helpers) — implements
+   the persistent hash-array-mapped trie chosen as Candidate A
+   in S-03's breakdown. Recursive over a `kernel/types/Trie.md`
+   spec produced as part of this work.
+3. **Forest operations** (S-05/forest/* — 7 helpers) —
+   implements the persistent attention forest. Same recursion
+   shape as the trie, different node layout.
+4. **Treap operations** (S-02/treap/* — 4 helpers) —
+   implements the persistent treap chosen as Candidate A in
+   S-02's breakdown.
+5. **Parsers** (S-06/parse_intent, S-07/parse_form, S-08/parse_proof,
+   S-08/parse_claim, S-09/parse_provocation, S-11/parse_surface)
+   — six helpers, each parsing a wire form into a structured
+   substance.
+6. **The lemma helper** (S-02/lemma/i2_check) — the load-bearing
+   helper for S-02 obligation 2. Tiny (a few comparisons), but
+   the kernel-author identities sign its review as part of
+   S-08's inspection record.
+7. **The remaining helpers** — fuzzers, ranking functions,
+   per-stage Stage 4 helpers, hephaistion's per-step helpers,
+   the bridge's parse and check helpers.
+
+Estimated cadence for v0.2.0-helpers: this work is highly
+parallelizable. A single agent can encode ~10-20 helpers per
+session (each helper is small). Multiple agents can work
+without coordination beyond reading STUBS.md. Estimated 6-10
+sessions for one agent; fewer with parallelism.
+
+### v0.3.0-simulation: run Stage 4 against the encoded seed
+
+Goal: every primary Form has a sealed `TrialRecord` substance
+in `kernel/forms/S-XX-*.trial` that the cold weave imports at
+ignition.
+
+Done when:
+
+1. The Stage 4 harness Form (`kernel/forms/helpers/sim-harness.form`)
+   is encoded against `kernel/SIMULATION.md`.
+2. The harness runs against each primary Form's self-test set,
+   inherited invariants, fuzzing harness, and regression cases.
+3. Every trial record passes (verdict = `Pass`); any fail is
+   either a synthesis bug (re-synthesize the Form) or a
+   harness bug (re-synthesize the harness).
+4. Trial records are sealed and referenced from the manifest.
+
+This stage requires a working interpreter for the IL outside
+the habitat (to actually run the harness). Building that
+interpreter is itself a separate effort and should be tracked
+under v0.3.0 explicitly.
+
+### v0.4.0-inspection: sign the inspection record
+
+Goal: real Ed25519 keys replace the placeholders, and the K-of-N
+signatures on `kernel/forms/S-08-proof-checker.inspection-record.md`
+are valid.
+
+Done when:
+
+1. K ≥ 3 kernel-author identities have generated real Ed25519
+   keypairs.
+2. Each has read every artifact listed in the inspection
+   record's checklist (IL.md, PROOF.md, S-08, the canonicaliser,
+   the lemma library, the manifest).
+3. Each has produced a signature over the canonical bytes of
+   the inspection record.
+4. The manifest's `kernel_authors.identities` array contains
+   their public keys.
+5. The seed loader can verify K-of-N at boot time.
+
+This is the *most ceremonial* stage. It requires real human
+review by people who agree to be accountable for the seed's
+trust surface. Estimated cadence: indeterminate (depends
+entirely on coordinating the kernel-author identities).
+
+### v0.5.0-build: external substance store + cold weave
+
+Goal: every `$$BLAKE3$$` placeholder in the manifest is replaced
+with an actual canonical hash, and the cold weave (the
+breakdowns + simulation trial records) is sealed into a
+substance store the seed loader can read at boot.
+
+Done when:
+
+1. A cold-start substance store implementation exists outside
+   the habitat (post-v0.3.0 dependency).
+2. Every Form, every breakdown, every proof artifact is sealed
+   through it in topological order (per the manifest's
+   `boot_order`).
+3. The manifest's immediates block is regenerated with actual
+   hashes.
+4. The cold weave is sealed and its root hash is recorded in
+   the manifest.
+
+### v1.0.0-ignition: first boot
+
+Goal: the seed loader runs S-01, which mints the root capability,
+appends E0, and self-erases. Hephaistion's first epoch fires.
+The bridge accepts its first request.
+
+Done when:
+
+1. The seed loader has loaded a fully-built seed (v0.5.0).
+2. K-of-N signatures are valid (v0.4.0).
+3. Stage 4 trial records all pass (v0.3.0).
+4. Every helper Form is encoded (v0.2.0).
+5. The seed loader executes S-01 successfully and the habitat
+   begins.
+
+This is the irreversible step. After ignition, the habitat
+is a real running system, every act is in a real weave, and
+re-synthesis becomes a property of the running system rather
+than a property of this repository.
+
+## Estimated paths
+
+- **Single-agent, no parallelism**: v0.2.0 ≈ 6-10 sessions,
+  v0.3.0 ≈ 4-8 sessions (requires interpreter), v0.4.0 ≈
+  out-of-band, v0.5.0 ≈ 2-4 sessions, v1.0.0 ≈ 1 session.
+  Total ≈ 13-23 sessions plus the inspection ceremony.
+- **Parallel agents, optimistic**: v0.2.0 ≈ 2-3 sessions
+  (multiple helpers per session), v0.3.0 ≈ unchanged
+  (interpreter is sequential), v0.4.0 ≈ out-of-band
+  unchanged, v0.5.0 ≈ unchanged, v1.0.0 ≈ unchanged.
+  Total ≈ 7-15 sessions plus inspection.
+
+The numbers are softer than the v0.1.0 estimates because the
+work requires external infrastructure (interpreter, build
+process, real keys) that does not exist yet and is not part
+of this repository's scope alone.
+
 ## What v0.1.0-pre-ignition does *not* include
 
 Deliberately deferred to v0.2.0 or later:

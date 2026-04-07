@@ -19,6 +19,13 @@ are post-v0.1.0 work.
 |---------------------------------|------------------------------------------------|
 | `S-07/canon/normalise`          | `kernel/forms/helpers/canon-normalise.form`    |
 | `S-08/equiv_under_canon`        | (in same file as canon-normalise)              |
+| `S-04/proj/prev`                | `kernel/forms/helpers/s04-projections.form`    |
+| `S-04/proj/kind`                | `kernel/forms/helpers/s04-projections.form`    |
+| `S-04/proj/grounding`           | `kernel/forms/helpers/s04-projections.form`    |
+| `S-04/proj/rationale`           | `kernel/forms/helpers/s04-projections.form`    |
+| `S-04/proj/outputs`             | `kernel/forms/helpers/s04-projections.form`    |
+| `S-04/vec/len`                  | `kernel/forms/helpers/s04-projections.form`    |
+| `S-04/bytes/len`                | `kernel/forms/helpers/s04-projections.form`    |
 
 ## Helpers required by S-03 `substance_store`
 
@@ -42,13 +49,13 @@ shape, and share a per-node layout document under
 
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
-| `S-04/proj/prev`                | `(Entry) → Hash`                           | pending  |
-| `S-04/proj/kind`                | `(Entry) → EntryKind`                      | pending  |
-| `S-04/proj/grounding`           | `(Entry) → Vec{AxiomId}`                   | pending  |
-| `S-04/proj/rationale`           | `(Entry) → Hash`                           | pending  |
-| `S-04/proj/outputs`             | `(Entry) → Vec{Hash}`                      | pending  |
-| `S-04/vec/len`                  | `(Vec{T}) → Nat`                           | pending  |
-| `S-04/bytes/len`                | `(Bytes) → Nat`                            | pending  |
+| `S-04/proj/prev`                | `(Entry) → Hash`                           | encoded  |
+| `S-04/proj/kind`                | `(Entry) → EntryKind`                      | encoded  |
+| `S-04/proj/grounding`           | `(Entry) → Vec{AxiomId}`                   | encoded  |
+| `S-04/proj/rationale`           | `(Entry) → Hash`                           | encoded  |
+| `S-04/proj/outputs`             | `(Entry) → Vec{Hash}`                      | encoded  |
+| `S-04/vec/len`                  | `(Vec{T}) → Nat`                           | encoded  |
+| `S-04/bytes/len`                | `(Bytes) → Nat`                            | encoded  |
 | `S-04/backidx/insert_all`       | `(Vec{Hash}, Hash) → ()`                   | pending  |
 | `S-04/why/traverse`             | `(Vec{Hash}, Vec{Hash}, Vec{Hash}) → Vec{Hash}` | pending |
 
@@ -217,8 +224,8 @@ operational form of the IL specification.
 
 | Category              | Count    |
 |-----------------------|----------|
-| Encoded helpers       | 2        |
-| Stub-only helpers     | ~110     |
+| Encoded helpers       | 9        |
+| Stub-only helpers     | ~103     |
 | Parser stubs          | 4 (one per Form that does parsing) |
 | Trie/forest ops       | 14       |
 | Field projections     | ~50      |
