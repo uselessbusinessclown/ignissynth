@@ -1,0 +1,355 @@
+; S-02: cap_registry
+;
+; The persistent treap of capabilities. Five exports:
+; recognise_root (the I10 exception called only by ignite),
+; attenuate, revoke, lookup, holds.
+;
+; Synthesis chain:
+;   provocation:  breakdown/S-02-cap-registry.md
+;   grounding:    A2.1 A2.2 A2.3 A2.4 A2.5 A2.6 A0.3 A0.4
+;   selected:     Candidate A — Persistent treap
+;   proof:        kernel/forms/S-02-cap-registry.proof  (four
+;                 obligations: mint uniqueness/reachability,
+;                 attenuation monotonicity, revocation totality,
+;                 lookup soundness)
+;
+; Treap state lives under "S-02/treap"; each cap entry is a sealed
+; substance whose hash *is* the CapId.
+
+; ============================================================
+; recognise_root(root_cap_substance) → CapId
+;
+; THE I10 EXCEPTION IN S-02. Called *only* by S-01 ignite during
+; the same single weave entry that mints the root capability.
+;
+; Operationally, this Form is dispatched only when the cap
+; registry is empty (S-02/treap = EMPTY_TRIE). After the first
+; successful invocation, the treap is non-empty and a CALLER
+; that re-invokes this Form would still get past the empty check
+; — but the first Cap entry is also ATTENUATE-able from the
+; root, and the root has been transferred to the seed mind, so
+; any subsequent caller would have no way to construct a valid
+; second root_cap_substance (which would require knowing the
+; SUBSTRATE_BUDGET sealing nonce at ignition time, a fact that
+; exists only in the seed loader's hand-off and is never sealed
+; into a substance after E0).
+;
+; This Form contains no MINT — it does not invent authority. It
+; recognises a substance whose existence is a one-time fact about
+; the boot, and turns it into a CapId by sealing it through S-03
+; and inserting it into the treap as the genesis node. The
+; "exception" is that this Form admits a Cell whose parent in
+; the treap is ⊥, which is a node-shape no other Form can ever
+; produce — every other ATTENUATE call requires a held parent.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "recognise_root"
+  :declared-caps (S-02/TREAP_RW S-04/APPEND)
+  :declared-traps (EALREADYRECOGNISED ETYPE)
+  :arity         1
+  :locals-n      6
+  :code (
+
+    STORE   0                       ; locals[0] := root_cap_substance hash
+
+    ;; Refuse if treap is non-empty.
+    PUSH    "S-02/treap"
+    SEAL    Hash
+    READSLOT
+    STORE   1                       ; locals[1] := treap_root
+
+    LOAD    1
+    PUSH    EMPTY_TRIE
+    EQ
+    JMPZ    +trap_already
+
+    ;; Read the root_cap_substance and verify its type tag is RootCap.
+    LOAD    0
+    READ                            ; trap EUNHELD propagates if no Read
+    PUSH    "S-02/types/is_root_cap"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    JMPZ    +trap_type
+
+    ;; Build the genesis treap node:
+    ;;   parent = ⊥, type = root, rights = UNIVERSAL, predicate = TRUE,
+    ;;   holder = SEED_MIND_ID, generation = 0
+    LOAD    0                       ; root_cap_substance hash → cap_id
+    PUSH    BOTTOM_HASH             ; parent = ⊥
+    PUSH    UNIVERSAL_RIGHTS
+    PUSH    PREDICATE_TRUE
+    PUSH    SEED_MIND_ID
+    PUSH    0                       ; generation
+    MAKEVEC 6
+    SEAL    CapEntry
+    STORE   2                       ; locals[2] := cap_entry_hash (== cap_id)
+
+    ;; Insert into the treap as the only node.
+    LOAD    1                       ; EMPTY_TRIE
+    LOAD    2
+    PUSH    "S-02/treap/insert"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   3
+    PUSH    "S-02/treap"
+    SEAL    Hash
+    LOAD    3
+    BINDSLOT
+
+    ;; Return the cap_id.
+    LOAD    2
+    RET
+
+    :trap_already
+    TRAP    EALREADYRECOGNISED
+
+    :trap_type
+    TRAP    ETYPE
+  )
+  :rationale-hash BREAKDOWN_S02_HASH
+)
+
+; ============================================================
+; attenuate(parent, predicate, rights_subset, budget_cap, lifetime_cap) → CapId
+;
+; Per A2.2: derive a strictly weaker capability from one already
+; held. The IL ATTENUATE opcode is shorthand for READSLOT
+; "S-02/attenuate" + CALL.
+;
+; Enforces I2 (attenuation monotonicity) at the body: rights_subset
+; must be a subset of parent.rights, predicate must be at least as
+; restrictive (verified by a structural lemma over the predicate
+; AST), budget and lifetime must be ≤ parent's. Any violation
+; traps ENOTHELD or ETYPE.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "attenuate"
+  :declared-caps (S-02/TREAP_RW)
+  :declared-traps (ENOTHELD ETYPE)
+  :arity         5
+  :locals-n      8
+  :code (
+
+    STORE   0                       ; lifetime_cap
+    STORE   1                       ; budget_cap
+    STORE   2                       ; rights_subset
+    STORE   3                       ; predicate
+    STORE   4                       ; parent CapId
+
+    ;; The IL guarantees parent ∈ cap_view at this point because
+    ;; the calling code reached this Form via the ATTENUATE opcode
+    ;; whose own rule traps ENOTHELD if parent ∉ cap_view. We
+    ;; double-check anyway because S-02 is also reachable from
+    ;; CALL-ed Forms whose IL surface bypasses the opcode.
+    LOAD    4
+    CAPHELD
+    JMPZ    +trap_notheld
+
+    ;; Look up parent in the treap.
+    PUSH    "S-02/treap"
+    SEAL    Hash
+    READSLOT
+    LOAD    4
+    PUSH    "S-02/treap/lookup"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → CapEntry or BOTTOM
+    STORE   5
+
+    LOAD    5
+    PUSH    BOTTOM_HASH
+    EQ
+    JMPZ    +trap_notheld
+
+    ;; Verify rights_subset ⊆ parent.rights, predicate restricts
+    ;; parent.predicate, etc. via the I2 lemma Form.
+    LOAD    5                       ; parent entry
+    LOAD    2                       ; rights_subset
+    LOAD    3                       ; predicate
+    LOAD    1                       ; budget_cap
+    LOAD    0                       ; lifetime_cap
+    PUSH    "S-02/lemma/i2_check"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=5                ; → Bool
+    JMPZ    +trap_type
+
+    ;; Build child cap entry. Generation is parent.generation
+    ;; (revocation propagates by bumping the parent's generation).
+    LOAD    4                       ; parent cap_id
+    LOAD    2
+    LOAD    3
+    LOAD    1
+    LOAD    0
+    LOAD    5
+    PUSH    "S-02/proj/generation"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                ; → parent.generation
+    MAKEVEC 6
+    SEAL    CapEntry
+    STORE   6                       ; child cap_id
+
+    ;; Insert into treap.
+    PUSH    "S-02/treap"
+    SEAL    Hash
+    READSLOT
+    LOAD    6
+    PUSH    "S-02/treap/insert"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   7
+    PUSH    "S-02/treap"
+    SEAL    Hash
+    LOAD    7
+    BINDSLOT
+
+    LOAD    6
+    RET
+
+    :trap_notheld
+    TRAP    ENOTHELD
+
+    :trap_type
+    TRAP    ETYPE
+  )
+  :rationale-hash BREAKDOWN_S02_HASH
+)
+
+; ============================================================
+; revoke(cap_id) → ()
+;
+; Bumps the generation counter on the cap's subtree root.
+; Subsequent lookups for any descendant compare the cached
+; generation in the descendant's entry against the current
+; generation in the subtree root and return BOTTOM if they
+; differ. This is the O(log n) revocation cascade per A2.3.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "revoke"
+  :declared-caps (S-02/TREAP_RW)
+  :declared-traps (ENOTHELD)
+  :arity         1
+  :locals-n      4
+  :code (
+    STORE   0                       ; cap_id
+
+    LOAD    0
+    CAPHELD
+    JMPZ    +trap_notheld
+
+    PUSH    "S-02/treap"
+    SEAL    Hash
+    READSLOT
+    LOAD    0
+    PUSH    "S-02/treap/bump_generation"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   1
+    PUSH    "S-02/treap"
+    SEAL    Hash
+    LOAD    1
+    BINDSLOT
+
+    PUSH    ()
+    RET
+
+    :trap_notheld
+    TRAP    ENOTHELD
+  )
+  :rationale-hash BREAKDOWN_S02_HASH
+)
+
+; ============================================================
+; lookup(cap_id) → CapEntry | BOTTOM
+;
+; Returns the most recent un-revoked entry for cap_id, or BOTTOM
+; if revoked or never minted. Used by every Form that needs to
+; check whether a cap is still live (e.g., S-05 before granting
+; a quantum, S-06 before matching).
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "lookup"
+  :declared-caps (S-02/TREAP_RO)
+  :declared-traps ()
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    PUSH    "S-02/treap"
+    SEAL    Hash
+    READSLOT
+    LOAD    0
+    PUSH    "S-02/treap/lookup_with_revocation"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    RET
+  )
+  :rationale-hash BREAKDOWN_S02_HASH
+)
+
+; ============================================================
+; holds(mind_id, cap_id) → Bool
+;
+; Convenience wrapper used by S-06 and S-09: is this cap held by
+; this mind right now? Composes lookup with the entry's holder
+; field.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "holds"
+  :declared-caps (S-02/TREAP_RO)
+  :declared-traps ()
+  :arity         2
+  :locals-n      4
+  :code (
+    STORE   0                       ; cap_id
+    STORE   1                       ; mind_id
+
+    LOAD    0
+    PUSH    "S-02/lookup"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   2
+
+    LOAD    2
+    PUSH    BOTTOM_HASH
+    EQ
+    JMPZ    +alive
+    PUSH    false
+    RET
+
+    :alive
+    LOAD    2
+    PUSH    "S-02/proj/holder"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    LOAD    1
+    EQ
+    RET
+  )
+  :rationale-hash BREAKDOWN_S02_HASH
+)
+
+(exports
+  (recognise_root (Hash)                                      → CapId)
+  (attenuate      (CapId, Predicate, Rights, Budget, Lifetime) → CapId)
+  (revoke         (CapId)                                     → ())
+  (lookup         (CapId)                                     → CapEntry)
+  (holds          (MindId, CapId)                             → Bool))
