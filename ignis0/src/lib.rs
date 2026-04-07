@@ -8,14 +8,16 @@
 //! is not part of IgnisSynth; it is the software IgnisSynth runs
 //! on top of, analogous to a CPU for an ordinary program.
 
-pub mod value;
-pub mod opcode;
-pub mod store;
 pub mod exec;
 pub mod fixed_point;
+pub mod opcode;
+pub mod parser;
+pub mod store;
+pub mod value;
 
-pub use value::{Hash, TrapKind, Value};
-pub use opcode::Opcode;
-pub use store::SubstanceStore;
 pub use exec::{ExecState, ExecVerdict, Interpreter};
 pub use fixed_point::{FixedPointCheck, FixedPointVerdict};
+pub use opcode::Opcode;
+pub use parser::{parse_form_lines, ParseError};
+pub use store::SubstanceStore;
+pub use value::{Hash, TrapKind, Value};

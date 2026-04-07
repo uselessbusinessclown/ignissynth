@@ -52,14 +52,12 @@ impl SubstanceStore {
         h
     }
 
-    /// Read a cell's value. Traps `EUNHELD` if absent. (A real
-    /// implementation would also verify the caller holds a
-    /// read cap; the scaffold omits the cap layer entirely.)
+    /// Read a cell's value. Traps `EUNHELD` if absent.
     pub fn read(&self, h: &Hash) -> Result<Value, TrapKind> {
         self.cells
             .get(h)
             .map(|c| c.value.clone())
-            .ok_or(TrapKind::EUNHELD)
+            .ok_or_else(|| TrapKind::EUnheld(format!("no cell at {}", h.short())))
     }
 
     /// Pin a cell (increment pin_count).
@@ -67,7 +65,7 @@ impl SubstanceStore {
         self.cells
             .get_mut(h)
             .map(|c| c.pin_count += 1)
-            .ok_or(TrapKind::EUNHELD)
+            .ok_or_else(|| TrapKind::EUnheld(format!("pin: no cell at {}", h.short())))
     }
 
     /// Unpin a cell. If pin_count reaches zero, remove the cell.
@@ -75,9 +73,12 @@ impl SubstanceStore {
     /// to the weave in the same atomic call; the scaffold
     /// doesn't have a weave yet.
     pub fn unpin(&mut self, h: &Hash) -> Result<(), TrapKind> {
-        let cell = self.cells.get_mut(h).ok_or(TrapKind::EUNHELD)?;
+        let cell = self
+            .cells
+            .get_mut(h)
+            .ok_or_else(|| TrapKind::EUnheld(format!("unpin: no cell at {}", h.short())))?;
         if cell.pin_count == 0 {
-            return Err(TrapKind::EUNDERFLOW);
+            return Err(TrapKind::EUnderflow);
         }
         cell.pin_count -= 1;
         if cell.pin_count == 0 {
@@ -157,6 +158,14 @@ fn encode_value(out: &mut Vec<u8>, value: &Value) {
             for v in vs {
                 encode_value(out, v);
             }
+        }
+        Value::Cell(h) => {
+            out.push(7);
+            out.extend_from_slice(&h.0);
+        }
+        Value::Cont(h) => {
+            out.push(8);
+            out.extend_from_slice(&h.0);
         }
     }
 }
