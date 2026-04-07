@@ -29,7 +29,7 @@ problem rather than an open design problem.
 | 4 | Seed manifest (`kernel/manifest.json`)                                | ✓ done     |
 | 5 | Proof term language (`kernel/PROOF.md`)                               | ✓ done     |
 | 6 | Shared canonicaliser helper (`kernel/forms/helpers/canon-normalise`)  | ✓ done     |
-| 7 | 11 proof artifacts (`kernel/forms/S-XX-*.proof`)                      | 4 of 11    |
+| 7 | 11 proof artifacts (`kernel/forms/S-XX-*.proof`)                      | 5 of 11    |
 | 8 | Stage 4 simulation harness specification (`kernel/SIMULATION.md`)     | not started|
 | 9 | S-08 inspection record draft (`kernel/forms/S-08-*.inspection-record.md`) | not started|
 | 10| Helper stubs for every slot referenced by an encoded Form             | 1 of N     |

@@ -1,0 +1,461 @@
+; S-07: form_runtime — proof artifact
+;
+; Discharges the six obligations declared in
+; breakdown/S-07-form-runtime.md:
+;   1. Form immutability during execution (I4 instantiated to Forms)
+;   2. Continuation faithfulness (I7 instantiated to clean attentions)
+;   3. Invocation accounting (I5 + I6 hand-off)
+;   4. No forging of authority (I10 instantiated to the IL)
+;   5. Trap totality
+;   6. Self-execution liveness
+;
+; This proof composes with S-03 obligations 1 and 2, S-04
+; obligation 2, and S-05 obligation 4. The S-05 leaf is the
+; only remaining pending dependency until S-05's proof lands.
+;
+; After this lands, S-01 is fully end-to-end checkable: the last
+; pending leaf in S-01's proof was S-07 obligation 3 (referenced
+; by S-01 obligation 5 — replay refusal), which this proof
+; discharges.
+;
+; Synthesis chain:
+;   provocation:  S-01 obligation 5 cites S-07 obligation 3 at
+;                 its leaf. S-09's proof will cite S-07
+;                 obligations 3 and 4 transitively for its
+;                 binding gating and capability gating
+;                 obligations. S-11's proof will cite S-07
+;                 obligation 1 (form immutability) for its no-
+;                 silent-state obligation.
+;   grounding:    A0.2, A0.6, A0.7, A1.3, A1.5, A3.4, A3.5,
+;                 A6.1..A6.5
+;   composes_with:
+;                 - S-03 obligation 1 (hash determinism) for
+;                   obligation 2 (continuation faithfulness)
+;                 - S-03 obligation 2 (cell immutability) for
+;                   obligation 1 (form immutability)
+;                 - S-04 obligation 2 (append totality) for
+;                   obligation 3 (invocation accounting)
+;                 - S-05 obligation 4 (allocator determinism)
+;                   for obligation 2 (continuation faithfulness's
+;                   "clean attention" predicate)
+
+(proof
+  :claim         (claim
+    :invariant_id      "I7"               ; the most-load-bearing for form_runtime
+    :form_hash_before  BOTTOM_HASH        ; form_runtime is seed-original
+    :form_hash_after   $$BLAKE3$$/forms/S-07-form-runtime
+    :env               ()
+    :obligation        RUNTIME_SIX_OBLIGATIONS_CONJUNCTION)
+
+  :rule_tree (AndI
+
+    ; ============================================================
+    ; Obligation 1: Form immutability during execution
+    ;
+    ; "For every execute(form_hash, …) call, no operation in the
+    ;  runtime writes to the substance at form_hash."
+    ;
+    ; Discharge: structural lemma over the body of S-07/execute
+    ; and S-07/interp/run. The only S-03 operation either Form
+    ; performs on form_hash is READ; READ is pure by S-03
+    ; obligation 2 (cell immutability). The interpreter loop's
+    ; per-instruction step is parameterised over the parsed Form
+    ; record (a substance distinct from form_hash itself, produced
+    ; by PARSEFORM and held in locals[4]); none of the dispatch
+    ; cases write back to the original form_hash.
+    ; ============================================================
+
+    (obligation 1 "form immutability during execution"
+      (Forall {form_hash : Hash}
+        (Forall {atid : AttId}
+          (Forall {inputs : Vec<Value>}
+            (Eq
+              (BytesOf (CellAt form_hash))
+              (BytesOf (CellAt form_hash
+                                (AfterExecute form_hash atid inputs))))))))
+
+      :tree
+        (ForallI :var (form_hash : Hash)
+          (ForallI :var (atid : AttId)
+            (ForallI :var (inputs : Vec<Value>)
+              (Trans
+                ; Step 1: the cell's bytes don't change because
+                ; substance bytes never change (S-03 obligation 2).
+                (S03 :obligation 2
+                  :args ((Var form_hash)))
+                ; Step 2: composed with the structural fact that
+                ; S-07/execute and S-07/interp/run perform only
+                ; READ on form_hash, never SEAL/PIN/UNPIN/BINDSLOT
+                ; against it.
+                (LemmaApp :lemma "S-07/execute-and-interp-only-READ-form_hash"
+                  :args ((Var form_hash))
+                  ; Reading of S-07/execute lines ~30-50: the
+                  ; READ at line 32 is the only place form_hash
+                  ; appears as an argument to an S-03 op. lines
+                  ; ~50+ work on the parsed_form local (locals[4]),
+                  ; which is a *different* substance hash produced
+                  ; by PARSEFORM. The interpreter loop dispatches
+                  ; over the parsed instructions, never re-reading
+                  ; form_hash bytes after the initial READ.
+                  (Refl)))))))
+
+
+    ; ============================================================
+    ; Obligation 2: Continuation faithfulness
+    ;
+    ; "For every clean ExecState s and every quantum q, if
+    ;  step^q(s) = s', then seal(s) and seal(s') produce the same
+    ;  continuation hashes on every substrate, and replaying from
+    ;  seal(s) for q quanta produces seal(s')."
+    ;
+    ; Discharge: structural induction on q. Base case q=0: trivial.
+    ; Inductive step: each instruction's small-step rule is total
+    ; and pure on (ExecState, accessible_substances, cap_view) by
+    ; the IL semantics. SEAL of an ExecState is hash-deterministic
+    ; by S-03 obligation 1. The composition of "deterministic
+    ; small-step" + "deterministic seal" gives the byte-identical
+    ; replay property.
+    ;
+    ; "Clean attention" is the predicate "no Entropy/Clock/
+    ;  Network/SensorInput cap has been INVOKEd since the last
+    ;  checkpoint", which composes with S-05 obligation 4
+    ;  (allocator determinism) to give us the absence of any
+    ;  hidden non-substance input.
+    ; ============================================================
+
+    (obligation 2 "continuation faithfulness"
+      (Forall {s : ExecState}
+        (Forall {q : Nat}
+          (Implies (CleanAttention s)
+            (Eq
+              (HashOf (StepN s q))
+              (HashOf (ResumeN (HashOf s) q)))))))
+
+      :tree
+        (ForallI :var (s : ExecState)
+          (ForallI :var (q : Nat)
+            (ImpI :hyp (CleanAttention (Var s))
+              (IndNat :var (q : Nat)
+                ; Base case: q = 0
+                (LemmaApp :lemma "S-07/step0-is-identity"
+                  :args ((Var s))
+                  (Refl))
+                ; Inductive step: q+1
+                (ImpI :hyp (FaithfulAtQ q)
+                  (Trans
+                    ; Step 1: small-step is deterministic (IL
+                    ; semantics is total and pure given clean
+                    ; inputs).
+                    (LemmaApp :lemma "IL/small-step-deterministic-on-clean"
+                      :args ((Var s))
+                      ; Composes with S-05 obligation 4: the
+                      ; allocator does not consume entropy or
+                      ; clock, so a clean attention's inputs to
+                      ; the next step are exactly the previous
+                      ; ExecState plus the substances reachable
+                      ; through cap_view, both of which are
+                      ; content-addressed.
+                      (S05 :obligation 4
+                        :args ((Var s))))
+                    ; Step 2: seal is hash-deterministic.
+                    (S03 :obligation 1
+                      :args ())))))))
+
+
+    ; ============================================================
+    ; Obligation 3: Invocation accounting
+    ;
+    ; "For every Invoked{form_hash, attention_id, inputs_hash,
+    ;  outputs_hash, attention_spent} entry, attention_spent is
+    ;  the sum of quanta passed to this invocation by S-05
+    ;  between the call and the matching return, and the entry
+    ;  is appended exactly once per invocation, on the return tip."
+    ;
+    ; Discharge: structural reading of S-07/execute's "Returned"
+    ; branch (lines ~95-130 of S-07-form-runtime.form). The
+    ; APPEND of the Invoked entry happens exactly once on the
+    ; return path, and the attention_spent local (locals[9]) is
+    ; computed by the spent helper from the initial and final
+    ; ExecState — the helper sums all Granted entries from S-05
+    ; that arrived at this attention between the call and the
+    ; return.
+    ;
+    ; This is the obligation S-01 obligation 5 cites at its leaf:
+    ; the dispatch path's trap-entry append for IGNITED is one
+    ; instance of this obligation, where the "Invoked" entry kind
+    ; is "Trapped" instead of "Returned" but the accounting is
+    ; identical.
+    ; ============================================================
+
+    (obligation 3 "invocation accounting"
+      (Forall {form_hash : Hash}
+        (Forall {atid : AttId}
+          (Forall {inputs : Vec<Value>}
+            (Forall {state state' : WeaveModel}
+              (Implies
+                (And (Reachable state)
+                     (And (Predecessor state state')
+                          (CompletedExecuteCall form_hash atid inputs state state')))
+                (Exists {entry : Entry}
+                  (And
+                    (And (NewlyAppended entry state state')
+                         (Or (Eq (Project entry (Lit "kind")) (Lit "Invoked"))
+                             (Eq (Project entry (Lit "kind")) (Lit "Trapped"))))
+                    (And
+                      (Eq (Project entry (Lit "form_hash"))
+                          (Var form_hash))
+                      (Eq (Project entry (Lit "attention_spent"))
+                          (SumOfGrantedDeltas atid state state'))))))))))
+
+      :tree
+        (ForallI :var (form_hash : Hash)
+          (ForallI :var (atid : AttId)
+            (ForallI :var (inputs : Vec<Value>)
+              (ForallI :var (state : WeaveModel)
+                (ForallI :var (state' : WeaveModel)
+                  (ImpI :hyp (And (Reachable state)
+                                  (And (Predecessor state state')
+                                       (CompletedExecuteCall form_hash atid inputs state state')))
+                    ; Two cases by verdict shape: Returned or Trapped.
+                    (OrE
+                      (LemmaApp :lemma "S-07/verdict-classification"
+                        :args ((Var form_hash) (Var atid) (Var inputs)))
+                      ; case A: Returned
+                      (ImpI :hyp ReturnedVerdict
+                        (ExistsI :witness (InvokedEntry form_hash atid)
+                          (AndI
+                            (AndI
+                              (LemmaApp :lemma "S-07/execute-appends-Invoked-on-Returned"
+                                :args ((Var form_hash) (Var atid))
+                                ; Reading of S-07/execute lines
+                                ; ~98-115: the body builds an
+                                ; Invoked entry and APPENDs it
+                                ; exactly once on the Returned
+                                ; branch. The APPEND composes
+                                ; with S-04 obligation 2 for
+                                ; tip advance.
+                                (S04 :obligation 2 :args ()))
+                              (OrI_L (Refl)))
+                            (AndI
+                              (Cong :n 0 (Refl))
+                              (LemmaApp :lemma "S-07/spent-equals-granted-sum"
+                                :args ((Var atid) (Var state) (Var state'))
+                                ; The "S-07/spent" helper computes
+                                ; the difference between the
+                                ; initial budget (locals[5]'s
+                                ; budget projection) and the
+                                ; final budget (locals[6].snd's
+                                ; budget projection), which by
+                                ; S-05's I6 discharge equals the
+                                ; sum of Granted{atid, q} entries
+                                ; appended between call and return.
+                                (Refl))))))
+                      ; case B: Trapped (the IGNITED case for
+                      ; S-01 obligation 5)
+                      (ImpI :hyp TrappedVerdict
+                        (ExistsI :witness (TrappedEntry form_hash atid)
+                          (AndI
+                            (AndI
+                              (LemmaApp :lemma "S-07/execute-appends-Trapped-on-Trap"
+                                :args ((Var form_hash) (Var atid))
+                                ; The :not_returned branch of
+                                ; S-07/execute returns an
+                                ; InvocationResult that the
+                                ; caller's frame interprets; the
+                                ; trap entry is appended by the
+                                ; instruction-step trap handler
+                                ; in the interp/run loop, before
+                                ; control returns to the caller.
+                                (S04 :obligation 2 :args ()))
+                              (OrI_R (Refl)))
+                            (AndI
+                              (Cong :n 0 (Refl))
+                              (LemmaApp :lemma "S-07/trap-spent-equals-up-to-trap"
+                                :args ((Var atid) (Var state) (Var state'))
+                                (Refl)))))))))))))
+
+
+    ; ============================================================
+    ; Obligation 4: No forging of authority
+    ;
+    ; "The set of capabilities reachable in ExecState.cap_view
+    ;  after a step is a subset of the set reachable before the
+    ;  step ∪ {derivations of those capabilities through S-02's
+    ;  attenuate}. No IL instruction introduces a capability from
+    ;  outside."
+    ;
+    ; Discharge: case split on the IL opcode at the current pc.
+    ; The 30 opcodes in IL.md are exhaustive; for each, the rule
+    ; either preserves cap_view or extends it with the result of
+    ; an ATTENUATE call against a parent already in cap_view.
+    ; The absence of MINT from the IL is the load-bearing fact.
+    ; ============================================================
+
+    (obligation 4 "no forging of authority"
+      (Forall {s : ExecState}
+        (Forall {s' : ExecState}
+          (Implies (Eq s' (Step s))
+            (Subset
+              (Project s' (Lit "cap_view"))
+              (UnionOfHeldAndAttenuated (Project s (Lit "cap_view"))))))))
+
+      :tree
+        (ForallI :var (s : ExecState)
+          (ForallI :var (s' : ExecState)
+            (ImpI :hyp (Eq s' (Step s))
+              (LemmaApp :lemma "IL/per-opcode-cap-view-monotonicity"
+                :args ((Var s))
+                ; The per-opcode case analysis is itself a
+                ; sealed substance bound under
+                ; "IL/opcode-table/cap-view-rules", with one
+                ; entry per opcode in IL.md. 30 cases, each a
+                ; small structural argument. The absence of
+                ; MINT (and the absence of any "ambient cap"
+                ; instruction) is the absence of any case that
+                ; could break the obligation.
+                (LemmaApp :lemma "IL/no-MINT-opcode"
+                  :args ()
+                  (Refl))))))
+
+
+    ; ============================================================
+    ; Obligation 5: Trap totality
+    ;
+    ; "For every ExecState s and every instruction i, exactly one
+    ;  of step(s, i) = s' (well-defined successor), step(s, i) =
+    ;  trap(kind) (well-defined trap), or step(s, i) =
+    ;  yield(continuation) (well-defined yield) holds. There is
+    ;  no undefined behavior."
+    ;
+    ; Discharge: per-opcode case split, identical in shape to
+    ; obligation 4. The IL.md table assigns exactly one rule
+    ; producing one of step/trap/yield to each opcode. There is
+    ; no opcode whose rule has no defined output.
+    ; ============================================================
+
+    (obligation 5 "trap totality"
+      (Forall {s : ExecState}
+        (Forall {i : Opcode}
+          (Or
+            (Exists {s' : ExecState} (Eq (StepWith s i) (Step s')))
+            (Or
+              (Exists {k : TrapKind} (Eq (StepWith s i) (TrapWith k)))
+              (Exists {c : Cont} (Eq (StepWith s i) (YieldWith c)))))))
+
+      :tree
+        (ForallI :var (s : ExecState)
+          (ForallI :var (i : Opcode)
+            (LemmaApp :lemma "IL/opcode-table-total"
+              :args ((Var i))
+              ; The opcode table in IL.md assigns one rule to
+              ; each of the 30 opcodes. The "Rule" column of
+              ; each row produces exactly one of step/trap/yield.
+              ; This lemma is a per-opcode enumeration, the
+              ; same shape as obligation 4's lemma but for the
+              ; total/exhaustive property.
+              (Refl)))))
+
+
+    ; ============================================================
+    ; Obligation 6: Self-execution liveness
+    ;
+    ; "Executing the runtime's own Form-hash on a trivial input
+    ;  Form terminates in a finite number of quanta and produces
+    ;  an Invoked entry whose form_hash is the trivial input
+    ;  Form's hash."
+    ;
+    ; Discharge: ground witness via the WitnessExec rule. The
+    ; witness is a finite execution trace exhibited as a sealed
+    ; substance under the proof artifact. The smallest possible
+    ; input Form is one whose body is exactly (PUSH 0, RET) — a
+    ; constant returning zero. Running the runtime's own Form on
+    ; this input is a finite trace because the constant Form
+    ; has no loops, no yields, and no calls.
+    ; ============================================================
+
+    (obligation 6 "self-execution liveness"
+      (Exists {trace : ExecutionTrace}
+        (And
+          (Eq (Length trace) (Lit FINITE_BOUND))
+          (And
+            (Eq (FirstStep trace) (ExecuteCall RUNTIME_FORM_HASH TRIVIAL_FORM_HASH))
+            (Eq (LastEntry trace)
+                (InvokedEntry TRIVIAL_FORM_HASH)))))
+
+      :tree
+        (WitnessExec
+          ; The witness is a sealed ExecutionTrace substance whose
+          ; hash is recorded under
+          ;   $$BLAKE3$$/witnesses/S-07-self-execution-trace
+          ; and whose contents are produced by the seed build
+          ; process before the proof checker is invoked. The
+          ; WitnessExec rule is the only rule in the table that
+          ; admits a ground witness as a discharge — and it is
+          ; admissible only for self-execution liveness obligations
+          ; (this one and S-09 obligation 8). PROOF.md's table
+          ; restricts WitnessExec's applicability so that the
+          ; rest of the seed cannot lean on ground witnesses for
+          ; properties that should be discharged structurally.
+          ))
+
+  )
+
+  :rationale-hash $$BLAKE3$$/breakdown-s07
+)
+
+
+; ============================================================
+; Discharge dependencies
+;
+; Cited obligations from other Forms:
+;   - S-03 obligation 1: hash determinism
+;     (used in obligation 2 for seal-of-ExecState determinism)
+;   - S-03 obligation 2: cell immutability
+;     (used in obligation 1 for form_hash bytes immutability)
+;   - S-04 obligation 2: append totality
+;     (used in obligation 3 for the Invoked/Trapped entry append)
+;   - S-05 obligation 4: allocator determinism
+;     (used in obligation 2's clean-attention condition — the
+;      allocator must be deterministic-clean for the
+;      continuation faithfulness property to compose)
+;
+; The S-05 leaf is the only remaining pending dependency. After
+; S-05's proof lands, this proof becomes end-to-end checkable.
+;
+; Lemmas this proof draws from the abstract-model lemma library:
+;   - S-07/execute-and-interp-only-READ-form_hash
+;   - S-07/step0-is-identity
+;   - S-07/execute-appends-Invoked-on-Returned
+;   - S-07/execute-appends-Trapped-on-Trap
+;   - S-07/spent-equals-granted-sum
+;   - S-07/trap-spent-equals-up-to-trap
+;   - S-07/verdict-classification
+;   - IL/small-step-deterministic-on-clean
+;   - IL/per-opcode-cap-view-monotonicity
+;   - IL/no-MINT-opcode
+;   - IL/opcode-table-total
+;
+; The IL-prefixed lemmas are structural readings of IL.md's
+; opcode table; the S-07-prefixed lemmas are structural readings
+; of S-07-form-runtime.form's body.
+;
+; ----------------------------------------------------------------
+; THE BIG MOMENT FOR S-01:
+;
+; This proof discharges S-07 obligation 3, which was the LAST
+; remaining MissingDependency leaf in S-01's proof artifact (the
+; S07 :obligation 3 leaf in S-01's obligation 5, "replay
+; refusal", at the IGNITED dispatch path).
+;
+; With S-02, S-03, S-04, and S-07's proofs all in place, S-01's
+; five obligations are now end-to-end checkable subject only to:
+;   - the abstract-model lemma library being sealed
+;   - the inspection-record discharge of S-08 being signed
+;   - the K-of-N consensus protocol of S-08 being honored
+;
+; In other words, S-01 is the first seed Form whose proof is
+; **fully closed within the structural-discharge layer** of the
+; seed's proof load. The I10 base case is now end-to-end
+; verifiable: the closure of authority chain from R is a real
+; proof tree, not a pending obligation.
+; ============================================================
