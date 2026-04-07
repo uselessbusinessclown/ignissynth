@@ -26,6 +26,25 @@ are post-v0.1.0 work.
 | `S-04/proj/outputs`             | `kernel/forms/helpers/s04-projections.form`    |
 | `S-04/vec/len`                  | `kernel/forms/helpers/s04-projections.form`    |
 | `S-04/bytes/len`                | `kernel/forms/helpers/s04-projections.form`    |
+| `Entry/proj/prev`               | `kernel/forms/helpers/schema-helpers.form`     |
+| `Entry/proj/kind`               | `kernel/forms/helpers/schema-helpers.form`     |
+| `Entry/proj/grounding`          | `kernel/forms/helpers/schema-helpers.form`     |
+| `Entry/proj/rationale`          | `kernel/forms/helpers/schema-helpers.form`     |
+| `Entry/proj/outputs`            | `kernel/forms/helpers/schema-helpers.form`     |
+| `CapEntry/proj/holder`          | `kernel/forms/helpers/schema-helpers.form`     |
+| `CapEntry/proj/generation`      | `kernel/forms/helpers/schema-helpers.form`     |
+| `AttentionRecord/proj/cap_id`   | `kernel/forms/helpers/schema-helpers.form`     |
+| `AttentionRecord/proj/mind_id`  | `kernel/forms/helpers/schema-helpers.form`     |
+| `AttentionRecord/proj/budget_remaining` | `kernel/forms/helpers/schema-helpers.form` |
+| `AttentionRecord/proj/cap_view` | `kernel/forms/helpers/schema-helpers.form`     |
+| `Vec/len`                       | `kernel/forms/helpers/schema-helpers.form`     |
+| `Bytes/len`                     | `kernel/forms/helpers/schema-helpers.form`     |
+| `S-02/proj/holder`              | `kernel/forms/helpers/s02-s05-projections.form`|
+| `S-02/proj/generation`          | `kernel/forms/helpers/s02-s05-projections.form`|
+| `S-05/proj/cap_id`              | `kernel/forms/helpers/s02-s05-projections.form`|
+| `S-05/proj/mind_id`             | `kernel/forms/helpers/s02-s05-projections.form`|
+| `S-05/proj/budget_remaining`    | `kernel/forms/helpers/s02-s05-projections.form`|
+| `S-05/proj/cap_view`            | `kernel/forms/helpers/s02-s05-projections.form`|
 
 ## Helpers required by S-03 `substance_store`
 
@@ -74,8 +93,8 @@ independently of the body.
 | `S-02/treap/bump_generation`    | `(TreapRoot, CapId) → TreapRoot`           | pending  |
 | `S-02/types/is_root_cap`        | `(Bytes) → Bool`                           | pending  |
 | `S-02/lemma/i2_check`           | `(Cap, Rights, Predicate, Nat, Nat) → Bool`| pending  |
-| `S-02/proj/holder`              | `(CapEntry) → MindId`                      | pending  |
-| `S-02/proj/generation`          | `(CapEntry) → Nat`                         | pending  |
+| `S-02/proj/holder`              | `(CapEntry) → MindId`                      | encoded  |
+| `S-02/proj/generation`          | `(CapEntry) → Nat`                         | encoded  |
 
 `S-02/lemma/i2_check` is the load-bearing one: its body *is* the
 abstract-model fact discharging S-02 obligation 2 (attenuation
@@ -96,10 +115,10 @@ part of the S-08 inspection record.
 | `S-05/append_dissolved_entries` | `(Vec{AttId}) → ()`                        | pending  |
 | `S-05/tick/compute_yielded_eligible` | `(ForestRoot) → Vec{AttId}`           | pending  |
 | `S-05/tick/grant_each`          | `(Vec{AttId}) → ()`                        | pending  |
-| `S-05/proj/cap_id`              | `(AttentionRecord) → CapId`                | pending  |
-| `S-05/proj/mind_id`             | `(AttentionRecord) → MindId`               | pending  |
-| `S-05/proj/budget_remaining`    | `(AttentionRecord) → Nat`                  | pending  |
-| `S-05/proj/cap_view`            | `(AttentionRecord) → Vec{CapId}`           | pending  |
+| `S-05/proj/cap_id`              | `(AttentionRecord) → CapId`                | encoded  |
+| `S-05/proj/mind_id`             | `(AttentionRecord) → MindId`               | encoded  |
+| `S-05/proj/budget_remaining`    | `(AttentionRecord) → Nat`                  | encoded  |
+| `S-05/proj/cap_view`            | `(AttentionRecord) → Vec{CapId}`           | encoded  |
 
 The forest operations together implement the persistent attention
 forest chosen as Candidate A in `breakdown/S-05-attention-alloc.md`.
@@ -224,8 +243,8 @@ operational form of the IL specification.
 
 | Category              | Count    |
 |-----------------------|----------|
-| Encoded helpers       | 9        |
-| Stub-only helpers     | ~103     |
+| Encoded helpers       | 28       |
+| Stub-only helpers     | ~84      |
 | Parser stubs          | 4 (one per Form that does parsing) |
 | Trie/forest ops       | 14       |
 | Field projections     | ~50      |
