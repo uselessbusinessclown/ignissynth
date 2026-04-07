@@ -1,12 +1,19 @@
 [package]
 name = "ignis0"
-version = "0.1.0-scaffold"
+version = "0.2.0-ignition"
 edition = "2021"
 description = "Stage-0 interpreter for IgnisSynth — the ignition substrate named by axiom A9"
 license = "MIT"
 
 [dependencies]
 blake3 = "1.5"
+thiserror = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# nom is used by the line-oriented .form parser in src/parser.rs.
+# A canonical s-expression parser is a later milestone; the
+# line-oriented parser is sufficient for the scaffold.
+nom = "7.1"
 
 [[bin]]
 name = "ignis0"

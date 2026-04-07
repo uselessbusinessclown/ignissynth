@@ -18,12 +18,13 @@
 //!
 //! This scaffold implements the direct case end-to-end and
 //! stubs the indirect cases honestly. Once `S-07/execute` is
-//! loadable by this interpreter (which requires the IL parser
-//! from `../../kernel/forms/helpers/parser.form` and a working
-//! CALL opcode), the indirect cases can be enabled.
+//! loadable by this interpreter (which requires the canonical
+//! parser from `../../kernel/forms/helpers/parser.form` and a
+//! working CALL opcode), the indirect cases can be enabled.
 
 use crate::exec::{ExecState, ExecVerdict, Interpreter};
 use crate::opcode::Opcode;
+use crate::parser::parse_form_lines;
 use crate::store::SubstanceStore;
 use crate::value::{Hash, Value};
 
@@ -36,7 +37,7 @@ pub enum EvalVerdict {
 }
 
 impl EvalVerdict {
-    pub fn as_nat(&self) -> Option<u64> {
+    pub fn as_nat(&self) -> Option<u128> {
         match self {
             EvalVerdict::Produced(Value::Nat(n)) => Some(*n),
             _ => None,
@@ -72,6 +73,21 @@ pub enum FixedPointVerdict {
     },
 }
 
+/// The canonical Form F source in line-oriented form. The
+/// scaffold parser in `parser.rs` reads this into a Vec<Opcode>.
+/// The canonical s-expression version of the same Form lives
+/// in `../../kernel/IGNITION-BOOTSTRAP.md` § Step 2.
+pub const CANONICAL_F_SOURCE: &str = r#"
+; The canonical fixed-point Form F from
+; kernel/IGNITION-BOOTSTRAP.md § Step 2.
+; Adds 1 to the input Nat.
+STORE 0
+LOAD 0
+PUSH 1
+ADD
+RET
+"#;
+
 /// The A9.3 fixed-point check harness.
 pub struct FixedPointCheck {
     pub store: SubstanceStore,
@@ -82,19 +98,19 @@ impl FixedPointCheck {
         Self { store: SubstanceStore::new() }
     }
 
-    /// Build the canonical Form F from IGNITION-BOOTSTRAP.md:
-    ///
-    ///   (form
-    ///     :name "ignition_fixed_point_F"
-    ///     :arity 1
-    ///     :locals-n 1
-    ///     :code (
-    ///       STORE 0
-    ///       LOAD  0
-    ///       PUSH  1
-    ///       ADD
-    ///       RET
-    ///     ))
+    /// Build the canonical Form F either via the parser (new
+    /// path, v0.2.0-ignition) or via a hand-constructed vec
+    /// (legacy path, kept for tests that want to bypass the
+    /// parser). This method calls the parser.
+    pub fn build_f_parsed() -> Vec<Opcode> {
+        parse_form_lines(CANONICAL_F_SOURCE)
+            .expect("canonical F source is always valid")
+    }
+
+    /// Legacy hand-constructed build path. Tests that want to
+    /// exercise the interpreter without going through the
+    /// parser call this directly.
+    #[allow(non_snake_case)]
     pub fn build_F() -> Vec<Opcode> {
         vec![
             Opcode::Store(0),
@@ -106,56 +122,51 @@ impl FixedPointCheck {
     }
 
     /// Seal F as a substance and return its hash.
-    pub fn seal_F(&mut self) -> Hash {
-        // In the real spec, F is sealed as its canonical wire
-        // bytes via the canonicaliser. For the scaffold, we
-        // seal a tagged representation that is byte-deterministic
-        // for the purposes of producing a stable hash. The actual
-        // body is what the interpreter runs.
+    ///
+    /// The real sealing would canonicalise F's wire bytes and
+    /// seal them through the host-language S-03. The scaffold
+    /// seals a tagged placeholder so the returned Hash is
+    /// stable across runs.
+    pub fn seal_f(&mut self) -> Hash {
         self.store
             .seal("Form/v1:ignition_fixed_point_F", Value::Nat(42))
     }
 
     /// Run F directly on the canonical input.
-    pub fn eval_direct(&mut self, input: u64) -> EvalVerdict {
-        let form_hash = self.seal_F();
-        let code = Self::build_F();
+    pub fn eval_direct(&mut self, input: u128) -> EvalVerdict {
+        let form_hash = self.seal_f();
+        let code = Self::build_f_parsed();
         let mut state = ExecState::new(form_hash, code, 1, vec![Value::Nat(input)]);
         let mut interp = Interpreter::new(&mut self.store);
         match interp.run(&mut state, 1024) {
             ExecVerdict::Returned(v) => EvalVerdict::Produced(v),
-            ExecVerdict::Trapped(k) => EvalVerdict::Trapped(format!("{:?}", k)),
+            ExecVerdict::Trapped(k) => EvalVerdict::Trapped(format!("{}", k)),
             ExecVerdict::Yielded => {
                 EvalVerdict::Trapped("unexpected YIELD in F".to_string())
             }
         }
     }
 
-    /// Run S-07 interpreting F. Stubbed — requires the IL parser
-    /// and a working CALL opcode, which the scaffold does not
-    /// yet provide.
-    pub fn eval_indirect_1(&mut self, _input: u64) -> EvalVerdict {
+    /// Run S-07 interpreting F. Stubbed — requires the canonical
+    /// parser and a working CALL opcode, neither of which the
+    /// scaffold yet provides.
+    pub fn eval_indirect_1(&mut self, _input: u128) -> EvalVerdict {
         EvalVerdict::NotImplemented(
-            "requires S-07/execute loaded via the IL parser + working CALL. \
-             Tracked as ignis0 v0.2.0-scaffold milestone.",
+            "requires S-07/execute loaded via the canonical parser + working CALL",
         )
     }
 
-    /// Run S-07 interpreting S-07 interpreting F. Stubbed for
-    /// the same reason as indirect_1, plus one additional level
-    /// of nesting.
-    pub fn eval_indirect_2(&mut self, _input: u64) -> EvalVerdict {
+    /// Run S-07 interpreting S-07 interpreting F.
+    pub fn eval_indirect_2(&mut self, _input: u128) -> EvalVerdict {
         EvalVerdict::NotImplemented(
-            "requires the indirect_1 case plus a CALL opcode that \
-             recursively invokes S-07 on itself. Tracked as ignis0 \
-             v0.2.0-scaffold milestone.",
+            "requires the indirect_1 case plus a CALL opcode that recursively invokes S-07",
         )
     }
 
     /// Run the full A9.3 check on the canonical input 42.
     pub fn run(&mut self) -> FixedPointVerdict {
-        const INPUT: u64 = 42;
-        const EXPECTED: u64 = 43;
+        const INPUT: u128 = 42;
+        const EXPECTED: u128 = 43;
 
         // Direct case — must succeed for anything else to matter.
         let direct = self.eval_direct(INPUT);
