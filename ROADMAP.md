@@ -296,7 +296,7 @@ a clear scope for the inspection-record review.
 2. ~~**Add the helper exemption to PROTOCOL.md**~~ ✓ done
 3. ~~**Produce `kernel/lemma-library.md`**~~ ✓ done (105 lemmas; sealing is post-v0.5.0)
 4. ~~**Encode the IL parser** (`S-07/parse_form`)~~ ✓ done at the orchestration layer (`parser.form` ships top-level + 7 sub-Forms; 13 lower-level Parser/* primitives are catalogued as pending; non-exempt — needs `parser.proof`)
-5. **Encode Parser/* primitives** (the leaves under `parser.form`)
+5. ~~**Encode Parser/* primitives**~~ ✓ done at the orchestration level (`parser-primitives.form` ships 13 sub-Forms; 19 lower-level byte-arithmetic leaves are now catalogued as the next batch)
 6. **Encode Schema/* primitives** (small batch; unblocks schema-helpers)
 7. **Write `kernel/types/Trie.md`, `Treap.md`, `Forest.md`** (alongside their helper batches)
 8. **Write `kernel/forms/helpers/parser.proof`** (non-exempt helper)

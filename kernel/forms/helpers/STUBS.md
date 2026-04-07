@@ -27,6 +27,19 @@ are post-v0.1.0 work.
 | `Parser/parse_trapkind_vec_field`| `kernel/forms/helpers/parser.form`            |
 | `Parser/parse_code_field`       | `kernel/forms/helpers/parser.form`             |
 | `Parser/parse_opcode`           | `kernel/forms/helpers/parser.form`             |
+| `Parser/expect_open_form`       | `kernel/forms/helpers/parser-primitives.form`  |
+| `Parser/expect_close_form_and_eof` | `kernel/forms/helpers/parser-primitives.form` |
+| `Parser/expect_open_paren`      | `kernel/forms/helpers/parser-primitives.form`  |
+| `Parser/expect_field_name`      | `kernel/forms/helpers/parser-primitives.form`  |
+| `Parser/read_decimal_nat`       | `kernel/forms/helpers/parser-primitives.form`  |
+| `Parser/read_quoted_bytes`      | `kernel/forms/helpers/parser-primitives.form`  |
+| `Parser/read_hash_literal`      | `kernel/forms/helpers/parser-primitives.form`  |
+| `Parser/read_capid_vec`         | `kernel/forms/helpers/parser-primitives.form`  |
+| `Parser/read_trapkind_vec`      | `kernel/forms/helpers/parser-primitives.form`  |
+| `Parser/read_identifier`        | `kernel/forms/helpers/parser-primitives.form`  |
+| `Parser/read_operands_for_spec` | `kernel/forms/helpers/parser-primitives.form`  |
+| `Parser/opcode_lookup`          | `kernel/forms/helpers/parser-primitives.form`  |
+| `Parser/parse_opcodes_until_close` | `kernel/forms/helpers/parser-primitives.form` |
 | `S-04/proj/prev`                | `kernel/forms/helpers/s04-projections.form`    |
 | `S-04/proj/kind`                | `kernel/forms/helpers/s04-projections.form`    |
 | `S-04/proj/grounding`           | `kernel/forms/helpers/s04-projections.form`    |
@@ -63,19 +76,43 @@ recognise tokens). They will be encoded as a sibling
 
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
-| `Parser/expect_open_form`       | `(Bytes) → Cursor`                         | pending  |
-| `Parser/expect_close_form_and_eof`| `(Bytes, Cursor) → ()`                   | pending  |
-| `Parser/expect_open_paren`      | `(Cursor) → Cursor`                        | pending  |
-| `Parser/expect_field_name`      | `(Cursor, Bytes) → Cursor`                 | pending  |
-| `Parser/read_decimal_nat`       | `(Cursor) → Pair{Cursor, Nat}`             | pending  |
-| `Parser/read_quoted_bytes`      | `(Cursor) → Pair{Cursor, Bytes}`           | pending  |
-| `Parser/read_hash_literal`      | `(Cursor) → Pair{Cursor, Hash}`            | pending  |
-| `Parser/read_capid_vec`         | `(Cursor) → Pair{Cursor, Vec{CapId}}`      | pending  |
-| `Parser/read_trapkind_vec`      | `(Cursor) → Pair{Cursor, Vec{TrapKind}}`   | pending  |
-| `Parser/read_identifier`        | `(Cursor) → Pair{Cursor, Bytes}`           | pending  |
-| `Parser/read_operands_for_spec` | `(OpcodeSpec, Cursor) → Pair{Cursor, Vec{Operand}}` | pending |
-| `Parser/opcode_lookup`          | `(Bytes) → OpcodeSpec`                     | pending  |
-| `Parser/parse_opcodes_until_close` | `(Cursor, Vec{Opcode}) → Pair{Cursor, Vec{Opcode}}` | pending |
+| `Parser/expect_open_form`       | `(Bytes) → Cursor`                         | encoded  |
+| `Parser/expect_close_form_and_eof`| `(Bytes, Cursor) → ()`                   | encoded  |
+| `Parser/expect_open_paren`      | `(Cursor) → Cursor`                        | encoded  |
+| `Parser/expect_field_name`      | `(Cursor, Bytes) → Cursor`                 | encoded  |
+| `Parser/read_decimal_nat`       | `(Cursor) → Pair{Cursor, Nat}`             | encoded  |
+| `Parser/read_quoted_bytes`      | `(Cursor) → Pair{Cursor, Bytes}`           | encoded  |
+| `Parser/read_hash_literal`      | `(Cursor) → Pair{Cursor, Hash}`            | encoded  |
+| `Parser/read_capid_vec`         | `(Cursor) → Pair{Cursor, Vec{CapId}}`      | encoded  |
+| `Parser/read_trapkind_vec`      | `(Cursor) → Pair{Cursor, Vec{TrapKind}}`   | encoded  |
+| `Parser/read_identifier`        | `(Cursor) → Pair{Cursor, Bytes}`           | encoded  |
+| `Parser/read_operands_for_spec` | `(OpcodeSpec, Cursor) → Pair{Cursor, Vec{Operand}}` | encoded |
+| `Parser/opcode_lookup`          | `(Bytes) → OpcodeSpec`                     | encoded  |
+| `Parser/parse_opcodes_until_close` | `(Cursor, Vec{Opcode}) → Pair{Cursor, Vec{Opcode}}` | encoded |
+
+### Parser/* byte-arithmetic leaves (next batch)
+
+| Slot                            | Signature                                  | Status   |
+|---------------------------------|--------------------------------------------|----------|
+| `Parser/bytes_starts_with`      | `(Bytes, Bytes) → Bool`                    | pending  |
+| `Parser/cursor_offset`          | `(Cursor) → Nat`                           | pending  |
+| `Parser/byte_at`                | `(Bytes, Nat) → Byte`                      | pending  |
+| `Parser/cursor_byte_is`         | `(Cursor, Bytes) → Bool`                   | pending  |
+| `Parser/cursor_starts_with`     | `(Cursor, Bytes) → Bool`                   | pending  |
+| `Parser/cursor_advance`         | `(Cursor, Nat) → Cursor`                   | pending  |
+| `Parser/scan_digits`            | `(Cursor) → Pair{Cursor, Bytes}`           | pending  |
+| `Parser/digits_to_nat`          | `(Bytes) → Nat`                            | pending  |
+| `Parser/scan_until_byte`        | `(Cursor, Bytes) → Pair{Cursor, Bytes}`    | pending  |
+| `Parser/scan_hash_token`        | `(Cursor) → Pair{Cursor, Bytes}`           | pending  |
+| `Parser/bytes_to_hash`          | `(Bytes) → Hash`                           | pending  |
+| `Parser/scan_idents_until_close_as_capids` | `(Cursor, Vec{CapId}) → Pair{Cursor, Vec{CapId}}` | pending |
+| `Parser/scan_idents_until_close_as_trapkinds` | `(Cursor, Vec{TrapKind}) → Pair{Cursor, Vec{TrapKind}}` | pending |
+| `Parser/scan_ident_chars`       | `(Cursor) → Pair{Cursor, Bytes}`           | pending  |
+| `Parser/operand_schema_of`      | `(OpcodeSpec) → Bytes`                     | pending  |
+| `Parser/operand_reader_dispatch`| `(Cursor, Bytes) → Pair{Cursor, Vec{Operand}}` | pending |
+| `Parser/opcode_table_scan`      | `(Hash, Bytes) → OpcodeSpec`               | pending  |
+| `Parser/skip_one_canonical_space`| `(Cursor) → Cursor`                       | pending  |
+| `Parser/vec_append`             | `(Vec, T) → Vec`                           | pending  |
 
 ## Non-exempt helpers requiring proof artifacts
 
@@ -304,10 +341,10 @@ operational form of the IL specification.
 
 | Category              | Count    |
 |-----------------------|----------|
-| Encoded helpers       | 36       |
-| Stub-only helpers     | ~96      |
+| Encoded helpers       | 49       |
+| Stub-only helpers     | ~83      |
 | Schema/* primitives   | 7 (catalogued, pending) |
-| Parser/* primitives   | 13 (catalogued, pending) |
+| Parser/* primitives   | 13 (encoded) + 19 byte-arithmetic leaves (catalogued, pending) |
 | Non-exempt helpers requiring proofs | 3+ |
 | Parser stubs          | 4 (one per Form that does parsing) |
 | Trie/forest ops       | 14       |

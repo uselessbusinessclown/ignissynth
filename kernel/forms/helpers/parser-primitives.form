@@ -1,0 +1,683 @@
+; Parser/* primitives — kernel/forms/helpers/parser-primitives.form
+;
+; The thirteen lower-level helpers that parser.form's
+; orchestration layer delegates to. Each is small (3-15
+; instructions of IL): read characters, advance the cursor,
+; recognise tokens, build small structured values.
+;
+; After this file lands, S-07/parse_form is operationally
+; complete: every CALL in parser.form's body resolves to a
+; bound helper, and PARSEFORM in the IL becomes meaningful.
+;
+; Synthesis chain:
+;   provocation:  parser.form references thirteen Parser/*
+;                 slots that have no encoded helpers. Until
+;                 they exist, parser.form has CALL leaves that
+;                 resolve to unbound slots and cannot run.
+;   grounding:    same as parser.form (A0.6, A0.7, A1.2,
+;                 A6.1, A6.4)
+;   approach:     each primitive is a leaf — no recursion,
+;                 no further parser indirection. Byte arithmetic
+;                 + cursor advancement + structural cast.
+;   composes_with: S-03/ROOT_RO for reading; the canonicaliser
+;                 has already stripped whitespace and comments
+;                 so each primitive can assume tight tokens.
+;
+; All thirteen primitives have :declared-caps (S-03/ROOT_RO),
+; :declared-traps (ETYPE), and bodies under 15 instructions.
+; They qualify for the helper exemption (synthesis/PROTOCOL.md
+; § Helper exemption) and do NOT ship individual proof
+; artifacts; their correctness is verified inline by the
+; kernel-author identities as part of the parser.proof
+; inspection (when written).
+
+; ============================================================
+; Cursor type
+;
+; A Cursor is a sealed substance Pair{Bytes, Nat} where the Nat
+; is the current byte offset into the Bytes. Cursors are
+; immutable; "advancing" produces a new Cursor with the same
+; Bytes and a higher offset.
+; ============================================================
+
+; ============================================================
+; Parser/expect_open_form
+;
+; Verify the input bytes start with the literal "(form" and
+; return a Cursor pointing at offset 5.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "expect_open_form"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0                       ; bytes
+    LOAD    0
+    PUSH    "(form"
+    PUSH    "Parser/bytes_starts_with"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → Bool
+    JMPZ    +trap
+    LOAD    0
+    PUSH    5
+    MAKEPAIR
+    SEAL    Cursor
+    RET
+    :trap
+    TRAP    ETYPE
+  )
+  :rationale-hash $$BLAKE3$$/parser-primitives-rationale
+)
+
+; ============================================================
+; Parser/expect_close_form_and_eof
+;
+; Verify the bytes at the current cursor position are exactly
+; ")" followed by EOF. Returns unit; traps ETYPE on mismatch.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "expect_close_form_and_eof"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      4
+  :code (
+    STORE   0                       ; cursor
+    STORE   1                       ; bytes
+
+    LOAD    0
+    PUSH    "Parser/cursor_offset"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   2
+
+    LOAD    1
+    LOAD    2
+    PUSH    "Parser/byte_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    PUSH    ")"
+    EQ
+    JMPZ    +trap
+
+    LOAD    1
+    PUSH    "Bytes/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   3
+    LOAD    2
+    PUSH    1
+    ADD
+    LOAD    3
+    EQ
+    JMPZ    +trap
+
+    PUSH    ()
+    RET
+    :trap
+    TRAP    ETYPE
+  )
+  :rationale-hash $$BLAKE3$$/parser-primitives-rationale
+)
+
+; ============================================================
+; Parser/expect_open_paren
+;
+; Verify the byte at the cursor is "(" and return a cursor
+; advanced by 1. Used by parse_code_field before reading the
+; opcode list.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "expect_open_paren"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0                       ; cursor
+    LOAD    0
+    PUSH    "("
+    PUSH    "Parser/cursor_byte_is"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    JMPZ    +trap
+    LOAD    0
+    PUSH    1
+    PUSH    "Parser/cursor_advance"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    RET
+    :trap
+    TRAP    ETYPE
+  )
+  :rationale-hash $$BLAKE3$$/parser-primitives-rationale
+)
+
+; ============================================================
+; Parser/expect_field_name
+;
+; Verify the bytes at the cursor are exactly the expected field
+; name (e.g., ":arity", ":code") and return a cursor advanced
+; past it. The expected name is passed as a literal Bytes value.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "expect_field_name"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      4
+  :code (
+    STORE   0                       ; expected name
+    STORE   1                       ; cursor
+
+    LOAD    1
+    LOAD    0
+    PUSH    "Parser/cursor_starts_with"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    JMPZ    +trap
+
+    LOAD    0
+    PUSH    "Bytes/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   2
+
+    LOAD    1
+    LOAD    2
+    PUSH    "Parser/cursor_advance"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    RET
+    :trap
+    TRAP    ETYPE
+  )
+  :rationale-hash $$BLAKE3$$/parser-primitives-rationale
+)
+
+; ============================================================
+; Parser/read_decimal_nat
+;
+; Read a sequence of ASCII digits at the cursor, parse them as
+; a decimal Nat, return Pair{advanced_cursor, Nat}.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "read_decimal_nat"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      4
+  :code (
+    STORE   0                       ; cursor
+    LOAD    0
+    PUSH    "Parser/scan_digits"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                ; → Pair{cursor, Bytes (digits)}
+    STORE   1
+    LOAD    1
+    SND
+    PUSH    "Parser/digits_to_nat"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                ; → Nat
+    STORE   2
+    LOAD    1
+    FST
+    LOAD    2
+    MAKEPAIR
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/parser-primitives-rationale
+)
+
+; ============================================================
+; Parser/read_quoted_bytes
+;
+; Read a "..." quoted byte string at the cursor (no escapes —
+; the canonicaliser strips any escapes that would survive
+; parsing) and return Pair{cursor_past_close_quote, Bytes}.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "read_quoted_bytes"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      3
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "\""
+    PUSH    "Parser/cursor_byte_is"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    JMPZ    +trap
+    LOAD    0
+    PUSH    1
+    PUSH    "Parser/cursor_advance"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   1                       ; cursor past opening "
+    LOAD    1
+    PUSH    "\""
+    PUSH    "Parser/scan_until_byte"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → Pair{cursor at ", Bytes}
+    STORE   2
+    LOAD    2
+    FST
+    PUSH    1
+    PUSH    "Parser/cursor_advance"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; cursor past closing "
+    LOAD    2
+    SND
+    MAKEPAIR
+    RET
+    :trap
+    TRAP    ETYPE
+  )
+  :rationale-hash $$BLAKE3$$/parser-primitives-rationale
+)
+
+; ============================================================
+; Parser/read_hash_literal
+;
+; Read a hash literal of the form "$$BLAKE3$$/path" or a 64-char
+; hex hash. Returns Pair{cursor, Hash}.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "read_hash_literal"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      3
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "Parser/scan_hash_token"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                ; → Pair{cursor, Bytes}
+    STORE   1
+    LOAD    1
+    SND
+    PUSH    "Parser/bytes_to_hash"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                ; → Hash
+    STORE   2
+    LOAD    1
+    FST
+    LOAD    2
+    MAKEPAIR
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/parser-primitives-rationale
+)
+
+; ============================================================
+; Parser/read_capid_vec
+;
+; Read a (CapId1 CapId2 ...) parenthesised list of CapId
+; identifiers (each is an uppercase identifier). Returns
+; Pair{cursor, Vec{CapId}}.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "read_capid_vec"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "Parser/expect_open_paren"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   1
+    LOAD    1
+    PUSH    EMPTY_VEC
+    PUSH    "Parser/scan_idents_until_close_as_capids"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → Pair{cursor, Vec{CapId}}
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/parser-primitives-rationale
+)
+
+; ============================================================
+; Parser/read_trapkind_vec
+;
+; Same shape as read_capid_vec, but the elements are TrapKind
+; identifiers (ETYPE, ESTALE, EOVERBUDGET, etc.). The element
+; reader validates each identifier against the closed
+; TrapKind enumeration in IL.md § Trap kinds.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "read_trapkind_vec"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "Parser/expect_open_paren"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   1
+    LOAD    1
+    PUSH    EMPTY_VEC
+    PUSH    "Parser/scan_idents_until_close_as_trapkinds"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/parser-primitives-rationale
+)
+
+; ============================================================
+; Parser/read_identifier
+;
+; Read an uppercase identifier (the opcode mnemonic shape:
+; A-Z, 0-9, _, /). Returns Pair{cursor, Bytes}.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "read_identifier"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      1
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "Parser/scan_ident_chars"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                ; → Pair{cursor, Bytes}
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/parser-primitives-rationale
+)
+
+; ============================================================
+; Parser/read_operands_for_spec
+;
+; Given an OpcodeSpec (which declares how many operands the
+; opcode takes and their types), read that many operands at the
+; cursor and return Pair{cursor, Vec{Operand}}. Different
+; opcodes have different operand schemas:
+;   - PUSH takes one Immediate (Nat, Bool, Hash, or Bytes)
+;   - JMP, JMPZ take one Nat (offset)
+;   - LOAD, STORE take one Nat (locals index)
+;   - CALL takes h=$ /n=Nat
+;   - MAKEVEC takes one Nat (length)
+;   - TRAP takes one TrapKind
+;   - the remaining ~22 opcodes take zero operands
+; The dispatch is delegated to per-spec readers bound under
+; "Parser/operand_reader/{schema}".
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "read_operands_for_spec"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      3
+  :code (
+    STORE   0                       ; cursor
+    STORE   1                       ; spec
+
+    LOAD    1
+    PUSH    "Parser/operand_schema_of"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                ; → Bytes (schema id)
+    STORE   2
+
+    LOAD    0
+    LOAD    2
+    PUSH    "Parser/operand_reader_dispatch"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → Pair{cursor, Vec{Operand}}
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/parser-primitives-rationale
+)
+
+; ============================================================
+; Parser/opcode_lookup
+;
+; Look up an opcode mnemonic in the IL opcode table substance
+; (sealed at build time from kernel/IL.md § Opcodes). Returns
+; the matching OpcodeSpec or BOTTOM_HASH if the mnemonic is
+; not in the table.
+;
+; The opcode table substance is a sealed Vec{OpcodeSpec} bound
+; under "IL/opcode-table". Lookup is a linear scan (the table
+; has 30 entries; constant factors are negligible).
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "opcode_lookup"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps ()
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0                       ; mnemonic bytes
+    PUSH    "IL/opcode-table"
+    SEAL    Hash
+    READSLOT
+    STORE   1                       ; opcode table hash
+    LOAD    1
+    LOAD    0
+    PUSH    "Parser/opcode_table_scan"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → OpcodeSpec or BOTTOM
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/parser-primitives-rationale
+)
+
+; ============================================================
+; Parser/parse_opcodes_until_close
+;
+; The recursive helper that builds the Vec{Opcode} for the
+; (code ...) block. Reads one opcode, appends it to the
+; accumulator, and either recurses (if the next byte is not
+; ")") or returns (if it is).
+;
+; Recursion is via CALL on the same slot — the Form calls
+; itself, which the IL permits (CALL takes any Form hash; the
+; absence of a recursion-prevention restriction is intentional
+; per IL.md § Control flow).
+;
+; Termination: each recursive call advances the cursor by at
+; least one byte (the smallest opcode is one mnemonic
+; character). The cursor is bounded above by the bytes' length.
+; The recursion is therefore well-founded.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "parse_opcodes_until_close"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      5
+  :code (
+    STORE   0                       ; accumulator Vec{Opcode}
+    STORE   1                       ; cursor
+
+    ;; Skip canonicalised whitespace (the canonicaliser leaves
+    ;; exactly one space between tokens; we advance past it).
+    LOAD    1
+    PUSH    "Parser/skip_one_canonical_space"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   1
+
+    ;; Check if the next byte is ")"
+    LOAD    1
+    PUSH    ")"
+    PUSH    "Parser/cursor_byte_is"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    JMPZ    +not_close
+
+    ;; Close: advance past ")" and return
+    LOAD    1
+    PUSH    1
+    PUSH    "Parser/cursor_advance"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    LOAD    0
+    MAKEPAIR
+    RET
+
+    :not_close
+
+    ;; Read one opcode
+    LOAD    1
+    PUSH    "S-07/parse_opcode"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                ; → Pair{cursor, Opcode}
+    STORE   2
+    LOAD    2
+    SND
+    STORE   3                       ; opcode
+
+    ;; Append to accumulator
+    LOAD    0
+    LOAD    3
+    PUSH    "Parser/vec_append"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   4                       ; new accumulator
+
+    ;; Recurse with the new cursor and accumulator
+    LOAD    2
+    FST
+    LOAD    4
+    PUSH    "Parser/parse_opcodes_until_close"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/parser-primitives-rationale
+)
+
+(exports
+  (expect_open_form          (Bytes)              → Cursor)
+  (expect_close_form_and_eof (Bytes, Cursor)      → ())
+  (expect_open_paren         (Cursor)             → Cursor)
+  (expect_field_name         (Cursor, Bytes)      → Cursor)
+  (read_decimal_nat          (Cursor)             → Pair{Cursor, Nat})
+  (read_quoted_bytes         (Cursor)             → Pair{Cursor, Bytes})
+  (read_hash_literal         (Cursor)             → Pair{Cursor, Hash})
+  (read_capid_vec            (Cursor)             → Pair{Cursor, Vec{CapId}})
+  (read_trapkind_vec         (Cursor)             → Pair{Cursor, Vec{TrapKind}})
+  (read_identifier           (Cursor)             → Pair{Cursor, Bytes})
+  (read_operands_for_spec    (OpcodeSpec, Cursor) → Pair{Cursor, Vec{Operand}})
+  (opcode_lookup             (Bytes)              → OpcodeSpec)
+  (parse_opcodes_until_close (Cursor, Vec{Opcode})→ Pair{Cursor, Vec{Opcode}}))
+
+
+; ============================================================
+; Pending byte-arithmetic primitives
+;
+; This file references but does not encode the following
+; lower-level byte-arithmetic helpers. Each is 2-5 instructions
+; of IL — pure functions over byte vectors and integer offsets.
+; They are the leaves under this entire helper batch.
+;
+;   - Parser/bytes_starts_with        (Bytes, Bytes)      → Bool
+;   - Parser/cursor_offset            (Cursor)            → Nat
+;   - Parser/byte_at                  (Bytes, Nat)        → Byte
+;   - Parser/cursor_byte_is           (Cursor, Bytes)     → Bool
+;   - Parser/cursor_starts_with       (Cursor, Bytes)     → Bool
+;   - Parser/cursor_advance           (Cursor, Nat)       → Cursor
+;   - Parser/scan_digits              (Cursor)            → Pair{Cursor, Bytes}
+;   - Parser/digits_to_nat            (Bytes)             → Nat
+;   - Parser/scan_until_byte          (Cursor, Bytes)     → Pair{Cursor, Bytes}
+;   - Parser/scan_hash_token          (Cursor)            → Pair{Cursor, Bytes}
+;   - Parser/bytes_to_hash            (Bytes)             → Hash
+;   - Parser/scan_idents_until_close_as_capids
+;                                     (Cursor, Vec{CapId}) → Pair{Cursor, Vec{CapId}}
+;   - Parser/scan_idents_until_close_as_trapkinds
+;                                     (Cursor, Vec{TrapKind}) → Pair{Cursor, Vec{TrapKind}}
+;   - Parser/scan_ident_chars         (Cursor)            → Pair{Cursor, Bytes}
+;   - Parser/operand_schema_of        (OpcodeSpec)        → Bytes
+;   - Parser/operand_reader_dispatch  (Cursor, Bytes)     → Pair{Cursor, Vec{Operand}}
+;   - Parser/opcode_table_scan        (Hash, Bytes)       → OpcodeSpec
+;   - Parser/skip_one_canonical_space (Cursor)            → Cursor
+;   - Parser/vec_append               (Vec, T)            → Vec
+;
+; These are the absolute leaves of the parser's helper graph.
+; Each is short enough to qualify for the helper exemption and
+; will be encoded inline in a future parser-bytes.form file.
+; Until then, this file's helpers have CALL leaves at the
+; byte-arithmetic level, but the parser's *structural* shape
+; is now complete at all higher layers.
+;
+; The hierarchy of the parser's helper graph as of this commit:
+;
+;   parser.form (orchestration, 8 sub-Forms)            ← v0.2.0 batch 3
+;     ↓
+;   parser-primitives.form (this file, 13 sub-Forms)    ← v0.2.0 batch 4 (THIS COMMIT)
+;     ↓
+;   parser-bytes.form (~19 leaf primitives)             ← v0.2.0 batch 5 (next)
+;     ↓
+;   IL opcodes (PUSH, LOAD, ADD, SUB, EQ, etc.)         ← already in IL.md
+; ============================================================
