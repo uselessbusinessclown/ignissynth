@@ -49,4 +49,4 @@ Read the documents in this order:
 
 ## License
 
-TBD. Suggested: Apache-2.0 OR MIT.
+MIT. See `LICENSE`.
