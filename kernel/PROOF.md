@@ -184,9 +184,11 @@ small Form bound under `S-08/rules/<rule-id>/derive`).
 | `S02`         | _n_   | composition with an S-02 obligation                            |
 | `Canon`       | 1     | from `Eq{canonicalise(t), canonicalise(u)}` derive `Eq{t, u}` |
 | `Hyp`         | 0     | discharge a hypothesis introduced by `ImpI`/`NotI`/`ExistsE` |
-| `WitnessExec` | 0     | a ground execution-trace witness; only admissible for self-execution liveness obligations (S-07 #6, S-09 #8) |
+| `WitnessExec` | 0     | a ground execution-trace witness; only admissible for self-execution liveness obligations (S-07 #6, S-08 #1, S-09 #8). For S-08 #1 the witness is the trace of `S-08/check` applied to its own Form-substance and the trivial reflexive claim, returning `Accept`. |
+| `ExternalDischarge` | 1 | a documented external discharge — accepts iff the named document exists as a sealed substance in S-03. Admissible **only** for S-08 obligations 2 and 3 (the inspection record and the K-of-N consensus, which are out of band by construction). The walker reads the document hash, verifies the substance exists, and accepts; it does not validate the document's contents. The point is to make the external surface narrowly named and visible to the rest of the seed's verification, not to mechanize it. |
 
-Twenty-nine rules. The smallness is itself part of the inspection
+Thirty rules (including the narrowly-admissible `ExternalDischarge`).
+The smallness is itself part of the inspection
 record's discharge: a kernel-author identity reading the table can
 verify that each rule's conclusion-derivation function is a faithful
 encoding of the rule's natural-deduction shape, in finite time
