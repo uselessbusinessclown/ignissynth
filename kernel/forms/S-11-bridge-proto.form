@@ -1,0 +1,294 @@
+; S-11: bridge_proto
+;
+; The reference bridge: a single mind, request-driven, parse-only
+; translator. Single export: handle_request. The body's cycle is
+; listen→parse→match→handoff→verdict→emit, all visible in the
+; weave as BridgeIn → Matched → Invoked → BridgeOut.
+;
+; Synthesis chain:
+;   provocation:  breakdown/S-11-bridge-proto.md
+;   grounding:    A0.1 A0.4 A2.2 A2.6 A4.1 A4.2 A4.5 A8.1..A8.5
+;   selected:     Candidate A — Single bridge mind, parse-only
+;   proof:        kernel/forms/S-11-bridge-proto.proof  (six
+;                 obligations: bridge subordination, no human
+;                 privilege, receipt chain completeness, acceptance
+;                 check totality, no silent state, human silence
+;                 as no-op)
+
+; ============================================================
+; handle_request(serialised_request, human_id_token) → Receipt
+;
+; The bridge is invoked once per request by its inbound endpoint.
+; Between requests, the bridge attention is idle — it does not
+; poll, does not heartbeat, does not maintain any state outside
+; the substances it has sealed and the weave entries it has
+; appended.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "handle_request"
+  :declared-caps (BRIDGE/POLICY_CAP S-04/APPEND S-03/ROOT_RW
+                   S-06/MATCH S-07/EXECUTE)
+  :declared-traps ()                            ; bridge body is total — every failure becomes a Receipt
+  :arity         2
+  :locals-n      14
+  :code (
+
+    STORE   0                                   ; human_id_token
+    STORE   1                                   ; serialised_request
+
+    ;; ----------------------------------------------------------------
+    ;; Step 1: Parse the request against the surface grammar.
+    ;; A failure here does NOT produce a BridgeIn entry — the
+    ;; request never became an Intent substance, so there is
+    ;; nothing to record beyond the Receipt itself.
+    ;; ----------------------------------------------------------------
+
+    LOAD    1
+    PUSH    "S-11/parse_surface"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                            ; → BridgeRequest or BOTTOM
+    STORE   2
+
+    LOAD    2
+    PUSH    BOTTOM_HASH
+    EQ
+    JMPZ    +parsed_ok
+
+    ;; Malformed request: emit a Rejected{EILLFORMED} Receipt and
+    ;; return. No BridgeIn, no Matched, no BridgeOut metadata in
+    ;; the weave (the Receipt is sealed but not appended to the
+    ;; weave because there is no BridgeIn to which it would
+    ;; correspond).
+    LOAD    1
+    LOAD    0
+    PUSH    REJECT_EILLFORMED
+    MAKEVEC 3
+    SEAL    Receipt
+    RET
+
+    :parsed_ok
+
+    ;; ----------------------------------------------------------------
+    ;; Step 2: Verify the acceptance form is held by the bridge.
+    ;; ----------------------------------------------------------------
+
+    LOAD    2
+    PUSH    "S-11/proj/acceptance_form"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   3                                   ; acceptance form hash
+
+    LOAD    3
+    PUSH    "S-11/check/can_read"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    JMPZ    +acceptance_ok
+
+    ;; Cannot read the acceptance form: append BridgeIn (the
+    ;; request *did* parse), then a Receipt with EUNHELDFORM.
+    LOAD    2
+    LOAD    0
+    PUSH    BRIDGE_INBOUND_ENDPOINT_HASH
+    MAKEVEC 3
+    PUSH    "BridgeIn"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+    LOAD    2
+    LOAD    0
+    PUSH    REJECT_EUNHELDFORM
+    MAKEVEC 3
+    SEAL    Receipt
+    RET
+
+    :acceptance_ok
+
+    ;; ----------------------------------------------------------------
+    ;; Step 3: Build and seal the Intent substance.
+    ;; ----------------------------------------------------------------
+
+    LOAD    2
+    PUSH    "S-11/build_intent"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                            ; → Intent
+    STORE   4
+
+    PUSH    "Intent"
+    LOAD    4
+    PUSH    "S-03/seal"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                            ; → intent_hash
+    STORE   5
+
+    ;; Append BridgeIn{intent_hash, human_id_token, endpoint_hash}.
+    LOAD    5
+    LOAD    0
+    PUSH    BRIDGE_INBOUND_ENDPOINT_HASH
+    MAKEVEC 3
+    PUSH    "BridgeIn"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+
+    ;; ----------------------------------------------------------------
+    ;; Step 4: Match the intent through S-06 under the bridge's
+    ;; policy cap. The policy cap is BRIDGE/POLICY_CAP, declared
+    ;; in this Form's :declared-caps and held by the bridge mind
+    ;; — NOT by the human. Obligation 2 reads off the cap_view.
+    ;; ----------------------------------------------------------------
+
+    LOAD    5
+    PUSH    BRIDGE/POLICY_CAP
+    PUSH    "S-06/match"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                            ; → MatchResult
+    STORE   6
+
+    LOAD    6
+    PUSH    "S-11/proj/match_kind"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    PUSH    "Matched"
+    EQ
+    JMPZ    +match_ok
+
+    ;; MatchedNone: Receipt with the matcher's reason.
+    LOAD    5
+    LOAD    0
+    LOAD    6
+    PUSH    "S-11/proj/none_reason"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    MAKEVEC 3
+    SEAL    Receipt
+    STORE   7
+
+    LOAD    7
+    LOAD    5
+    LOAD    0
+    MAKEVEC 3
+    PUSH    "BridgeOut"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+
+    LOAD    7
+    RET
+
+    :match_ok
+
+    ;; ----------------------------------------------------------------
+    ;; Step 5: Hand off to the fulfiller via S-07/execute.
+    ;; ----------------------------------------------------------------
+
+    LOAD    6
+    PUSH    "S-11/proj/fulfiller_hash"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   8                                   ; fulfiller hash
+
+    LOAD    6
+    PUSH    "S-11/proj/sub_attention_id"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   9                                   ; sub-attention
+
+    LOAD    8
+    LOAD    9
+    LOAD    4
+    PUSH    "S-11/intent_inputs_vec"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                            ; → Vec{Value}
+    PUSH    "S-07/execute"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                            ; → result_hash
+    STORE   10
+
+    ;; ----------------------------------------------------------------
+    ;; Step 6: Verdict. Check the result against the intent's
+    ;; acceptance form. Obligation 4 (acceptance check totality) is
+    ;; the requirement that *every* Accepted Receipt is preceded
+    ;; by a successful check, and that requirement is structural
+    ;; here: the only path to producing an Accepted Receipt goes
+    ;; through this check.
+    ;; ----------------------------------------------------------------
+
+    LOAD    10
+    LOAD    3
+    PUSH    "S-11/check_acceptance"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                            ; → Bool
+    JMPZ    +accepted
+
+    ;; Acceptance check failed: Rejected{acceptance_failed}.
+    LOAD    5
+    LOAD    0
+    PUSH    REJECT_ACCEPTANCE_FAILED
+    MAKEVEC 3
+    SEAL    Receipt
+    STORE   11
+
+    LOAD    11
+    LOAD    5
+    LOAD    0
+    MAKEVEC 3
+    PUSH    "BridgeOut"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+
+    LOAD    11
+    RET
+
+    :accepted
+
+    ;; ----------------------------------------------------------------
+    ;; Step 7: Emit Accepted Receipt and BridgeOut entry.
+    ;; ----------------------------------------------------------------
+
+    LOAD    5
+    LOAD    0
+    LOAD    10
+    PUSH    "Accepted"
+    MAKEPAIR
+    MAKEVEC 3
+    SEAL    Receipt
+    STORE   12
+
+    LOAD    12
+    LOAD    5
+    LOAD    0
+    MAKEVEC 3
+    PUSH    "BridgeOut"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+
+    LOAD    12
+    RET
+  )
+  :rationale-hash BREAKDOWN_S11_HASH
+)
+
+(exports
+  (handle_request (Vec{Byte}, HumanIdToken) → Receipt))
