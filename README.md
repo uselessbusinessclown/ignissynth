@@ -110,9 +110,9 @@ The shortest path through, in dependency order:
 1. **`docs/MANIFESTO.md`** — what IgnisSynth is and refuses to be.
 2. **`axioms/A0-first-principles.md`** — the irreducible axioms.
    Everything downstream is required to be a theorem of these.
-3. **`axioms/A1..A8`** — the eight derived axioms governing matter,
+3. **`axioms/A1..A9`** — the nine derived axioms governing matter,
    capability, attention, intent, causality, fluid code, self-modification,
-   and bridges.
+   bridges, and the ignition substrate.
 4. **`synthesis/INVARIANTS.md`** — the twelve kernel-level invariants
    (I1..I12) every Form must preserve.
 5. **`synthesis/PROTOCOL.md`** — the eight-stage synthesis protocol.

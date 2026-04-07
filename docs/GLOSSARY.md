@@ -69,6 +69,19 @@
 - **Ignition** — The single moment at which the seed becomes a running
   habitat. The body of the genesis Form (`ignite`, S-01) runs once
   and self-erases its slot.
+- **`ignis0`** — The stage-0 interpreter: an ordinary software
+  artifact (in Rust, OCaml, C, or similar) that implements the
+  30-opcode IL specification outside the habitat. It is the base
+  case of the runtime recursion, named by axiom A9 and specified
+  operationally in `kernel/IGNITION-BOOTSTRAP.md`. Not a Form, not
+  a mind, not an inhabitant — the substrate the habitat runs on,
+  analogous to a CPU. May be replaced post-ignition via
+  checkpoint-and-restart, but never absent from a running habitat.
+- **Ignition fixed-point check** — The necessary-condition test
+  from A9.3 that `ignis0` must pass at ignition: direct execution
+  of a canonical Form `F` must agree with execution of S-07
+  interpreting `F` and with execution of S-07 interpreting S-07
+  interpreting `F`. Disagreement halts ignition immediately.
 - **Immediate** — A value referenced by symbolic name in a `.form`
   file (`UNIVERSAL_RIGHTS`, `BREAKDOWN_S01_HASH`,
   `PROOF_CHECKER_HASH`, etc.) that the seed loader resolves at parse
