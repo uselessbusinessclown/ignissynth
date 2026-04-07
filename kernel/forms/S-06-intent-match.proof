@@ -1,0 +1,426 @@
+; S-06: intent_match — proof artifact
+;
+; Discharges the six obligations declared in
+; breakdown/S-06-intent-match.md:
+;   1. Policy gating (I1 instantiated to matching)
+;   2. Sub-intent containment (A4.4)
+;   3. No-ambient-fulfillers (I10 instantiated to matching)
+;   4. Determinism (I7 instantiated to matching)
+;   5. Acceptance form preservation (A4.5)
+;   6. Budget conservation at handoff (I6 hand-off)
+;
+; This proof composes with S-02 obligation 4 (lookup soundness),
+; S-04 obligation 2 (append totality), S-05 obligation 1
+; (budget conservation), and S-03 obligation 6 (no enumeration,
+; for the structural type-level discharge of obligation 3).
+;
+; Every cited dependency is already discharged. This proof is
+; FULLY END-TO-END CHECKABLE on landing.
+;
+; Synthesis chain:
+;   provocation:  S-11's proof will cite S-06 obligations 1, 2,
+;                 5, and 6 at every Bridge → matcher → handoff
+;                 leaf. Without S-06's proof, S-11 has four
+;                 pending leaves and is not yet checkable.
+;   grounding:    A0.1, A0.4, A2.5, A2.6, A4.1..A4.5
+;   composes_with:
+;                 - S-02 obligation 4 (lookup soundness)
+;                 - S-04 obligation 2 (append totality)
+;                 - S-05 obligation 1 (budget conservation)
+;                 - S-03 obligation 6 (no enumeration — type
+;                   level discharge of obligation 3 reuses the
+;                   same shape)
+
+(proof
+  :claim         (claim
+    :invariant_id      "I1"               ; the most-load-bearing for intent_match
+    :form_hash_before  BOTTOM_HASH        ; intent_match is seed-original
+    :form_hash_after   $$BLAKE3$$/forms/S-06-intent-match
+    :env               ()
+    :obligation        MATCH_SIX_OBLIGATIONS_CONJUNCTION)
+
+  :rule_tree (AndI
+
+    ; ============================================================
+    ; Obligation 1: Policy gating (I1 instantiated to matching)
+    ;
+    ; "For every Matched{intent, fulfiller, policy_cap_id, …}
+    ;  entry, at the moment of append the inviting mind held
+    ;  policy_cap_id, the cap was not revoked, and its predicate
+    ;  evaluated true on (intent, fulfiller)."
+    ;
+    ; Discharge: structural reading of S-06/match's body. Lines
+    ; ~30-45 perform the CAPHELD check on policy_cap_id, JMPZ
+    ; to +trap_nopolicy on false; lines ~46-55 perform the
+    ; S-02/lookup call and check the result is not BOTTOM. Both
+    ; gates are passed before any candidate enumeration starts.
+    ; Lines ~115-130 perform per-fulfiller predicate evaluation
+    ; via filter_by_predicate; only fulfillers passing the
+    ; predicate survive into the ranking step. The Matched
+    ; APPEND happens only on the path where all three checks
+    ; succeeded.
+    ; ============================================================
+
+    (obligation 1 "policy gating"
+      (Forall {entry : Entry}
+        (Implies
+          (And (Eq (Project entry (Lit "kind")) (Lit "Matched"))
+               (InWeave entry))
+          (And
+            (And
+              (Holds (Project entry (Lit "policy_cap_id"))
+                     (Project entry (Lit "inviting_mind"))
+                     (StateAtAppend entry))
+              (Not (Revoked (Project entry (Lit "policy_cap_id"))
+                            (StateAtAppend entry))))
+            (PredicateTrue
+              (Project entry (Lit "policy_cap_id"))
+              (Project entry (Lit "intent"))
+              (Project entry (Lit "fulfiller_hash")))))))
+
+      :tree
+        (ForallI :var (entry : Entry)
+          (ImpI :hyp (And (Eq (Project entry (Lit "kind")) (Lit "Matched"))
+                          (InWeave entry))
+            (AndI
+              ; --- held + not revoked ---
+              (AndI
+                (LemmaApp :lemma "S-06/match-traps-on-not-held"
+                  :args ((Var entry))
+                  ; Reading of S-06/match lines ~30-40: CAPHELD
+                  ; check + JMPZ +trap_nopolicy. A Matched
+                  ; entry's existence implies CAPHELD returned
+                  ; true at append time.
+                  (Refl))
+                (LemmaApp :lemma "S-06/match-traps-on-revoked-policy"
+                  :args ((Var entry))
+                  ; Reading of S-06/match lines ~46-55: the
+                  ; S-02/lookup call's result is checked
+                  ; against BOTTOM_HASH; JMPZ +trap_nopolicy on
+                  ; equality. Lifted through S-02 obligation 4
+                  ; (a non-BOTTOM lookup result implies the
+                  ; cap is alive).
+                  (S02 :obligation 4
+                    :args ((Project (Var entry) (Lit "policy_cap_id"))))))
+              ; --- predicate evaluated true on (intent, fulfiller) ---
+              (LemmaApp :lemma "S-06/filter-by-predicate-keeps-only-passing"
+                :args ((Var entry))
+                ; Reading of S-06/match lines ~115-130: the
+                ; filter_by_predicate helper takes a vec and
+                ; returns the subset that passed the policy
+                ; cap's predicate. The chosen fulfiller (top
+                ; of the ranked vec) is necessarily one that
+                ; passed.
+                (Refl)))))))
+
+
+    ; ============================================================
+    ; Obligation 2: Sub-intent containment (A4.4)
+    ;
+    ; "For every Matched entry on a sub-intent, the chosen
+    ;  fulfiller is a member of the intersection of admissible
+    ;  sets along the entire parent chain, computed at match
+    ;  time from the parents' policy caps as they stand at
+    ;  match time."
+    ;
+    ; Discharge: structural reading of parent_chain_intersect
+    ; helper. The helper walks intent.parent up to root,
+    ; collecting each parent's enumerate_via_cap result, and
+    ; folds by vec_intersect. The resulting vec is the
+    ; intersection. The body's later steps then intersect this
+    ; with the current intent's own enumerate_via_cap result —
+    ; intersection is associative, so the result is the full
+    ; chain intersection.
+    ; ============================================================
+
+    (obligation 2 "sub-intent containment"
+      (Forall {entry : Entry}
+        (Implies
+          (And (Eq (Project entry (Lit "kind")) (Lit "Matched"))
+               (And (InWeave entry)
+                    (HasParentChain (Project entry (Lit "intent")))))
+          (Member
+            (Project entry (Lit "fulfiller_hash"))
+            (ParentChainIntersection
+              (Project entry (Lit "intent"))
+              (StateAtAppend entry))))))
+
+      :tree
+        (ForallI :var (entry : Entry)
+          (ImpI :hyp (And (Eq (Project entry (Lit "kind")) (Lit "Matched"))
+                          (And (InWeave entry)
+                               (HasParentChain (Project entry (Lit "intent")))))
+            (LemmaApp :lemma "S-06/parent-chain-intersect-is-intersection"
+              :args ((Var entry))
+              ; The helper's body folds vec_intersect over the
+              ; parents. The fold is the standard structural
+              ; recursion: empty parent list returns universe,
+              ; cons returns intersect(head_enum, fold(tail)).
+              ; The chosen fulfiller comes from the top of a
+              ; vec that was further intersected with the
+              ; current intent's enumerate result, so it is in
+              ; both — therefore in the full chain intersection.
+              (IndList :var (parents : Vec<Hash>)
+                ; Base: parents = [] → universe ∩ X = X.
+                (Refl)
+                ; Inductive: parents = p : rest.
+                (ForallI :var (p : Hash)
+                  (ForallI :var (rest : Vec<Hash>)
+                    (ImpI :hyp (ParentChainContainsFulfiller rest)
+                      (LemmaApp :lemma "S-06/vec_intersect-correct"
+                        :args ((Var p) (Var rest))
+                        (Hyp))))))))))
+
+
+    ; ============================================================
+    ; Obligation 3: No-ambient-fulfillers (I10 instantiated to matching)
+    ;
+    ; "No operation in the matcher's exported surface returns a
+    ;  FulfillerHash whose existence the caller could not have
+    ;  derived from a policy cap the caller held before the call."
+    ;
+    ; Discharge: type-level inspection of the (exports ...) block
+    ; in S-06-intent-match.form, identical in shape to S-03
+    ; obligation 6 and S-04 obligation 5. The block contains
+    ; exactly one export: (match (Hash, CapId) → MatchResult).
+    ; The MatchResult's only constructor that contains a
+    ; FulfillerHash is Matched{fulfiller, …}, and the fulfiller
+    ; field is *function-of-arguments*: the body never produces
+    ; a fulfiller hash from anywhere except enumerate_via_cap
+    ; calls on the policy cap arguments.
+    ; ============================================================
+
+    (obligation 3 "no-ambient-fulfillers"
+      (Forall {op : ExportedOperation}
+        (Implies (Member op (ExportsOf S-06))
+          (FulfillersAreFunctionOfArguments (ReturnTypeOf op)))))
+
+      :tree
+        (ForallI :var (op : ExportedOperation)
+          (ImpI :hyp (Member (Var op) (ExportsOf S-06))
+            (Trans
+              (LemmaApp :lemma "exports-block-type-level-inspection"
+                :args ((Var op) (Lit S-06))
+                ; The S-06 (exports ...) block contains exactly
+                ; (match (Hash, CapId) → MatchResult). One
+                ; export. The walker enumerates this finite
+                ; static list at parse time.
+                (S03 :obligation 6
+                  :args ((Lit S-06))))
+              (LemmaApp :lemma "S-06/match-fulfiller-from-policy-cap-only"
+                :args ()
+                ; Reading of S-06/match: the only sources of
+                ; fulfiller hashes in the body are
+                ; parent_chain_intersect (which calls
+                ; enumerate_via_cap on each parent's policy cap)
+                ; and the direct enumerate_via_cap call on the
+                ; current policy cap. Both are operations on
+                ; capabilities the caller already passed in.
+                ; There is no S-06/list_fulfillers Form
+                ; anywhere in the file.
+                (Refl)))))
+
+
+    ; ============================================================
+    ; Obligation 4: Determinism (I7 instantiated to matching)
+    ;
+    ; "Given two states S, S' with identical intent substances,
+    ;  identical policy cap states, and identical fulfiller
+    ;  substances reachable through the policy caps, the matcher
+    ;  returns identical MatchResults and appends identical
+    ;  Matched entries (modulo the sub-attention id assigned by
+    ;  S-05, which is itself deterministic under S-05's I7
+    ;  discharge)."
+    ;
+    ; Discharge: structural reading of S-06/match plus the
+    ; absence of any IL opcode for clock/entropy/network/sensor
+    ; in the body. Same shape as S-05 obligation 4.
+    ; ============================================================
+
+    (obligation 4 "determinism"
+      (Forall {S S' : HabitatState}
+        (Implies
+          (And (Eq (IntentsOf S) (IntentsOf S'))
+               (And (Eq (CapStateOf S) (CapStateOf S'))
+                    (Eq (FulfillerSubstancesOf S) (FulfillerSubstancesOf S'))))
+          (Eq (CallMatch S) (CallMatch S')))))
+
+      :tree
+        (ForallI :var (S : HabitatState)
+          (ForallI :var (S' : HabitatState)
+            (ImpI :hyp (And (Eq (IntentsOf S) (IntentsOf S'))
+                            (And (Eq (CapStateOf S) (CapStateOf S'))
+                                 (Eq (FulfillerSubstancesOf S) (FulfillerSubstancesOf S'))))
+              (AndI
+                (LemmaApp :lemma "S-06/match-is-pure-function"
+                  :args ((Var S) (Var S'))
+                  ; The body's only inputs are:
+                  ;   - intent_hash (READ via S-03)
+                  ;   - policy_cap_id (lookup via S-02)
+                  ;   - parent chain (walked via S-04 why)
+                  ;   - per-cap predicate evaluations (calls
+                  ;     into the cap's predicate Form, which
+                  ;     is itself pure by I7)
+                  ; All sources are content-addressed substances.
+                  (Refl))
+                (LemmaApp :lemma "S-06/no-entropy-clock-network-sensor-cap"
+                  :args ()
+                  ; The :declared-caps list of S-06/match is
+                  ; (S-04/APPEND S-02/TREAP_RO S-03/ROOT_RO
+                  ;  S-05/FOREST_RW). None is an Entropy/Clock/
+                  ; Network/SensorInput cap. Composes with
+                  ; S-07 obligation 4 (no MINT) for the
+                  ; "cannot acquire mid-call" half.
+                  (Refl)))))))
+
+
+    ; ============================================================
+    ; Obligation 5: Acceptance form preservation (A4.5)
+    ;
+    ; "For every Matched entry, entry.acceptance_form_hash =
+    ;  intent.acceptance_form_hash. The matcher neither drops
+    ;  nor rewrites the acceptance field."
+    ;
+    ; Discharge: trivial structural lemma. The body of S-06/match
+    ; at line ~155 projects intent.acceptance_form into locals[12],
+    ; and at line ~165 the MAKEVEC for the Matched entry uses
+    ; locals[12] as one of its positions. No transformation
+    ; happens between the projection and the MAKEVEC.
+    ; ============================================================
+
+    (obligation 5 "acceptance form preservation"
+      (Forall {entry : Entry}
+        (Implies
+          (And (Eq (Project entry (Lit "kind")) (Lit "Matched"))
+               (InWeave entry))
+          (Eq
+            (Project entry (Lit "acceptance_form_hash"))
+            (Project (Project entry (Lit "intent")) (Lit "acceptance_form"))))))
+
+      :tree
+        (ForallI :var (entry : Entry)
+          (ImpI :hyp (And (Eq (Project entry (Lit "kind")) (Lit "Matched"))
+                          (InWeave entry))
+            (LemmaApp :lemma "S-06/acceptance-form-projected-and-copied-verbatim"
+              :args ((Var entry))
+              ; Reading of S-06/match lines ~150-165:
+              ;   STORE 12  ← intent.acceptance_form
+              ;   ...
+              ;   LOAD 12   ← used directly in MAKEVEC 5 for
+              ;               the Matched entry
+              ; No CALL, no transformation, no SEAL+UNSEAL of
+              ; locals[12] between these two instructions. The
+              ; field is byte-equal in the Matched entry.
+              (Refl)))))
+
+
+    ; ============================================================
+    ; Obligation 6: Budget conservation at handoff (I6 hand-off)
+    ;
+    ; "For every Matched entry, the sub-attention allocated to
+    ;  the fulfiller has budget ≤ min(intent.budget,
+    ;  parent_attention.remaining)."
+    ;
+    ; Discharge: composition with S-05 obligation 1. The body
+    ; calls S-05/split with intent.budget as the child budget.
+    ; S-05/split's own body checks parent.remaining ≥ child
+    ; budget and traps EOVERBUDGET on failure. So the allocated
+    ; sub-attention's budget is ≤ both. The min is implicit in
+    ; the conjunction of "intent.budget passed to split" + "split
+    ; refuses if > parent.remaining".
+    ; ============================================================
+
+    (obligation 6 "budget conservation at handoff"
+      (Forall {entry : Entry}
+        (Implies
+          (And (Eq (Project entry (Lit "kind")) (Lit "Matched"))
+               (InWeave entry))
+          (Le
+            (Project (LookupAttention (Project entry (Lit "sub_attention_id"))
+                                      (StateAtAppend entry))
+                     (Lit "budget_remaining"))
+            (Min
+              (Project (Project entry (Lit "intent")) (Lit "budget"))
+              (Project (LookupAttention (Project entry (Lit "parent_attention_id"))
+                                        (StateAtAppend entry))
+                       (Lit "budget_remaining")))))))
+
+      :tree
+        (ForallI :var (entry : Entry)
+          (ImpI :hyp (And (Eq (Project entry (Lit "kind")) (Lit "Matched"))
+                          (InWeave entry))
+            (Trans
+              (LemmaApp :lemma "S-06/match-passes-intent-budget-to-split"
+                :args ((Var entry))
+                ; Reading of S-06/match lines ~135-145: the
+                ; body LOADs intent.budget into locals[10] and
+                ; passes locals[10] as the second argument to
+                ; S-05/split.
+                (Refl))
+              (S05 :obligation 1
+                :args ()
+                ; S-05/split's own body checks remaining ≥
+                ; child_budget and traps EOVERBUDGET on
+                ; failure. S-05 obligation 1 (budget
+                ; conservation) lifts this to "the allocated
+                ; sub-attention budget ≤ parent's at split
+                ; time", which combined with the equality
+                ; above gives the min.
+                ))))
+
+  )
+
+  :rationale-hash $$BLAKE3$$/breakdown-s06
+)
+
+
+; ============================================================
+; Discharge dependencies
+;
+; Cited obligations from other Forms:
+;   - S-02 obligation 4: lookup soundness
+;     (used in obligation 1 for the policy cap aliveness check)
+;   - S-03 obligation 6: no enumeration
+;     (used in obligation 3 — same type-level discharge shape)
+;   - S-05 obligation 1: budget conservation
+;     (used in obligation 6 for the handoff bound)
+;
+; All three are already discharged. This proof is FULLY
+; END-TO-END CHECKABLE on landing.
+;
+; CASCADE: this proof closes a structural prerequisite for S-11.
+; S-11's proof (when written) will cite S-06 obligations 1, 2,
+; 5, and 6 at every Bridge → matcher → handoff leaf. Without
+; this proof, S-11 would have four pending leaves.
+;
+; New verification chain status (post-S-06):
+;   - end-to-end checkable: S-01, S-02, S-03, S-04, S-05, S-06,
+;     S-07 (seven of eleven)
+;   - artifact exists with pending leaves: none
+;   - no artifact yet: S-09, S-10, S-11
+;   - bootstrap exception: S-08
+;
+; The closed subgraph grows from "the substrate layer" to "the
+; substrate layer plus matching". Pending Forms are now:
+;   - S-08 (bootstrap exception, three layered discharges)
+;   - S-09 (synthesis state machine)
+;   - S-10 (reflexive sub-mind)
+;   - S-11 (bridge)
+;
+; Lemmas this proof draws from the abstract-model lemma library:
+;   - S-06/match-traps-on-not-held
+;   - S-06/match-traps-on-revoked-policy
+;   - S-06/filter-by-predicate-keeps-only-passing
+;   - S-06/parent-chain-intersect-is-intersection
+;   - S-06/vec_intersect-correct
+;   - S-06/match-fulfiller-from-policy-cap-only
+;   - S-06/match-is-pure-function
+;   - S-06/no-entropy-clock-network-sensor-cap
+;   - S-06/acceptance-form-projected-and-copied-verbatim
+;   - S-06/match-passes-intent-budget-to-split
+;   - exports-block-type-level-inspection
+;
+; All ten S-06-prefixed lemmas are structural readings of
+; S-06-intent-match.form's body. The kernel-author identities
+; verify them as part of the inspection record.
+; ============================================================

@@ -42,7 +42,7 @@ What is in the repository as of this commit:
 | Seed manifest       | `kernel/manifest.json`                                               | binds sources/proofs/immediates             |
 | Helpers             | `kernel/forms/helpers/`                                              | 1 of N (canonicaliser)                      |
 | Proof term language | `kernel/PROOF.md`                                                    | 12 sorts, 17 constructors, 29-rule table    |
-| Proof artifacts     | `kernel/forms/S-XX-*.proof`                                          | 6 of 11 (S-01..S-05, S-07; **substrate layer fully closed**) |
+| Proof artifacts     | `kernel/forms/S-XX-*.proof`                                          | 7 of 11 (S-01..S-07; **substrate + matching closed**) |
 | Inspection record   | `kernel/forms/S-08-*.inspection-record.md`                           | not yet written                             |
 | Kernel-author keys  | `kernel/manifest.json` (`kernel_authors.identities`)                 | placeholders                                |
 
@@ -69,7 +69,7 @@ recurse through the proof tree without bottoming out at
 | S-03 `substance_store`  | ✓ | none                          | **yes** (the floor — no cross-Form deps) |
 | S-04 `weave_log`        | ✓ | none                          | **yes** (only cites S-03) |
 | S-05 `attention_alloc`  | ✓ | none                          | **yes** (cites S-02, S-04 — both closed) |
-| S-06 `intent_match`     | — | —                             | (no artifact yet) |
+| S-06 `intent_match`     | ✓ | none                          | **yes** (cites S-02, S-03, S-05 — all closed) |
 | S-07 `form_runtime`     | ✓ | none                          | **yes** (last leaf S-05 #4 just closed) |
 | S-08 `proof_checker`    | — | bootstrap exception           | (inspection-record discharge is out of band) |
 | S-09 `synth_kernel`     | — | —                             | (no artifact yet) |
