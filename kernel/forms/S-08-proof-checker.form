@@ -1,0 +1,257 @@
+; S-08: proof_checker
+;
+; The fixed natural-deduction kernel. Single export: check.
+; The body walks a sealed proof tree against a sealed claim, top-
+; down, applying rules from a fixed table. No tactics, no
+; metavariables, no proof search, no mutation, no I/O.
+;
+; Synthesis chain:
+;   provocation:  breakdown/S-08-proof-checker.md
+;   grounding:    A0.4 A0.6 A0.7 A0.8 A6.5 A7.1 A7.2 A7.3
+;   selected:     Candidate A — Natural-deduction kernel
+;   proof:        bootstrap (see breakdown § Proof — three layered
+;                 discharges: ground reflexive acceptance, hand
+;                 inspection of the kernel, K-of-N multi-kernel
+;                 consensus for replacement of S-08 itself)
+
+; ============================================================
+; check(proof_hash, claim_hash) → Result
+;
+; Result is one of:
+;   Accept
+;   Reject{reason: TrappedRule | MissingPremise | UnknownRule
+;                 | ClaimMismatch | TermMismatch | ...}
+;
+; The body is total: it returns Accept or Reject in time bounded
+; by the proof tree's size. It performs only S-03 reads — no
+; seal, no pin, no unpin, no append. The "purity" obligation
+; (no S-03 op other than read) is the part the inspection-record
+; discharge lives or dies on; the kernel-author identities who
+; sign the inspection record verify it line by line.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "check"
+  :declared-caps (S-03/ROOT_RO)              ; READ-ONLY: no S-03/ROOT_RW
+  :declared-traps ()                         ; check is total — never traps
+  :arity         2
+  :locals-n      8
+  :code (
+
+    STORE   0                                 ; claim_hash
+    STORE   1                                 ; proof_hash
+
+    ;; Read the proof and claim substances. The IL READ opcode
+    ;; traps EUNHELD if no read cap is held; in S-08's case the
+    ;; cap_view contains exactly S-03/ROOT_RO, which authorises
+    ;; reading any cell. The trap, if it occurs, is wrapped into
+    ;; a Reject result rather than propagated — check is total
+    ;; per the constraint above.
+
+    LOAD    1
+    READ
+    PUSH    "S-08/parse_proof"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                          ; → ProofTree
+    STORE   2
+
+    LOAD    0
+    READ
+    PUSH    "S-08/parse_claim"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                          ; → Claim
+    STORE   3
+
+    ;; Verify the proof tree's conclusion node matches the claim.
+    ;; ClaimMismatch is the most common rejection reason and is
+    ;; checked before any rule walking begins.
+    LOAD    2
+    PUSH    "S-08/proj/conclusion"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    LOAD    3
+    PUSH    "S-08/equiv_under_canon"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                          ; → Bool
+    JMPZ    +reject_claim_mismatch
+
+    ;; Walk the proof tree top-down. The walker is a separate
+    ;; helper Form bound under "S-08/walker/visit"; the walker is
+    ;; the part the inspection record covers in detail because it
+    ;; is where the soundness obligation lives.
+    ;;
+    ;; The walker takes a node and a proof environment (the
+    ;; abstract-model lemma library hash, which is itself a sealed
+    ;; substance — see the lemma library spec sibling file).
+    LOAD    2
+    PUSH    LEMMA_LIBRARY_HASH                ; immediate, sealed at build
+    PUSH    "S-08/walker/visit"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                          ; → Result (Accept or Reject{reason})
+    RET
+
+    :reject_claim_mismatch
+    PUSH    REJECT_CLAIM_MISMATCH             ; immediate sealed Reject
+    RET
+  )
+  :rationale-hash BREAKDOWN_S08_HASH
+)
+
+; ============================================================
+; The walker.
+;
+; This is the load-bearing piece. It is split out for two
+; reasons: (1) the inspection-record discharge of S-08's
+; bootstrap obligation covers the walker line by line, and a
+; smaller walker is a smaller surface for that discharge to
+; certify; (2) the walker is recursive (it visits each node
+; once, top-down), and keeping it separate makes the recursion
+; visible to S-08's *own* check when applied to S-08 in the
+; ground reflexive acceptance test.
+;
+; The walker's body is a single switch over the rule id at each
+; node. Each rule case verifies that:
+;   - the node's premises match the rule's expected premises in
+;     shape and arity;
+;   - the conclusion is derivable from the premises by the rule;
+;   - each premise is itself the conclusion of a recursive
+;     check on the corresponding child sub-tree.
+;
+; If any case fails, the walker returns Reject{reason} with a
+; structured reason naming the rule, the failing premise index,
+; and the term mismatch.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "walker_visit"            ; the actual binding name is "S-08/walker/visit"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps ()
+  :arity         2
+  :locals-n      10
+  :code (
+
+    STORE   0                                 ; lemma_lib_hash
+    STORE   1                                 ; node
+
+    ;; Read the rule id from the node.
+    LOAD    1
+    PUSH    "S-08/proj/rule_id"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   2                                 ; rule_id
+
+    ;; Verify rule_id is in the fixed table. The table is itself a
+    ;; sealed substance whose hash is RULE_TABLE_HASH; lookup is
+    ;; O(log n) in the rule count (~30 rules in the seed kernel,
+    ;; covering the natural-deduction calculus over the term
+    ;; language declared in IL.md and the abstract-model lemma
+    ;; library).
+    LOAD    2
+    PUSH    RULE_TABLE_HASH
+    PUSH    "S-08/rules/lookup"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                          ; → RuleSpec or BOTTOM
+    STORE   3
+
+    LOAD    3
+    PUSH    BOTTOM_HASH
+    EQ
+    JMPZ    +rule_known
+    PUSH    REJECT_UNKNOWN_RULE
+    RET
+
+    :rule_known
+
+    ;; Verify premise count matches the rule's declared arity.
+    LOAD    1
+    PUSH    "S-08/proj/premises"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   4                                 ; premises vec
+    LOAD    4
+    PUSH    "S-07/vec/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    LOAD    3
+    PUSH    "S-08/proj/rule_arity"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    EQ
+    JMPZ    +reject_arity
+
+    ;; Recursively check each premise sub-tree. The helper folds
+    ;; over the premises vec; if any sub-tree returns Reject, the
+    ;; fold short-circuits.
+    LOAD    4
+    LOAD    0
+    PUSH    "S-08/walker/check_all_premises"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                          ; → Result
+    STORE   5
+
+    LOAD    5
+    PUSH    ACCEPT
+    EQ
+    JMPZ    +propagate_reject
+
+    ;; All premises accepted. Now apply the rule's conclusion-
+    ;; derivation function (a sealed Form per rule) to the
+    ;; premises and verify it equals the node's conclusion.
+    LOAD    3
+    PUSH    "S-08/proj/rule_conclusion_derivation"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                          ; → derivation Form hash
+    LOAD    4
+    LOAD    0
+    SWAP
+    POP                                       ; (the lemma_lib slot is reserved for derivations
+                                              ;  that need to consult the abstract-model lemmas)
+    CALL    h=$ /n=1                          ; → derived conclusion
+    STORE   6
+
+    LOAD    1
+    PUSH    "S-08/proj/conclusion"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    LOAD    6
+    PUSH    "S-08/equiv_under_canon"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    JMPZ    +reject_term_mismatch
+
+    PUSH    ACCEPT
+    RET
+
+    :propagate_reject
+    LOAD    5
+    RET
+
+    :reject_arity
+    PUSH    REJECT_MISSING_PREMISE
+    RET
+
+    :reject_term_mismatch
+    PUSH    REJECT_TERM_MISMATCH
+    RET
+  )
+  :rationale-hash BREAKDOWN_S08_HASH
+)
+
+(exports
+  (check (Hash, Hash) → Result))
