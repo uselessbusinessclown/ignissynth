@@ -179,7 +179,7 @@
     "IGNITED_FORM_HASH":           { "type": "Hash", "value": "$$BLAKE3$$/ignited", "_note": "the zero-arity Form defined inline at the bottom of S-01-ignite.form whose only effect is to TRAP EIGNITED" },
     "PROOF_CHECKER_HASH":          { "type": "Hash", "value": "$$BLAKE3$$/forms/S-08-proof-checker", "_note": "the hash of the canonicalised S-08 Form bytes; used by S-09 and S-10 for the bootstrap-locked check" },
     "RULE_TABLE_HASH":             { "type": "Hash", "value": "$$BLAKE3$$/rule-table", "_note": "the sealed S-08 rule table substance; the inspection record covers it line by line" },
-    "LEMMA_LIBRARY_HASH":          { "type": "Hash", "value": "$$BLAKE3$$/lemma-library", "_note": "the abstract-model lemma library substance the walker takes as given" },
+    "LEMMA_LIBRARY_HASH":          { "type": "Hash", "value": "$$BLAKE3$$/lemma-library", "_note": "the abstract-model lemma library substance the walker takes as given. Source document: kernel/lemma-library.md (105 lemmas across 14 source groups). The build process canonicalises the document and seals it through S-03 with type tag LemmaLibrary/v1; this placeholder is replaced with the actual hash post-sealing." },
     "BRIDGE_INBOUND_ENDPOINT_HASH":{ "type": "Hash", "value": "$$BLAKE3$$/bridge-endpoint" },
     "HEARTBEAT_QUANTUM":           { "type": "Nat",  "value": 256 },
     "BRIDGE/POLICY_CAP":           { "type": "CapId", "value": "$$BLAKE3$$/bridge-policy-cap", "_note": "the policy cap held by the bridge mind, attenuated at ignition from the bootstrap caps" },
