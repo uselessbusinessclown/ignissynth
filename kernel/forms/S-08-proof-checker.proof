@@ -1,0 +1,260 @@
+; S-08: proof_checker — proof artifact
+;
+; The bootstrap exception. Discharges the three layered
+; obligations declared in breakdown/S-08-proof-checker.md:
+;   1. Ground reflexive acceptance — the only obligation that
+;      fits inside a .proof artifact, discharged by the
+;      WitnessExec rule with a ground execution trace as the
+;      witness.
+;   2. Hand inspection of the kernel — out of band; discharged
+;      by the ExternalDischarge rule pointing to the inspection
+;      record substance signed by the kernel-author identities.
+;   3. K-of-N multi-kernel consensus for replacement — out of
+;      band; discharged by the ExternalDischarge rule pointing
+;      to the consensus protocol substance, which is invoked
+;      only at S-08 replacement time and is empty until then.
+;
+; The first two ExternalDischarge documents do not yet exist as
+; sealed substances; their hashes are placeholders that the
+; build process will resolve when the inspection record is
+; drafted (item 9 of the v0.1.0 checklist) and when the
+; consensus protocol substance is sealed (post-v0.1.0). Until
+; those substances exist, this proof's obligations 2 and 3
+; will fail at the seed loader's pre-check, but the *structure*
+; of the discharge is in place — the narrow ExternalDischarge
+; rule names exactly which documents are needed and where they
+; will live.
+;
+; Synthesis chain:
+;   provocation:  S-09's proof will cite S-08 indirectly through
+;                 every Stage 6 check call. Without S-08's own
+;                 proof artifact, S-09's proof has a structural
+;                 leaf with no referent. This artifact gives
+;                 the leaf a target.
+;   grounding:    A0.4, A0.6, A0.7, A0.8, A6.5, A7.1, A7.2, A7.3
+;   composes_with:
+;                 - S-03 obligation 1 (hash determinism) for the
+;                   ground reflexive trace's seal-of-claim step
+;                 - S-03 obligation 2 (cell immutability) for
+;                   the witness's read-of-S-08-bytes step
+;                 - S-07 obligation 6 (self-execution liveness)
+;                   indirectly: WitnessExec is the same rule
+;                   shape, and the ground trace runs through
+;                   the runtime that S-07 #6 already proved
+;                   exhibits a finite execution
+
+(proof
+  :claim         (claim
+    :invariant_id      "I9"               ; the most-load-bearing for proof_checker
+    :form_hash_before  BOTTOM_HASH        ; proof_checker is seed-original
+    :form_hash_after   $$BLAKE3$$/forms/S-08-proof-checker
+    :env               ()
+    :obligation        CHECKER_THREE_OBLIGATIONS_CONJUNCTION)
+
+  :rule_tree (AndI
+
+    ; ============================================================
+    ; Obligation 1: Ground reflexive acceptance
+    ;
+    ; Term:
+    ;   Eq (call S-08/check
+    ;            (proof: S-08-self-acceptance-proof,
+    ;             claim: S-08-self-acceptance-claim))
+    ;      Accept
+    ;
+    ; The "self-acceptance claim" is the trivial claim that
+    ; S-08 preserves I4, I9, and I10 against itself. The
+    ; "self-acceptance proof" is a small proof tree whose every
+    ; node is one of the always-admissible structural rules
+    ; (Refl, AndI, Cong over the canonical S-08 bytes) — i.e.,
+    ; a proof that S-08 trivially preserves invariants its own
+    ; surface enforces structurally (S-03/ROOT_RO declared-caps
+    ; for I10 and I4 hand-off; empty declared-traps for the
+    ; totality property the walker depends on; the exports
+    ; block enumerated for I9).
+    ;
+    ; Discharge: WitnessExec. The witness is the sealed
+    ; ExecutionTrace substance whose contents are produced by
+    ; the seed build process: it runs S-08/check on the
+    ; (self-acceptance proof, self-acceptance claim) inputs
+    ; under S-07's interpreter, observes the result, and seals
+    ; the trace. The walker, when it reaches this leaf, reads
+    ; the trace substance, verifies the last step is
+    ; "result = ACCEPT" and the form_hash field is the
+    ; current S-08 hash, and accepts the obligation.
+    ;
+    ; This is "necessary, not sufficient" per the breakdown:
+    ; a maximally-permissive checker that accepted everything
+    ; would also pass this test. The other two obligations
+    ; below are what make sufficiency credible.
+    ; ============================================================
+
+    (obligation 1 "ground reflexive acceptance"
+      (Eq
+        (CallCheck
+          (Lit S-08-SELF-ACCEPTANCE-PROOF-HASH)
+          (Lit S-08-SELF-ACCEPTANCE-CLAIM-HASH))
+        (Lit ACCEPT))
+
+      :tree
+        (WitnessExec
+          ; The witness is sealed under
+          ;   $$BLAKE3$$/witnesses/S-08-ground-reflexive-acceptance
+          ; and contains a finite execution trace of S-07's
+          ; interpreter running S-08/check on the self-acceptance
+          ; inputs. The trace's last step asserts ACCEPT.
+          ;
+          ; PROOF.md restricts WitnessExec to (S-07 #6, S-08 #1,
+          ; S-09 #8) so the rest of the seed cannot lean on
+          ; ground witnesses for properties that should be
+          ; discharged structurally. S-08 #1 is admitted to
+          ; the set because the bootstrap exception's necessary
+          ; condition IS a self-execution liveness statement:
+          ; the runtime executes S-08 on itself and the result
+          ; is Accept. The structural alternative — proving
+          ; checker soundness from the rule walker's body —
+          ; would itself require S-08 to check it, which is
+          ; the circularity the bootstrap discharge exists to
+          ; break.
+          ))
+
+
+    ; ============================================================
+    ; Obligation 2: Hand inspection of the kernel
+    ;
+    ; "The natural-deduction kernel — rule walker plus rule
+    ;  table plus abstract-model lemma library — fits in the
+    ;  budget declared in the constraint and is small enough to
+    ;  be read in a single sitting. The discharge artifact is
+    ;  a kernel/forms/S-08-proof-checker.inspection-record.md
+    ;  substance whose content is a line-by-line review by
+    ;  every kernel-author identity in the seed's bootstrap
+    ;  manifest."
+    ;
+    ; Discharge: ExternalDischarge naming the inspection record
+    ; substance. The walker, when it reaches this leaf, verifies
+    ; that a substance exists at the named hash; it does not
+    ; validate the content. The kernel-author identities sign
+    ; the substance off-line; the seed loader checks the
+    ; signatures match the kernel_authors.identities array in
+    ; manifest.json before binding S-08.
+    ;
+    ; STATUS: the inspection record substance does not yet
+    ; exist. This obligation will fail at the seed loader's
+    ; pre-check until item 9 of the v0.1.0 checklist is done
+    ; (drafting the inspection record). The structural shape
+    ; of the discharge — the narrow rule, the named document,
+    ; the verification path — is in place; only the document's
+    ; bytes are missing.
+    ; ============================================================
+
+    (obligation 2 "hand inspection of the kernel"
+      (DocumentExists (Lit S-08-INSPECTION-RECORD-HASH))
+
+      :tree
+        (ExternalDischarge
+          (Lit "kernel/forms/S-08-proof-checker.inspection-record.md")))
+
+
+    ; ============================================================
+    ; Obligation 3: K-of-N multi-kernel consensus for replacement
+    ;
+    ; "Replacement of S-08 is allowed only by a synthesis act
+    ;  whose Synthesized entry is co-signed by the kernels of
+    ;  K ≥ 3 independent habitat instances, each of which has
+    ;  run its own copy of the candidate replacement against
+    ;  the seed's inspection-record corpus and returned Accept."
+    ;
+    ; Discharge: ExternalDischarge naming the consensus protocol
+    ; substance. The substance is empty until the first actual
+    ; replacement attempt against S-08, at which point the K
+    ; co-signatures land in it. Until then, the document
+    ; "exists" in the manifest as a placeholder hash that the
+    ; loader recognises but does not require any signatures
+    ; in (because no replacement has been attempted yet —
+    ; the seed itself is the first version, not a replacement).
+    ;
+    ; STATUS: like obligation 2, the substance does not yet
+    ; exist as a sealed payload — but unlike obligation 2,
+    ; this one is *expected* to remain empty until S-08 is
+    ; replaced for the first time. The seed loader treats
+    ; "empty consensus document" as valid for the first
+    ; binding of S-08 and as invalid for any later replacement.
+    ; This is the only seed obligation whose discharge is
+    ; explicitly expected to remain "vacuously satisfied"
+    ; for the entire pre-replacement lifetime of the habitat.
+    ; ============================================================
+
+    (obligation 3 "K-of-N multi-kernel consensus for replacement"
+      (DocumentExists (Lit S-08-CONSENSUS-PROTOCOL-HASH))
+
+      :tree
+        (ExternalDischarge
+          (Lit "kernel/forms/S-08-proof-checker.consensus-protocol.json")))
+
+  )
+
+  :rationale-hash $$BLAKE3$$/breakdown-s08
+)
+
+
+; ============================================================
+; Discharge dependencies
+;
+; This proof's mechanizable obligation (1, ground reflexive
+; acceptance) cites:
+;   - S-03 obligation 1: hash determinism
+;     (the witness's seal-of-claim step depends on it)
+;   - S-03 obligation 2: cell immutability
+;     (the witness's read-of-S-08-bytes step depends on it)
+;   - S-07 obligation 6: self-execution liveness (indirectly)
+;     (WitnessExec is the same rule shape; the witness runs
+;      through the runtime that S-07 #6 already proved exhibits
+;      a finite execution on the self-application case)
+;
+; All three are already discharged.
+;
+; The non-mechanizable obligations (2, 3) cite no other proofs.
+; They cite *documents* that the build process must produce
+; before the seed loader will accept S-08 at boot. The
+; ExternalDischarge rule's contract is "the substance exists
+; at the named hash"; it does not contract on contents.
+;
+; STATUS:
+;   - Obligation 1: discharged structurally via WitnessExec.
+;     The witness substance's hash is a placeholder until the
+;     seed build process produces the actual trace, but the
+;     proof tree's shape is admissible.
+;   - Obligation 2: pending external discharge. Inspection
+;     record draft is item 9 of the v0.1.0 checklist.
+;   - Obligation 3: vacuously satisfied for the pre-replacement
+;     lifetime. Becomes load-bearing only at the first S-08
+;     replacement.
+;
+; This proof closes the structural piece of the bootstrap
+; exception — the part that the seed itself can verify. The
+; other two pieces are out of band by construction (A7.3:
+; "checked by a small trusted checker, itself a Form, itself
+; synthesizable but only via a bootstrapping protocol that
+; requires consensus among multiple independent kernels").
+;
+; What this proof MAKES POSSIBLE: S-09's proof can now compose
+; against S-08 obligation 1 at every Stage 6 check call leaf.
+; S-09 has been blocked on S-08 having any artifact at all;
+; after this lands, S-09 has a structural target to compose
+; against, even though obligations 2 and 3 remain pending
+; external discharges.
+;
+; Verification chain status (post-S-08-structural):
+;   - end-to-end checkable structurally: S-01..S-07 (seven)
+;   - structurally complete with pending external discharges:
+;     S-08 (one, the bootstrap exception)
+;   - no artifact yet: S-09, S-10, S-11
+;
+; The seed's proof load now has exactly one form (S-08) whose
+; full discharge requires out-of-band signatures and exactly
+; three forms (S-09, S-10, S-11) whose proof artifacts have
+; not yet been written. After those three are written and
+; the inspection record is drafted, the entire seed's proof
+; load is structurally complete.
+; ============================================================
