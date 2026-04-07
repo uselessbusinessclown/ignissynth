@@ -1,0 +1,486 @@
+; S-04: weave_log — proof artifact
+;
+; Discharges the six obligations declared in
+; breakdown/S-04-weave-log.md:
+;   1. Tip uniqueness
+;   2. Append totality
+;   3. No amendment
+;   4. Why-query soundness and completeness
+;   5. No enumeration
+;   6. Grounding obligation for synthesised entries (I8)
+;
+; Format: kernel/PROOF.md term language. The walker reads this
+; through S-08/parse_proof.
+;
+; Synthesis chain:
+;   provocation:  S-01's proof composes with S-04 obligations 1
+;                 and 6 at its leaves; without this artifact,
+;                 those leaves return Reject{MissingDependency}.
+;                 More broadly, no Form whose body uses APPEND
+;                 (which is most of them) can have a complete
+;                 proof until S-04's own obligations are
+;                 discharged.
+;   grounding:    A0.4, A0.8, A1.1, A1.4, A5.1..A5.5, I4, I5, I8, I10
+;   composes_with:
+;                 - S-03 obligation 1 (hash determinism) for
+;                   obligations 2 and 4;
+;                 - S-03 obligation 2 (cell immutability) for
+;                   obligation 3;
+;                 - S-03 obligation 6 (no enumeration) for
+;                   obligation 5 (the type-level discharge is
+;                   identical in shape).
+
+(proof
+  :claim         (claim
+    :invariant_id      "I5"               ; the most-load-bearing for weave_log
+    :form_hash_before  BOTTOM_HASH        ; weave_log is seed-original
+    :form_hash_after   $$BLAKE3$$/forms/S-04-weave-log
+    :env               ()
+    :obligation        WEAVE_SIX_OBLIGATIONS_CONJUNCTION)
+
+  :rule_tree (AndI
+
+    ; ============================================================
+    ; Obligation 1: Tip uniqueness
+    ;
+    ; "At every reachable state there is exactly one tip hash, and
+    ;  tip.prev is the previous tip hash or ⊥ for the first entry."
+    ;
+    ; Term:
+    ;   Forall {state : WeaveModel}.
+    ;     Reachable {state} →
+    ;       Exists {tip : Hash}. SlotValue(state, "S-04/tip") = tip ∧
+    ;         (tip = ⊥ ∨ Exists {prev : Hash}.
+    ;           prev = entry_at(state, tip).prev ∧ ChainPredecessor(prev, state))
+    ;
+    ; Discharge: structural induction over reachable states.
+    ;   Base case: the initial state binds "S-04/tip" to ⊥ (the
+    ;              empty-hash sentinel), and the existential is
+    ;              witnessed by ⊥.
+    ;   Inductive step: every reachable transition is either an
+    ;              S-03 op (which leaves "S-04/tip" untouched —
+    ;              composes with S-03 obligation 6 by virtue of
+    ;              S-03 having no enumeration of slot writes) or
+    ;              an S-04/append call (which is the only Form in
+    ;              the seed whose body contains a BINDSLOT against
+    ;              "S-04/tip", and which advances by exactly one
+    ;              entry whose prev is the previous tip).
+    ; ============================================================
+
+    (obligation 1 "tip uniqueness"
+      (Forall {state : WeaveModel}
+        (Implies (Reachable {state})
+          (Exists {tip : Hash}
+            (And
+              (Eq (SlotValue {state, (Lit "S-04/tip")}) (Var tip))
+              (Or
+                (Eq (Var tip) (Lit BOTTOM_HASH))
+                (Exists {prev : Hash}
+                  (And
+                    (Eq (Var prev)
+                        (Project {(EntryAt state (Var tip)), (Lit "prev")}))
+                    (ChainPredecessor (Var prev) (Var state)))))))))
+
+      :tree
+        (ForallI :var (state : WeaveModel)
+          (ImpI :hyp (Reachable (Var state))
+            (LemmaApp :lemma "induction-over-reachable-weave"
+              :args ((Var state))
+              ; Base case: initial state.
+              (LemmaApp :lemma "S-04/initial-tip-is-bottom"
+                :args ()
+                (ExistsI :witness (Lit BOTTOM_HASH)
+                  (AndI
+                    (Cong :n 0
+                      ; SlotValue(initial, "S-04/tip") = BOTTOM_HASH
+                      ; by the seed loader's binding step at boot.
+                      (Refl))
+                    (OrI_L
+                      ; left disjunct: tip = BOTTOM_HASH
+                      (Refl)))))
+              ; Inductive step: any transition either preserves
+              ; the tip (no S-04/tip BINDSLOT in the body) or
+              ; advances it via the unique S-04/append call.
+              (ImpI :hyp (And (Reachable (Var state))
+                              (Forall {prior : WeaveModel}
+                                (Implies (Predecessor prior state)
+                                  WEAVE_SIX_OBLIGATIONS_CONJUNCTION)))
+                (OrE
+                  ; case split on the kind of transition
+                  (LemmaApp :lemma "S-04/transition-classification"
+                    :args ((Var state)))
+                  ; case 1: non-append transition — tip is preserved,
+                  ;          induction hypothesis carries through.
+                  (ImpI :hyp NonAppendTransition
+                    (LemmaApp :lemma "S-04/non-append-preserves-tip"
+                      :args ((Var state))
+                      ; The IL has exactly one BINDSLOT-against-
+                      ; "S-04/tip" path, which is in S-04/append's
+                      ; body. Every other Form's body therefore
+                      ; leaves "S-04/tip" untouched — a structural
+                      ; lemma over the per-Form body texts.
+                      (Hyp)))
+                  ; case 2: append transition — tip advances by
+                  ;          exactly one new entry whose prev is
+                  ;          the previous tip.
+                  (ImpI :hyp AppendTransition
+                    (ExistsI :witness (NewTipFromAppend (Var state))
+                      (AndI
+                        (LemmaApp :lemma "S-04/append-advances-tip"
+                          :args ((Var state)))
+                        (OrI_R
+                          (ExistsI :witness (PreviousTip (Var state))
+                            (AndI
+                              (Cong :n 0 (Refl))
+                              (LemmaApp :lemma "S-04/append-prev-is-old-tip"
+                                :args ((Var state))
+                                ; The body of S-04/append at line ~50
+                                ; (the entry.prev = current_tip check)
+                                ; traps ESTALE if this property fails,
+                                ; so the lemma reads off the trap path.
+                                (Refl)))))))))))))))
+
+
+    ; ============================================================
+    ; Obligation 2: Append totality
+    ;
+    ; "For every well-formed entry e with e.prev = current_tip,
+    ;  append(e) advances the tip to hash(e) and inserts the
+    ;  producer-of-each-output mappings into the back-index. For
+    ;  every entry whose prev is not the current tip, append(e)
+    ;  has no effect on the weave and traps ESTALE."
+    ;
+    ; Discharge: case split on the prev-vs-tip equality, the same
+    ; equality the body checks at append's first instructions.
+    ; ============================================================
+
+    (obligation 2 "append totality"
+      (Forall {entry : Entry}
+        (Forall {state : WeaveModel}
+          (Implies (Reachable {state})
+            (Or
+              (And
+                (Eq (Project {(Var entry), (Lit "prev")})
+                    (CurrentTip (Var state)))
+                (And
+                  (Eq (CurrentTip (AfterAppend state entry))
+                      (HashOf (Var entry)))
+                  (BackIndexUpdated (Var state) (Var entry))))
+              (And
+                (Not (Eq (Project {(Var entry), (Lit "prev")})
+                          (CurrentTip (Var state))))
+                (And
+                  (Eq (Var state) (AfterAppend state entry))
+                  (TrapsWith (AppendCall (Var entry)) (Lit "ESTALE"))))))))
+
+      :tree
+        (ForallI :var (entry : Entry)
+          (ForallI :var (state : WeaveModel)
+            (ImpI :hyp (Reachable (Var state))
+              (OrE
+                (LemmaApp :lemma "decidable-equality-of-hashes"
+                  :args ((Project (Var entry) (Lit "prev"))
+                         (CurrentTip (Var state)))
+                  (S03 :obligation 1
+                    :args ()))
+                ; case A: prev = current_tip — append succeeds
+                (ImpI :hyp PrevEqualsTip
+                  (OrI_L
+                    (AndI
+                      (Hyp)                 ; prev = current_tip
+                      (AndI
+                        (LemmaApp :lemma "S-04/append-advances-tip"
+                          :args ((Var state) (Var entry)))
+                        (LemmaApp :lemma "S-04/back-index-insert-all-runs"
+                          :args ((Var state) (Var entry))
+                          ; The body of S-04/append calls
+                          ; backidx/insert_all unconditionally on
+                          ; the append-success path, so the
+                          ; back-index update is structural.
+                          (Refl))))))
+                ; case B: prev ≠ current_tip — trap ESTALE
+                (ImpI :hyp PrevNotEqualsTip
+                  (OrI_R
+                    (AndI
+                      (Hyp)                 ; prev ≠ current_tip
+                      (AndI
+                        (LemmaApp :lemma "S-04/stale-trap-preserves-state"
+                          :args ((Var state) (Var entry))
+                          ; ESTALE traps before any state-changing
+                          ; instruction in append's body, so the
+                          ; abstract state is unchanged.
+                          (Refl))
+                        (LemmaApp :lemma "IL/TRAP-is-trap"
+                          :args ((Lit "ESTALE")))))))))))))
+
+
+    ; ============================================================
+    ; Obligation 3: No amendment
+    ;
+    ; "There exists no operation in the exported surface whose
+    ;  effect is to remove or replace an entry already referenced
+    ;  by any later entry's prev or by the back-index."
+    ;
+    ; Equivalently: the only mutable thing in the weave's exported
+    ; surface is the tip pointer, and even it can only advance.
+    ;
+    ; Discharge: type-level inspection of S-04's exported surface
+    ; (just like S-03 obligation 6's discharge), composed with the
+    ; structural fact that S-04's body has no instruction that
+    ; rewrites an entry's bytes (composes with S-03 obligation 2,
+    ; cell immutability).
+    ; ============================================================
+
+    (obligation 3 "no amendment"
+      (Forall {entry : Entry}
+        (Forall {state state' : WeaveModel}
+          (Implies
+            (And
+              (Reachable {state})
+              (And
+                (Reachable {state'})
+                (And (Predecessor state state')
+                     (Member entry (entries state)))))
+            (Eq (BytesOf (EntryAt state' (HashOf entry)))
+                (BytesOf entry)))))
+
+      :tree
+        (ForallI :var (entry : Entry)
+          (ForallI :var (state : WeaveModel)
+            (ForallI :var (state' : WeaveModel)
+              (ImpI :hyp (And (Reachable state) (And (Reachable state')
+                                                     (And (Predecessor state state')
+                                                          (Member entry (entries state)))))
+                (Trans
+                  ; Step 1: every entry is a sealed substance, so
+                  ; its bytes are immutable by S-03 obligation 2.
+                  (S03 :obligation 2
+                    :args ((HashOf (Var entry))))
+                  ; Step 2: S-04's exported surface contains no
+                  ; "amend" or "replace" Form, so the only way an
+                  ; entry's hash could resolve to different bytes
+                  ; would be S-03 itself, which Step 1 rules out.
+                  (LemmaApp :lemma "S-04/exported-surface-no-amend"
+                    :args ()
+                    ; Type-level: enumerate the (exports ...) block
+                    ; of S-04-weave-log.form. It contains exactly
+                    ; (append, why). Neither has a "remove" or
+                    ; "rewrite" return type. The lemma's discharge
+                    ; is the same shape as S-03 obligation 6.
+                    (Refl)))))))))
+
+
+    ; ============================================================
+    ; Obligation 4: Why-query soundness and completeness
+    ;
+    ; "For every substance hash s, why(s) returns the set of
+    ;  entries E such that there is a chain in the back-index from
+    ;  the producing entry, where each step is 'producer of one of
+    ;  this entry's inputs'. The set is finite and contains every
+    ;  such entry."
+    ;
+    ; Discharge: the why-traversal helper is a structural recursion
+    ; over the back-index. Soundness is "the helper only emits
+    ; entries reachable in the back-index from s" (a structural
+    ; lemma over the helper's body). Completeness is "the helper
+    ; emits every such entry" (a termination lemma plus a fixed-
+    ; point lemma over the work-vector).
+    ; ============================================================
+
+    (obligation 4 "why-query soundness and completeness"
+      (Forall {s : Hash}
+        (Forall {state : WeaveModel}
+          (Implies (Reachable {state})
+            (Eq
+              (CallWhy {s, state})
+              (TransitiveProducerSet {s, state})))))
+
+      :tree
+        (ForallI :var (s : Hash)
+          (ForallI :var (state : WeaveModel)
+            (ImpI :hyp (Reachable (Var state))
+              (AndI
+                ; Soundness direction: ⊆
+                (LemmaApp :lemma "S-04/why-sound"
+                  :args ((Var s) (Var state))
+                  ; Structural recursion over the helper's body.
+                  ; Every emitted entry is one the back-index
+                  ; lookup returned, and the back-index only
+                  ; contains entries actually appended (S-04
+                  ; obligation 2 case A).
+                  (S03 :obligation 1
+                    :args ()))
+                ; Completeness direction: ⊇
+                (LemmaApp :lemma "S-04/why-complete"
+                  :args ((Var s) (Var state))
+                  ; Termination lemma + fixed-point: the work
+                  ; vector strictly shrinks at each step (each
+                  ; visited hash is added to the visited set
+                  ; before recursion), so the helper terminates
+                  ; in time bounded by the size of
+                  ; TransitiveProducerSet.
+                  (IndNat :var (n : Nat)
+                    (LemmaApp :lemma "S-04/why-fixpoint-at-n"
+                      :args ((Var n) (Var s) (Var state)))))))))))
+
+
+    ; ============================================================
+    ; Obligation 5: No enumeration
+    ;
+    ; "There exists no operation in the exported surface whose
+    ;  return type is an unbounded Set<EntryHash> or
+    ;  Set<SubstanceHash> not function-of-arguments."
+    ;
+    ; Discharge: type-level inspection of the (exports ...) block,
+    ; identical in shape to S-03 obligation 6.
+    ; ============================================================
+
+    (obligation 5 "no enumeration"
+      (Forall {op : ExportedOperation}
+        (Implies (Member op (ExportsOf S-04))
+          (Not (ContainsUnboundedHashSet (ReturnTypeOf op)))))
+
+      :tree
+        (ForallI :var (op : ExportedOperation)
+          (ImpI :hyp (Member (Var op) (ExportsOf S-04))
+            (LemmaApp :lemma "exports-block-type-level-inspection"
+              :args ((Var op) (Lit S-04))
+              ; The S-04 (exports ...) block in S-04-weave-log.form
+              ; contains exactly:
+              ;   (append (WeaveEntry) → Hash)
+              ;   (why    (Hash)        → Vec{Hash})
+              ; The why operation returns a Vec{Hash}, but its
+              ; contents are bounded by the transitive-producer-set
+              ; of its argument — which is "function-of-arguments"
+              ; per the discipline. append returns a single Hash.
+              ; Neither contains an unbounded Set<Hash> not
+              ; derivable from the call's arguments.
+              (S03 :obligation 6
+                :args ((Lit S-04))))))
+
+
+    ; ============================================================
+    ; Obligation 6: Grounding obligation for synthesised entries (I8)
+    ;
+    ; "For every appended entry of kind Synthesized,
+    ;  entry.grounding is non-empty (cites at least one axiom by
+    ;  id) and entry.rationale_hash references a non-empty
+    ;  substance in S-03."
+    ;
+    ; This is I8 enforced at the weave layer rather than at the
+    ; synthesis layer, so that no Form bypassing S-09 can still
+    ; land an ungrounded entry.
+    ;
+    ; Discharge: the body of S-04/append (lines ~30-80) contains
+    ; the explicit checks against entry.grounding length and
+    ; entry.rationale bytes length, both of which trap EUNGROUNDED
+    ; before the seal+append step. Structural reading of the body.
+    ; ============================================================
+
+    (obligation 6 "grounding obligation for synthesised entries"
+      (Forall {entry : Entry}
+        (Forall {state state' : WeaveModel}
+          (Implies
+            (And
+              (Reachable {state})
+              (And (Reachable {state'})
+                   (And (Predecessor state state')
+                        (And (NewlyAppended entry state state')
+                             (Eq (Project {entry, (Lit "kind")})
+                                 (Lit "Synthesized"))))))
+            (And
+              (NonEmpty (Project {entry, (Lit "grounding")}))
+              (NonEmpty
+                (BytesOf (CellAt (Project {entry, (Lit "rationale_hash")}))))))))
+
+      :tree
+        (ForallI :var (entry : Entry)
+          (ForallI :var (state : WeaveModel)
+            (ForallI :var (state' : WeaveModel)
+              (ImpI :hyp (And (Reachable state)
+                              (And (Reachable state')
+                                   (And (Predecessor state state')
+                                        (And (NewlyAppended (Var entry) state state')
+                                             (Eq (Project (Var entry) (Lit "kind"))
+                                                 (Lit "Synthesized"))))))
+                (AndI
+                  ; Conjunct 1: grounding is non-empty.
+                  ;
+                  ; The body of S-04/append between the kind check
+                  ; and the seal step (lines ~50-65 of S-04-weave-
+                  ; log.form) contains:
+                  ;   1. read entry.grounding;
+                  ;   2. compute its length;
+                  ;   3. JMPZ on (length == 0) to :grounding_present;
+                  ;   4. JMP +trap_ungrounded.
+                  ; A NewlyAppended entry of kind Synthesized
+                  ; therefore had grounding.length > 0 at append
+                  ; time, otherwise the trap would have prevented
+                  ; the append. Structural reading of the body.
+                  (LemmaApp :lemma "S-04/append-traps-ungrounded-on-empty-grounding"
+                    :args ((Var entry))
+                    (Refl))
+                  ; Conjunct 2: rationale substance is non-empty.
+                  ;
+                  ; Same reading: the body reads
+                  ; entry.rationale_hash, calls S-03/READ on it
+                  ; (which would trap EUNHELD if the bridge had no
+                  ; cap to read it), then computes the length of
+                  ; the resulting bytes and JMPZs on zero to
+                  ; :rationale_present, otherwise +trap_ungrounded.
+                  (LemmaApp :lemma "S-04/append-traps-ungrounded-on-empty-rationale"
+                    :args ((Var entry))
+                    (Refl)))))))))
+
+  )
+
+  :rationale-hash $$BLAKE3$$/breakdown-s04
+)
+
+
+; ============================================================
+; Discharge dependencies
+;
+; Cited obligations from other Forms:
+;   - S-03 obligation 1: hash determinism
+;     (used in obligations 2 and 4 to make decidable equality of
+;      hashes a lemma the walker can compose against)
+;   - S-03 obligation 2: cell immutability
+;     (used in obligation 3 — entries are sealed substances,
+;      their bytes don't move)
+;   - S-03 obligation 6: no enumeration
+;     (used in obligations 3 and 5 — same type-level shape, the
+;      proof reduces structurally)
+;
+; Lemmas this proof draws from the abstract-model lemma library
+; (sealed under LEMMA_LIBRARY_HASH):
+;   - induction-over-reachable-weave
+;   - decidable-equality-of-hashes
+;   - exports-block-type-level-inspection
+;   - S-04/initial-tip-is-bottom
+;   - S-04/non-append-preserves-tip
+;   - S-04/append-advances-tip
+;   - S-04/append-prev-is-old-tip
+;   - S-04/back-index-insert-all-runs
+;   - S-04/stale-trap-preserves-state
+;   - S-04/transition-classification
+;   - S-04/exported-surface-no-amend
+;   - S-04/why-sound
+;   - S-04/why-complete
+;   - S-04/why-fixpoint-at-n
+;   - S-04/append-traps-ungrounded-on-empty-grounding
+;   - S-04/append-traps-ungrounded-on-empty-rationale
+;   - IL/TRAP-is-trap
+;
+; The S-04-prefixed lemmas are structural readings of S-04-weave-
+; log.form; the kernel-author identities verify them as part of
+; the inspection record alongside S-08's. They are not separate
+; proofs — they are abstract-model facts whose discharge is "look
+; at the body of S-04/append".
+;
+; This proof discharges S-01's obligations 1 and 5 dependencies
+; on S-04 (tip uniqueness and grounding, respectively). After
+; this proof's leaves on S-03 (obligations 1, 2, 6) are also
+; discharged, S-01's obligations 1 and 5 become end-to-end
+; checkable.
+; ============================================================
