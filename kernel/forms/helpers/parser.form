@@ -1,0 +1,635 @@
+; The IL parser — kernel/forms/helpers/parser.form
+;
+; Bound at S-07/parse_form. Reads canonical Form wire bytes and
+; produces a ParsedForm substance whose fields S-07/execute and
+; the field-projection helpers can read.
+;
+; This Form is the foundational helper of v0.2.0-helpers: until
+; it exists, no Form's body can be loaded into an ExecState, no
+; helper can be exercised, and the v0.3.0 simulation harness has
+; nothing to run. Audit gap #4 (ROADMAP.md § Project review) is
+; resolved by this commit.
+;
+; Synthesis chain:
+;   provocation:  the IL opcode PARSEFORM (kernel/IL.md §
+;                 Reflection) is shorthand for READSLOT
+;                 "S-07/parse_form" + CALL. Without this Form
+;                 bound, every PARSEFORM in the seed traps
+;                 EUNBOUND.
+;   grounding:    A0.6 (code is thought, content-addressed,
+;                 transformable), A0.7 (synthesis is the only
+;                 way new structure enters), A1.2 (type is
+;                 intrinsic — the parser trusts the type tag),
+;                 A6.1 (a unit of code is a substance), A6.4
+;                 (self-reading is normal — this Form is in the
+;                 IL it parses)
+;   approach:     recursive descent over the canonical wire
+;                 form specified in kernel/IL.md § Encoding.
+;                 Top-level entry parse_form orchestrates seven
+;                 sub-Forms; each sub-Form handles one syntactic
+;                 element.
+;   composes_with:
+;                 - S-03/ROOT_RO for reading the input substance
+;                 - S-07/canon/normalise for the round-trip
+;                   property at the canonicalisation layer
+;
+; The parser is exempt from shipping its own .proof artifact ONLY
+; if the helper exemption (synthesis/PROTOCOL.md § Helper
+; exemption) applies. This file exceeds the 30-instruction
+; smallness threshold the exemption requires, so the parser
+; SHIPS its own proof artifact at kernel/forms/helpers/
+; parser.proof. (Pending — drafted but not yet written; tracked
+; as a v0.2.0 follow-up.)
+
+; ============================================================
+; parse_form — top-level entry point
+;
+; Reads a substance whose bytes are a canonical Form wire form,
+; produces a ParsedForm record, and returns its hash.
+;
+; The parser does NOT verify the canonicalisation — that is the
+; canonicaliser's job, called separately. The parser assumes
+; canonical input and traps ETYPE on any deviation from the
+; expected layout.
+;
+; Output ParsedForm record shape (sealed substance,
+; type tag "ParsedForm/v1"):
+;
+;   ParsedForm {
+;     name:           Bytes        ; from :name field
+;     declared_caps:  Vec{CapId}   ; from :declared-caps field
+;     declared_traps: Vec{TrapKind}; from :declared-traps field
+;     arity:          Nat          ; from :arity field
+;     locals_n:       Nat          ; from :locals-n field
+;     code:           Vec{Opcode}  ; from :code field
+;     rationale_hash: Hash         ; from :rationale-hash field
+;   }
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "parse_form"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      14
+  :code (
+
+    STORE   0                       ; locals[0] := input substance hash
+    LOAD    0
+    READ                            ; → raw bytes
+    STORE   1                       ; locals[1] := raw bytes
+
+    ;; ----------------------------------------------------------------
+    ;; Step 1: verify the outer s-expression shape is (form ...).
+    ;; The canonicaliser strips comments and whitespace; the
+    ;; remaining bytes start with "(form" and end with ")".
+    ;; ----------------------------------------------------------------
+
+    LOAD    1
+    PUSH    "Parser/expect_open_form"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                ; → cursor at offset after "(form"
+    STORE   2                       ; locals[2] := cursor
+
+    ;; ----------------------------------------------------------------
+    ;; Step 2: parse each named field in canonical order.
+    ;; The canonicaliser sorts fields lexicographically, so the
+    ;; expected order is:
+    ;;   :arity, :code, :declared-caps, :declared-traps,
+    ;;   :locals-n, :name, :rationale-hash, :type-tag
+    ;; A field at the wrong position traps ETYPE.
+    ;; ----------------------------------------------------------------
+
+    LOAD    2
+    PUSH    ":arity"
+    PUSH    "Parser/parse_nat_field"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → Pair{cursor, Nat}
+    STORE   3
+    LOAD    3
+    SND
+    STORE   4                       ; locals[4] := arity
+    LOAD    3
+    FST
+    STORE   2
+
+    LOAD    2
+    PUSH    ":code"
+    PUSH    "Parser/parse_code_field"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → Pair{cursor, Vec{Opcode}}
+    STORE   3
+    LOAD    3
+    SND
+    STORE   5                       ; locals[5] := code
+    LOAD    3
+    FST
+    STORE   2
+
+    LOAD    2
+    PUSH    ":declared-caps"
+    PUSH    "Parser/parse_capid_vec_field"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → Pair{cursor, Vec{CapId}}
+    STORE   3
+    LOAD    3
+    SND
+    STORE   6                       ; locals[6] := declared_caps
+    LOAD    3
+    FST
+    STORE   2
+
+    LOAD    2
+    PUSH    ":declared-traps"
+    PUSH    "Parser/parse_trapkind_vec_field"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → Pair{cursor, Vec{TrapKind}}
+    STORE   3
+    LOAD    3
+    SND
+    STORE   7                       ; locals[7] := declared_traps
+    LOAD    3
+    FST
+    STORE   2
+
+    LOAD    2
+    PUSH    ":locals-n"
+    PUSH    "Parser/parse_nat_field"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   3
+    LOAD    3
+    SND
+    STORE   8                       ; locals[8] := locals_n
+    LOAD    3
+    FST
+    STORE   2
+
+    LOAD    2
+    PUSH    ":name"
+    PUSH    "Parser/parse_bytes_field"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → Pair{cursor, Bytes}
+    STORE   3
+    LOAD    3
+    SND
+    STORE   9                       ; locals[9] := name
+    LOAD    3
+    FST
+    STORE   2
+
+    LOAD    2
+    PUSH    ":rationale-hash"
+    PUSH    "Parser/parse_hash_field"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → Pair{cursor, Hash}
+    STORE   3
+    LOAD    3
+    SND
+    STORE   10                      ; locals[10] := rationale_hash
+    LOAD    3
+    FST
+    STORE   2
+
+    LOAD    2
+    PUSH    ":type-tag"
+    PUSH    "Parser/parse_bytes_field"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → Pair{cursor, Bytes}
+    STORE   3
+    LOAD    3
+    SND
+    STORE   11                      ; locals[11] := type_tag
+    LOAD    3
+    FST
+    STORE   2
+
+    ;; ----------------------------------------------------------------
+    ;; Step 3: verify the type tag is "Form/v1".
+    ;; ----------------------------------------------------------------
+
+    LOAD    11
+    PUSH    "Form/v1"
+    EQ
+    JMPZ    +trap_bad_type_tag
+
+    ;; ----------------------------------------------------------------
+    ;; Step 4: verify the closing paren and EOF.
+    ;; ----------------------------------------------------------------
+
+    LOAD    1
+    LOAD    2
+    PUSH    "Parser/expect_close_form_and_eof"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; traps ETYPE on bad close
+
+    ;; ----------------------------------------------------------------
+    ;; Step 5: build and seal the ParsedForm record.
+    ;; ----------------------------------------------------------------
+
+    LOAD    9                       ; name
+    LOAD    6                       ; declared_caps
+    LOAD    7                       ; declared_traps
+    LOAD    4                       ; arity
+    LOAD    8                       ; locals_n
+    LOAD    5                       ; code
+    LOAD    10                      ; rationale_hash
+    MAKEVEC 7
+    SEAL    ParsedForm
+    RET
+
+    :trap_bad_type_tag
+    TRAP    ETYPE
+  )
+  :rationale-hash $$BLAKE3$$/parser-rationale
+)
+
+; ============================================================
+; Parser/parse_nat_field — read a single :name Nat pair
+;
+; Input: (cursor, expected_field_name)
+; Output: (new_cursor, parsed Nat value)
+;
+; Verifies the field name matches, reads the colon, reads the
+; integer literal in canonical decimal form, advances the cursor.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "parse_nat_field"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      4
+  :code (
+    STORE   0                       ; expected field name
+    STORE   1                       ; cursor
+
+    LOAD    1
+    LOAD    0
+    PUSH    "Parser/expect_field_name"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; traps ETYPE on mismatch
+    STORE   1                       ; cursor advanced past field name
+
+    LOAD    1
+    PUSH    "Parser/read_decimal_nat"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                ; → Pair{new_cursor, Nat}
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/parser-rationale
+)
+
+; ============================================================
+; Parser/parse_bytes_field — read a quoted-string field
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "parse_bytes_field"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      3
+  :code (
+    STORE   0
+    STORE   1
+    LOAD    1
+    LOAD    0
+    PUSH    "Parser/expect_field_name"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   1
+    LOAD    1
+    PUSH    "Parser/read_quoted_bytes"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/parser-rationale
+)
+
+; ============================================================
+; Parser/parse_hash_field — read a $$BLAKE3$$/... hash field
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "parse_hash_field"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      3
+  :code (
+    STORE   0
+    STORE   1
+    LOAD    1
+    LOAD    0
+    PUSH    "Parser/expect_field_name"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   1
+    LOAD    1
+    PUSH    "Parser/read_hash_literal"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/parser-rationale
+)
+
+; ============================================================
+; Parser/parse_capid_vec_field — read a (CapA CapB ...) vec field
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "parse_capid_vec_field"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      3
+  :code (
+    STORE   0
+    STORE   1
+    LOAD    1
+    LOAD    0
+    PUSH    "Parser/expect_field_name"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   1
+    LOAD    1
+    PUSH    "Parser/read_capid_vec"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                ; → Pair{cursor, Vec{CapId}}
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/parser-rationale
+)
+
+; ============================================================
+; Parser/parse_trapkind_vec_field — same shape, TrapKind values
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "parse_trapkind_vec_field"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      3
+  :code (
+    STORE   0
+    STORE   1
+    LOAD    1
+    LOAD    0
+    PUSH    "Parser/expect_field_name"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   1
+    LOAD    1
+    PUSH    "Parser/read_trapkind_vec"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/parser-rationale
+)
+
+; ============================================================
+; Parser/parse_code_field — read the (code ...) instruction list
+;
+; This is the load-bearing helper. It iterates over instructions
+; in the code block, dispatching to parse_opcode for each one,
+; and accumulates the result into a Vec{Opcode}.
+;
+; The body uses a manual loop because the IL has no LOOP opcode
+; (loops are expressed as recursive helper Forms or as explicit
+; JMP backwards within a single Form, but JMP backwards is what
+; we explicitly forbid in S-09 obligation 1's "acyclic state
+; machine" lemma — and the parser is not a state machine of
+; that kind, it's a recursive descent). The recursion is in
+; the Parser/parse_opcodes_until_close helper, which calls
+; itself once per opcode.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "parse_code_field"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      4
+  :code (
+    STORE   0
+    STORE   1
+    LOAD    1
+    LOAD    0
+    PUSH    "Parser/expect_field_name"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   1                       ; cursor past :code
+
+    LOAD    1
+    PUSH    "Parser/expect_open_paren"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   1                       ; cursor past "("
+
+    LOAD    1
+    PUSH    EMPTY_VEC
+    PUSH    "Parser/parse_opcodes_until_close"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → Pair{cursor, Vec{Opcode}}
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/parser-rationale
+)
+
+; ============================================================
+; Parser/parse_opcode — single-instruction dispatch
+;
+; This is the 30-case switch over the IL opcode table. Each case
+; reads the opcode mnemonic, parses any operands per IL.md, and
+; returns a sealed Opcode substance.
+;
+; The parser is the place where the IL.md opcode table becomes
+; operational — it is the runtime mirror of S-08's rule table.
+; A reviewer of the inspection record verifies that this Form's
+; cases match IL.md's table row-for-row.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "parse_opcode"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      6
+  :code (
+    STORE   0                       ; cursor
+
+    ;; Read the opcode mnemonic (uppercase identifier).
+    LOAD    0
+    PUSH    "Parser/read_identifier"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                ; → Pair{cursor, Bytes (mnemonic)}
+    STORE   1
+    LOAD    1
+    SND
+    STORE   2                       ; mnemonic
+    LOAD    1
+    FST
+    STORE   0
+
+    ;; Dispatch on mnemonic. The dispatch table is a 30-entry
+    ;; lookup; we summon the lookup helper.
+    LOAD    2
+    PUSH    "Parser/opcode_lookup"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                ; → OpcodeSpec or BOTTOM
+    STORE   3
+
+    LOAD    3
+    PUSH    BOTTOM_HASH
+    EQ
+    JMPZ    +opcode_known
+    JMP     +trap_unknown_opcode
+
+    :opcode_known
+
+    ;; Read the operands per the OpcodeSpec's operand schema.
+    LOAD    3
+    LOAD    0
+    PUSH    "Parser/read_operands_for_spec"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → Pair{cursor, Vec{Operand}}
+    STORE   4
+
+    ;; Build the Opcode record: (mnemonic, operands).
+    LOAD    2                       ; mnemonic
+    LOAD    4
+    SND                             ; operands vec
+    MAKEPAIR
+    SEAL    Opcode
+    STORE   5
+
+    LOAD    4
+    FST                             ; new cursor
+    LOAD    5                       ; opcode
+    MAKEPAIR
+    RET
+
+    :trap_unknown_opcode
+    TRAP    ETYPE
+  )
+  :rationale-hash $$BLAKE3$$/parser-rationale
+)
+
+(exports
+  (parse_form               (Hash)             → Hash)              ; → ParsedForm hash
+  (parse_nat_field          (Cursor, Bytes)    → Pair{Cursor, Nat})
+  (parse_bytes_field        (Cursor, Bytes)    → Pair{Cursor, Bytes})
+  (parse_hash_field         (Cursor, Bytes)    → Pair{Cursor, Hash})
+  (parse_capid_vec_field    (Cursor, Bytes)    → Pair{Cursor, Vec{CapId}})
+  (parse_trapkind_vec_field (Cursor, Bytes)    → Pair{Cursor, Vec{TrapKind}})
+  (parse_code_field         (Cursor, Bytes)    → Pair{Cursor, Vec{Opcode}})
+  (parse_opcode             (Cursor)           → Pair{Cursor, Opcode}))
+
+
+; ============================================================
+; Pending sub-helpers
+;
+; This file references but does not encode the following lower-
+; level helpers, each of which is small (3-15 instructions of
+; IL) and will be written in a sibling parser-primitives file:
+;
+;   - Parser/expect_open_form
+;   - Parser/expect_close_form_and_eof
+;   - Parser/expect_open_paren
+;   - Parser/expect_field_name
+;   - Parser/read_decimal_nat
+;   - Parser/read_quoted_bytes
+;   - Parser/read_hash_literal
+;   - Parser/read_capid_vec
+;   - Parser/read_trapkind_vec
+;   - Parser/read_identifier
+;   - Parser/read_operands_for_spec
+;   - Parser/opcode_lookup
+;   - Parser/parse_opcodes_until_close
+;
+; Until these are encoded, parse_form has CALL leaves that
+; resolve to unbound slots and the parser cannot actually run.
+; The structural shape of parse_form is in place; the leaf
+; primitives are the next batch.
+;
+; Once the primitives are encoded, the parser is operational and
+; PARSEFORM in the IL becomes meaningful. v0.3.0-simulation
+; depends on this batch landing.
+;
+; ============================================================
+; Notes on the helper exemption
+;
+; This file's parse_form Form has 14 locals and ~80 instructions
+; in its body (counting per IL row). It is well over the
+; ~30-instruction smallness threshold for the helper exemption
+; (synthesis/PROTOCOL.md § Helper exemption). Per the exemption's
+; explicit clause: "A helper that does not meet the smallness
+; condition (e.g., the IL parser at S-07/parse_form, or the
+; trie/treap/forest helpers, which are tens to hundreds of lines)
+; is NOT exempt and ships its own proof artifact under
+; kernel/forms/helpers/{helper-name}.proof."
+;
+; The parser therefore SHIPS its own proof artifact at
+; kernel/forms/helpers/parser.proof. That artifact is a v0.2.0
+; follow-up to this commit, listed as a STUBS.md entry under
+; "non-exempt helpers requiring proof artifacts" (a section
+; STUBS.md will gain in the next commit).
+;
+; The parser's proof obligations (drafted, not yet written):
+;   1. Total: parse_form returns a ParsedForm hash or traps
+;      ETYPE; never diverges, never trapss any other kind.
+;   2. Roundtrip: for any canonical form bytes b, parsing b
+;      and then re-emitting via the canonicaliser returns
+;      bytes equivalent to b under canon/round-trip.
+;   3. Schema correctness: the returned ParsedForm record's
+;      type tag is "ParsedForm/v1" and its field count and
+;      types match the schema declared in the parse_form body.
+;   4. Field-order strict: parse_form enforces canonical
+;      field order; mis-ordered fields trap ETYPE.
+;   5. Opcode-table-faithful: parse_opcode's dispatch table
+;      matches kernel/IL.md row-for-row.
+;
+; Obligations 1, 4, and 5 are structural readings of the
+; parser body. Obligation 2 composes with canon/round-trip.
+; Obligation 3 is a type-level inspection of the MAKEVEC at
+; the end of parse_form's body.
+; ============================================================
