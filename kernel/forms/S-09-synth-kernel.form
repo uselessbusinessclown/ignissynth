@@ -1,0 +1,426 @@
+; S-09: synth_kernel
+;
+; The eight-stage synthesis state machine. Single export:
+; synthesize. Each stage is a fresh sub-attention, each stage's
+; record is a sealed substance, each stage emits one weave entry.
+; A failed act has the same shape as a successful one (truncated
+; at the failing stage).
+;
+; Synthesis chain:
+;   provocation:  breakdown/S-09-synth-kernel.md
+;   grounding:    A0.4 A0.7 A0.8 A6.2 A6.5 A7.1..A7.5
+;   selected:     Candidate A — Sequential state machine, one
+;                 fresh sub-attention per stage
+;   proof:        kernel/forms/S-09-synth-kernel.proof  (eight
+;                 obligations: stage uniqueness, stage ordering,
+;                 failure truncation, binding gating, capability
+;                 gating, loser preservation, meta-budget
+;                 conservation, self-application liveness)
+
+; ============================================================
+; synthesize(provocation_hash) → SynthResult
+;
+; SynthResult is one of:
+;   Committed{form_hash, vigil_cap_id}
+;   Failed{stage, reason}
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "synthesize"
+  :declared-caps (S-04/APPEND S-02/TREAP_RW S-03/ROOT_RW S-05/FOREST_RW S-08/CHECK)
+  :declared-traps (EANONYMOUS EUNGROUNDED ENOCANDIDATES EALLFAILED
+                    EBOOTSTRAPSHORT EUNAUTHORISED EOVERBUDGET)
+  :arity         1
+  :locals-n      16
+  :code (
+
+    STORE   0                           ; provocation_hash
+
+    ;; ----------------------------------------------------------------
+    ;; Allocate A_synth as a fresh sub-attention from the calling
+    ;; mind's attention, with budget = provocation.meta_budget.
+    ;; ----------------------------------------------------------------
+
+    LOAD    0
+    READ
+    PUSH    "S-09/parse_provocation"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                    ; → Provocation
+    STORE   1
+
+    LOAD    1
+    PUSH    "S-09/proj/meta_budget"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   2                           ; meta_budget
+
+    PUSH    SELF_ATTENTION_ID
+    LOAD    2
+    PUSH    "S-05/split"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   3                           ; A_synth attention id
+
+    ;; ----------------------------------------------------------------
+    ;; Stage 1: Provocation. Verify author is non-empty and
+    ;; resolves to a known mind id. Seal Stage1Record, append
+    ;; SynthStage{1}.
+    ;; ----------------------------------------------------------------
+
+    LOAD    1
+    PUSH    "S-09/proj/author"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   4
+
+    LOAD    4
+    PUSH    EMPTY_HASH
+    EQ
+    JMPZ    +stage1_ok
+
+    ;; Anonymous author: emit SynthStage{1, Reject{EANONYMOUS}}
+    ;; and trap so the caller sees the failure shape.
+    LOAD    0
+    PUSH    REJECT_EANONYMOUS
+    PUSH    1
+    MAKEVEC 3
+    PUSH    "SynthStage"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+    TRAP    EANONYMOUS
+
+    :stage1_ok
+
+    LOAD    0
+    LOAD    4
+    MAKEVEC 2
+    SEAL    Stage1Record
+    STORE   5
+
+    LOAD    5
+    PUSH    1
+    MAKEVEC 2
+    PUSH    "SynthStage"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+
+    ;; ----------------------------------------------------------------
+    ;; Stage 2: Grounding. For each constraint, verify it cites at
+    ;; least one axiom id. Collect touched Form invariants. Trap
+    ;; EUNGROUNDED on any failure.
+    ;; ----------------------------------------------------------------
+
+    LOAD    1
+    PUSH    "S-09/grounding/derive"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                    ; → Stage2Record or BOTTOM
+    STORE   6
+
+    LOAD    6
+    PUSH    BOTTOM_HASH
+    EQ
+    JMPZ    +stage2_ok
+
+    PUSH    REJECT_EUNGROUNDED
+    PUSH    2
+    MAKEVEC 2
+    PUSH    "SynthStage"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+    TRAP    EUNGROUNDED
+
+    :stage2_ok
+
+    LOAD    6
+    PUSH    2
+    MAKEVEC 2
+    PUSH    "SynthStage"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+
+    ;; ----------------------------------------------------------------
+    ;; Stage 3: Candidates. Invoke the generator Form named in the
+    ;; provocation. The generator runs as a fresh sub-attention
+    ;; with budget bounded by A_synth's remaining pool. The
+    ;; generator returns Vec{Candidate}.
+    ;; ----------------------------------------------------------------
+
+    LOAD    1
+    PUSH    "S-09/proj/generator_form"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   7
+
+    LOAD    3
+    LOAD    7
+    LOAD    6
+    PUSH    "S-09/run_in_subattention"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                    ; → Vec{Candidate}
+    STORE   8
+
+    LOAD    8
+    PUSH    "S-07/vec/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    PUSH    0
+    EQ
+    JMPZ    +stage3_ok
+
+    PUSH    REJECT_ENOCANDIDATES
+    PUSH    3
+    MAKEVEC 2
+    PUSH    "SynthStage"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+    TRAP    ENOCANDIDATES
+
+    :stage3_ok
+
+    LOAD    8
+    PUSH    3
+    MAKEVEC 2
+    PUSH    "SynthStage"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+
+    ;; ----------------------------------------------------------------
+    ;; Stage 4: Simulation. For each candidate, run its self-test
+    ;; set in a sealed sub-attention with no outward caps. Collect
+    ;; trial records.
+    ;; ----------------------------------------------------------------
+
+    LOAD    8
+    LOAD    3
+    PUSH    "S-09/stage4/simulate_all"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                    ; → Vec{TrialRecord}
+    STORE   9
+
+    LOAD    9
+    PUSH    "S-09/stage4/any_passed"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    JMPZ    +stage4_ok
+
+    LOAD    9
+    PUSH    REJECT_EALLFAILED
+    PUSH    4
+    MAKEVEC 3
+    PUSH    "SynthStage"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+    TRAP    EALLFAILED
+
+    :stage4_ok
+
+    LOAD    9
+    PUSH    4
+    MAKEVEC 2
+    PUSH    "SynthStage"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+
+    ;; ----------------------------------------------------------------
+    ;; Stage 5: Selection. Pick a winner per the criteria; pin the
+    ;; losers via the Stage5Record substance.
+    ;; ----------------------------------------------------------------
+
+    LOAD    8
+    LOAD    9
+    LOAD    1
+    PUSH    "S-09/stage5/select"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                    ; → Stage5Record{winner, losers, rationale}
+    STORE   10
+
+    LOAD    10
+    PUSH    5
+    MAKEVEC 2
+    PUSH    "SynthStage"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+
+    ;; ----------------------------------------------------------------
+    ;; Stage 6: Proof. Call S-08.check on the winner's proof
+    ;; against the claim "this Form preserves the declared
+    ;; invariants of the Form it replaces". On Reject, append
+    ;; Stage 6 entry and trap.
+    ;; ----------------------------------------------------------------
+
+    LOAD    10
+    LOAD    1
+    PUSH    "S-09/stage6/build_claim"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                    ; → claim_hash
+    STORE   11
+
+    LOAD    10
+    PUSH    "S-09/stage5/proj/winner_proof_hash"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    LOAD    11
+    PUSH    "S-08/check"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                    ; → Result
+    STORE   12
+
+    LOAD    12
+    PUSH    ACCEPT
+    EQ
+    JMPZ    +stage6_ok
+
+    LOAD    12
+    PUSH    6
+    MAKEVEC 2
+    PUSH    "SynthStage"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+    TRAP    EUNAUTHORISED               ; trap kind names "stage 6 proof failed"
+                                        ; (the trap kind table will gain a
+                                        ;  dedicated EPROOFREJECTED in a future
+                                        ;  IL synthesis act)
+
+    :stage6_ok
+
+    PUSH    ACCEPT
+    PUSH    6
+    MAKEVEC 2
+    PUSH    "SynthStage"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+
+    ;; If the winner replaces S-08 itself, verify K-of-N
+    ;; co-signatures per S-08's bootstrap discharge. Trap
+    ;; EBOOTSTRAPSHORT otherwise.
+    LOAD    10
+    PUSH    "S-09/stage6/check_bootstrap_if_s08"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                    ; → Bool
+    JMPZ    +bootstrap_ok
+    TRAP    EBOOTSTRAPSHORT
+    :bootstrap_ok
+
+    ;; ----------------------------------------------------------------
+    ;; Stage 7: Commitment. Atomically advance the binding under
+    ;; the kernel mutation cap, append a Synthesized weave entry
+    ;; whose grounding cites Stage 2's axioms and whose
+    ;; rationale_hash is Stage 5's rationale.
+    ;; ----------------------------------------------------------------
+
+    LOAD    10
+    PUSH    "S-09/stage5/proj/winner_form_hash"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   13
+
+    LOAD    1
+    PUSH    "S-09/proj/binding_name"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    LOAD    13
+    BINDSLOT                            ; trap EUNAUTHORISED if no kernel mutation cap
+
+    LOAD    6
+    PUSH    "S-09/grounding/proj/axioms"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    LOAD    10
+    PUSH    "S-09/stage5/proj/rationale_hash"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    LOAD    13
+    MAKEVEC 3
+    PUSH    "Synthesized"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+
+    ;; ----------------------------------------------------------------
+    ;; Stage 8: Vigil. Mint a vigil cap (via attenuate from the
+    ;; kernel vigil cap held by A_synth's mind), grant it to the
+    ;; holder named in the candidate's vigil declaration. Append
+    ;; SynthStage{8}.
+    ;; ----------------------------------------------------------------
+
+    LOAD    10
+    PUSH    "S-09/stage5/proj/vigil_declaration"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   14
+
+    LOAD    14
+    LOAD    13
+    PUSH    "S-09/stage8/mint_vigil"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                    ; → vigil_cap_id
+    STORE   15
+
+    LOAD    15
+    PUSH    8
+    MAKEVEC 2
+    PUSH    "SynthStage"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+
+    ;; Return the committed Form hash and the vigil cap.
+    LOAD    13
+    LOAD    15
+    MAKEVEC 2
+    PUSH    "Committed"
+    MAKEPAIR
+    SEAL    SynthResult
+    RET
+  )
+  :rationale-hash BREAKDOWN_S09_HASH
+)
+
+(exports
+  (synthesize (Hash) → SynthResult))
