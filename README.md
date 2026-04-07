@@ -32,6 +32,8 @@ actual ignition.
 
 What is in the repository as of this commit:
 
+**Release: `v0.1.0-pre-ignition`** — see `RELEASE-NOTES-v0.1.0.md`.
+
 | Layer               | Artifact                                                             | Status                                      |
 |---------------------|----------------------------------------------------------------------|---------------------------------------------|
 | Constitution        | `docs/MANIFESTO.md`, `axioms/A0..A8`                                 | complete                                    |
@@ -40,10 +42,12 @@ What is in the repository as of this commit:
 | IL specification    | `kernel/IL.md`                                                       | 30 opcodes, total small-step                |
 | Encoded Forms       | `kernel/forms/S-01..S-11.form`                                       | 11 of 11, written against the IL            |
 | Seed manifest       | `kernel/manifest.json`                                               | binds sources/proofs/immediates             |
-| Helpers             | `kernel/forms/helpers/`                                              | 1 of N (canonicaliser)                      |
-| Proof term language | `kernel/PROOF.md`                                                    | 12 sorts, 17 constructors, 29-rule table    |
-| Proof artifacts     | `kernel/forms/S-XX-*.proof`                                          | 10 of 11 (S-01..S-10; only S-11 remains) |
-| Inspection record   | `kernel/forms/S-08-*.inspection-record.md`                           | not yet written                             |
+| Helper stubs        | `kernel/forms/helpers/STUBS.md`                                      | ~110 stubs catalogued; 1 helper encoded     |
+| Proof term language | `kernel/PROOF.md`                                                    | 12 sorts, 17 constructors, 30-rule table    |
+| Proof artifacts     | `kernel/forms/S-XX-*.proof`                                          | **11 of 11** (10 end-to-end, S-08 structural) |
+| Inspection record   | `kernel/forms/S-08-*.inspection-record.md`                           | drafted; placeholder signatures             |
+| Simulation harness  | `kernel/SIMULATION.md`                                               | specification only; harness Form is post-v0.1.0 |
+| Release notes       | `RELEASE-NOTES-v0.1.0.md`                                            | shipped                                     |
 | Kernel-author keys  | `kernel/manifest.json` (`kernel_authors.identities`)                 | placeholders                                |
 
 The breakdowns are the load-bearing artifact: each one is a recorded
@@ -74,15 +78,15 @@ recurse through the proof tree without bottoming out at
 | S-08 `proof_checker`    | ✓ | obligations 2 & 3 (external)  | structural piece only (#1 via WitnessExec; #2,#3 await inspection record + consensus protocol substances) |
 | S-09 `synth_kernel`     | ✓ | none                          | **yes** (cites S-02, S-03, S-04, S-05, S-08 — all closed) |
 | S-10 `hephaistion_seed` | ✓ | none                          | **yes** (cites S-02, S-04, S-05, S-07, S-09 — all closed) |
-| S-11 `bridge_proto`     | — | —                             | (no artifact yet) |
+| S-11 `bridge_proto`     | ✓ | none                          | **yes** (cites S-02, S-04, S-06, S-07 — all closed) |
 
-**Substrate layer fully closed.** Six of eleven Forms are end-to-end
-checkable: S-01 (ignition) plus the four substrate Forms — matter
-(S-03), authority (S-02), causality (S-04), energy (S-05) — plus the
-runtime that interprets the IL (S-07). Everything pending is a
-*consumer* of this substrate: S-06 matches against it, S-09
-synthesizes through it, S-10 reflects on it, S-11 bridges it to
-humans, S-08 is the bootstrap exception.
+**All eleven primary Forms have proof artifacts.** Ten are
+end-to-end checkable structurally; S-08 is the bootstrap
+exception with its structural piece discharged via `WitnessExec`
+and its other two obligations awaiting external discharge
+documents that v0.1.0 ships in draft form. Pending leaves
+across mechanizable artifacts: zero. The seed has reached
+`v0.1.0-pre-ignition`.
 
 ## The repository
 
