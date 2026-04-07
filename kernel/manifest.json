@@ -218,9 +218,9 @@
     { "form": "S-02-cap-registry",    "artifact": "kernel/forms/S-02-cap-registry.proof",    "status": "discharged", "end_to_end_checkable": true,  "pending_leaves": [], "obligations": ["mint uniqueness/reachability", "attenuation monotonicity", "revocation totality", "lookup soundness"] },
     { "form": "S-03-substance-store", "artifact": "kernel/forms/S-03-substance-store.proof", "status": "discharged", "end_to_end_checkable": true,  "pending_leaves": [], "obligations": ["hash determinism", "cell immutability", "pin conservation", "reclamation totality", "digest substitutivity", "no enumeration"] },
     { "form": "S-04-weave-log",       "artifact": "kernel/forms/S-04-weave-log.proof",       "status": "discharged", "end_to_end_checkable": true,  "pending_leaves": [], "obligations": ["tip uniqueness", "append totality", "no amendment", "why-query soundness/completeness", "no enumeration", "grounding obligation"] },
-    { "form": "S-05-attention-alloc", "artifact": null,                                      "status": "pending",    "end_to_end_checkable": false, "pending_leaves": [], "obligations": ["budget conservation (I6)", "capability gating (I10)", "no-preemption (A3.4)", "allocator determinism (I7)", "dissolution cascade", "quantum boundedness"] },
+    { "form": "S-05-attention-alloc", "artifact": "kernel/forms/S-05-attention-alloc.proof", "status": "discharged", "end_to_end_checkable": true,  "pending_leaves": [], "obligations": ["budget conservation (I6)", "capability gating (I10)", "no-preemption (A3.4)", "allocator determinism (I7)", "dissolution cascade", "quantum boundedness"] },
     { "form": "S-06-intent-match",    "artifact": null,                                      "status": "pending",    "end_to_end_checkable": false, "pending_leaves": [], "obligations": ["policy gating", "sub-intent containment", "no-ambient-fulfillers", "determinism", "acceptance form preservation", "budget conservation at handoff"] },
-    { "form": "S-07-form-runtime",    "artifact": "kernel/forms/S-07-form-runtime.proof",    "status": "pending_leaf", "end_to_end_checkable": false, "pending_leaves": ["S-05 obligation 4"], "obligations": ["form immutability during execution", "continuation faithfulness (I7)", "invocation accounting", "no forging of authority (I10)", "trap totality", "self-execution liveness"] },
+    { "form": "S-07-form-runtime",    "artifact": "kernel/forms/S-07-form-runtime.proof",    "status": "discharged", "end_to_end_checkable": true,  "pending_leaves": [], "obligations": ["form immutability during execution", "continuation faithfulness (I7)", "invocation accounting", "no forging of authority (I10)", "trap totality", "self-execution liveness"] },
     { "form": "S-08-proof-checker",   "artifact": null,                                      "status": "pending_bootstrap", "end_to_end_checkable": false, "pending_leaves": [], "obligations": ["bootstrap: ground reflexive acceptance", "bootstrap: hand inspection of the kernel", "bootstrap: K-of-N multi-kernel consensus for replacement"] },
     { "form": "S-09-synth-kernel",    "artifact": null,                                      "status": "pending",    "end_to_end_checkable": false, "pending_leaves": [], "obligations": ["stage uniqueness", "stage ordering", "failure truncation", "binding gating", "capability gating", "loser preservation", "meta-budget conservation", "self-application liveness"] },
     { "form": "S-10-hephaistion-seed","artifact": null,                                      "status": "pending",    "end_to_end_checkable": false, "pending_leaves": [], "obligations": ["cap closure (I10)", "heartbeat liveness", "heartbeat absence visibility", "no self-promotion", "bounded epoch budget (I6)", "bootstrap-locked respect", "vigil hand-off completeness", "authorship grounding"] },
@@ -229,11 +229,12 @@
 
   "verification_summary": {
     "_comment": "Snapshot of proof verification status. Updated by hand after each proof artifact lands. The seed loader reads this summary as a fast pre-check before invoking the proof checker on individual artifacts; an inconsistency between this summary and the proof_obligations_status array is a build error.",
-    "discharged":           4,
-    "pending_leaf":         1,
-    "pending":              5,
+    "discharged":           6,
+    "pending_leaf":         0,
+    "pending":              4,
     "pending_bootstrap":    1,
-    "end_to_end_checkable": 4,
-    "first_closed_subgraph": "S-01 + S-02 + S-03 + S-04 + S-07 (the I10 base case — closure of authority chain from R)"
+    "end_to_end_checkable": 6,
+    "first_closed_subgraph": "S-01 + S-02 + S-03 + S-04 + S-07 (the I10 base case — closure of authority chain from R)",
+    "second_closed_subgraph": "S-01..S-05 + S-07 (the entire substrate layer — matter, authority, causality, energy, runtime, plus ignition; everything pending is a consumer of this substrate)"
   }
 }

@@ -42,7 +42,7 @@ What is in the repository as of this commit:
 | Seed manifest       | `kernel/manifest.json`                                               | binds sources/proofs/immediates             |
 | Helpers             | `kernel/forms/helpers/`                                              | 1 of N (canonicaliser)                      |
 | Proof term language | `kernel/PROOF.md`                                                    | 12 sorts, 17 constructors, 29-rule table    |
-| Proof artifacts     | `kernel/forms/S-XX-*.proof`                                          | 5 of 11 (S-01, S-02, S-03, S-04, S-07; **S-01 fully closed**) |
+| Proof artifacts     | `kernel/forms/S-XX-*.proof`                                          | 6 of 11 (S-01..S-05, S-07; **substrate layer fully closed**) |
 | Inspection record   | `kernel/forms/S-08-*.inspection-record.md`                           | not yet written                             |
 | Kernel-author keys  | `kernel/manifest.json` (`kernel_authors.identities`)                 | placeholders                                |
 
@@ -68,19 +68,21 @@ recurse through the proof tree without bottoming out at
 | S-02 `cap_registry`     | ✓ | none                          | **yes** (only cites S-03) |
 | S-03 `substance_store`  | ✓ | none                          | **yes** (the floor — no cross-Form deps) |
 | S-04 `weave_log`        | ✓ | none                          | **yes** (only cites S-03) |
-| S-05 `attention_alloc`  | — | —                             | (no artifact yet) |
+| S-05 `attention_alloc`  | ✓ | none                          | **yes** (cites S-02, S-04 — both closed) |
 | S-06 `intent_match`     | — | —                             | (no artifact yet) |
-| S-07 `form_runtime`     | ✓ | S-05 #4                       | no (one leaf, closes when S-05 lands) |
+| S-07 `form_runtime`     | ✓ | none                          | **yes** (last leaf S-05 #4 just closed) |
 | S-08 `proof_checker`    | — | bootstrap exception           | (inspection-record discharge is out of band) |
 | S-09 `synth_kernel`     | — | —                             | (no artifact yet) |
 | S-10 `hephaistion_seed` | — | —                             | (no artifact yet) |
 | S-11 `bridge_proto`     | — | —                             | (no artifact yet) |
 
-The first closed subgraph is the **I10 base case** — the closure of
-authority chain from R — discharged by S-01 + S-02 + S-03 + S-04 +
-S-07. This is the smallest non-trivial verification surface the seed
-has, and the first one whose ground reflexive acceptance test could
-be exercised against S-08 (once the inspection record is signed).
+**Substrate layer fully closed.** Six of eleven Forms are end-to-end
+checkable: S-01 (ignition) plus the four substrate Forms — matter
+(S-03), authority (S-02), causality (S-04), energy (S-05) — plus the
+runtime that interprets the IL (S-07). Everything pending is a
+*consumer* of this substrate: S-06 matches against it, S-09
+synthesizes through it, S-10 reflects on it, S-11 bridges it to
+humans, S-08 is the bootstrap exception.
 
 ## The repository
 

@@ -419,8 +419,13 @@
 ;      allocator must be deterministic-clean for the
 ;      continuation faithfulness property to compose)
 ;
-; The S-05 leaf is the only remaining pending dependency. After
-; S-05's proof lands, this proof becomes end-to-end checkable.
+; STATUS UPDATE (post-S-05 proof):
+;
+; S-05's proof artifact has landed. Obligation 4 (allocator
+; determinism) is discharged through S-05/tick-is-pure-function
+; plus S-05/no-entropy-clock-network-sensor-cap. This proof's
+; last pending leaf has closed. S-07 is now FULLY END-TO-END
+; CHECKABLE within the structural-discharge layer.
 ;
 ; Lemmas this proof draws from the abstract-model lemma library:
 ;   - S-07/execute-and-interp-only-READ-form_hash
