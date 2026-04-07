@@ -1,0 +1,17 @@
+[package]
+name = "ignis0"
+version = "0.1.0-scaffold"
+edition = "2021"
+description = "Stage-0 interpreter for IgnisSynth — the ignition substrate named by axiom A9"
+license = "MIT"
+
+[dependencies]
+blake3 = "1.5"
+
+[[bin]]
+name = "ignis0"
+path = "src/main.rs"
+
+[lib]
+name = "ignis0"
+path = "src/lib.rs"
