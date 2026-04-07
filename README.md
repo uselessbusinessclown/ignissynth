@@ -42,7 +42,7 @@ What is in the repository as of this commit:
 | Seed manifest       | `kernel/manifest.json`                                               | binds sources/proofs/immediates             |
 | Helpers             | `kernel/forms/helpers/`                                              | 1 of N (canonicaliser)                      |
 | Proof term language | `kernel/PROOF.md`                                                    | 12 sorts, 17 constructors, 29-rule table    |
-| Proof artifacts     | `kernel/forms/S-XX-*.proof`                                          | 8 of 11 (S-01..S-08; S-08 obligations 2,3 are external) |
+| Proof artifacts     | `kernel/forms/S-XX-*.proof`                                          | 9 of 11 (S-01..S-09; substrate + matching + synthesis closed) |
 | Inspection record   | `kernel/forms/S-08-*.inspection-record.md`                           | not yet written                             |
 | Kernel-author keys  | `kernel/manifest.json` (`kernel_authors.identities`)                 | placeholders                                |
 
@@ -72,7 +72,7 @@ recurse through the proof tree without bottoming out at
 | S-06 `intent_match`     | ✓ | none                          | **yes** (cites S-02, S-03, S-05 — all closed) |
 | S-07 `form_runtime`     | ✓ | none                          | **yes** (last leaf S-05 #4 just closed) |
 | S-08 `proof_checker`    | ✓ | obligations 2 & 3 (external)  | structural piece only (#1 via WitnessExec; #2,#3 await inspection record + consensus protocol substances) |
-| S-09 `synth_kernel`     | — | —                             | (no artifact yet) |
+| S-09 `synth_kernel`     | ✓ | none                          | **yes** (cites S-02, S-03, S-04, S-05, S-08 — all closed) |
 | S-10 `hephaistion_seed` | — | —                             | (no artifact yet) |
 | S-11 `bridge_proto`     | — | —                             | (no artifact yet) |
 

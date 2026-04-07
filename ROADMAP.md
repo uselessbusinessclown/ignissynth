@@ -29,7 +29,7 @@ problem rather than an open design problem.
 | 4 | Seed manifest (`kernel/manifest.json`)                                | ✓ done     |
 | 5 | Proof term language (`kernel/PROOF.md`)                               | ✓ done     |
 | 6 | Shared canonicaliser helper (`kernel/forms/helpers/canon-normalise`)  | ✓ done     |
-| 7 | 11 proof artifacts (`kernel/forms/S-XX-*.proof`)                      | 8 of 11    |
+| 7 | 11 proof artifacts (`kernel/forms/S-XX-*.proof`)                      | 9 of 11    |
 | 8 | Stage 4 simulation harness specification (`kernel/SIMULATION.md`)     | not started|
 | 9 | S-08 inspection record draft (`kernel/forms/S-08-*.inspection-record.md`) | not started|
 | 10| Helper stubs for every slot referenced by an encoded Form             | 1 of N     |
@@ -126,8 +126,8 @@ boundary may be bundled.
 | ~~2~~    | ~~S-05 proof~~                                     | S-06's S-05 leaves; S-10's S-05 leaves; S-07's last pending leaf | ✓ done (substrate layer now closed) |
 | ~~3~~    | ~~S-06 proof~~                                     | S-11's S-06 leaves                               | ✓ done (substrate + matching now closed) |
 | ~~4~~    | ~~S-08 proof (structural piece only)~~             | S-09's S-08 leaves                               | ✓ done (PROOF.md gained ExternalDischarge rule) |
-| **5**    | S-09 proof                                         | S-10's S-09 leaves                               | next   |
-| **6**    | S-10 proof                                         | (no proof depends on S-10)                       | pending|
+| ~~5~~    | ~~S-09 proof~~                                     | S-10's S-09 leaves                               | ✓ done (substrate + matching + synthesis closed) |
+| **6**    | S-10 proof                                         | (no proof depends on S-10)                       | next   |
 | **7**    | S-11 proof                                         | (no proof depends on S-11)                       | pending|
 | **8**    | `kernel/SIMULATION.md` (Stage 4 harness spec)      | item 8 of v0.1.0 checklist                       | pending|
 | **9**    | `kernel/forms/S-08-*.inspection-record.md` draft   | item 9 of v0.1.0 checklist                       | pending|
