@@ -1,0 +1,180 @@
+; S-01: ignite
+;
+; The singular Form that mints authority from the axioms themselves.
+; After it runs once, it overwrites its own Form-table slot with
+; IGNITED so any later call traps EIGNITED.
+;
+; This file is the wire form of the Form: a textual surface that the
+; IL parser (PARSEFORM) reads into an ExecState-shaped value. The
+; canonical bytes are produced by the canonicaliser shared between
+; S-07 and S-08; line comments and whitespace are stripped before
+; hashing.
+;
+; Synthesis chain:
+;   provocation:  breakdown/S-01-ignite.md
+;   grounding:    A0.3 A0.4 A0.7 A2.1 A2.6
+;   selected:     Candidate A — Self-erasing entry point
+;   proof:        kernel/forms/S-01-ignite.proof  (to be discharged
+;                 by S-08 against obligations 1-5 in the breakdown)
+
+(form
+  :type-tag      "Form/v1"
+  :name          "ignite"
+  :declared-caps ()                              ; ignite holds nothing on entry
+  :declared-traps (EIGNITED ESTALE)              ; the only kinds it can produce
+  :arity         0                               ; no stack args at entry
+  :locals-n      6
+  :code (
+
+    ;; ----------------------------------------------------------------
+    ;; Step 0: refuse if we are already ignited.
+    ;;
+    ;; The Form-table slot named by `name-hash("ignite")` should
+    ;; resolve to *this* Form's hash on first call. After the first
+    ;; successful run, the same slot is overwritten with `IGNITED`
+    ;; (a zero-arity Form whose only effect is to trap EIGNITED), so
+    ;; any subsequent call dispatches *into IGNITED, not into us*,
+    ;; and we never reach this code again.
+    ;;
+    ;; The check below is therefore a defensive belt-and-braces:
+    ;; if for any reason the dispatch reaches this Form when the
+    ;; slot is no longer pointing at our hash, we trap EIGNITED
+    ;; ourselves rather than minting a second root capability.
+    ;; ----------------------------------------------------------------
+
+    PUSH    "ignite"          ; immediate name string
+    SEAL    Hash              ; → name-hash on stack
+    STORE   0                 ; locals[0] := name-hash
+
+    LOAD    0
+    READSLOT                  ; → form-hash currently bound to "ignite"
+    SELFHASH                  ; → our own form-hash
+    EQ                        ; (slot==self) ?
+    JMPZ    +trap_already_ignited
+
+    ;; ----------------------------------------------------------------
+    ;; Step 1: mint the root capability R.
+    ;;
+    ;; This is the only place in the entire habitat where a
+    ;; capability comes into existence without an ATTENUATE from a
+    ;; held parent. The IL has no MINT opcode for exactly this
+    ;; reason — the I10 exception is not an instruction available
+    ;; to anyone, it is a *Form-level* primitive that exists only
+    ;; here.
+    ;;
+    ;; Operationally we express the mint as a sealed substance of
+    ;; type `RootCap` whose canonical contents declare the
+    ;; universal rights, the substrate-budget total, and the seed
+    ;; mind id. S-02's `cap_registry` recognises substances of
+    ;; type `RootCap` as the genesis case during the same single
+    ;; weave entry that this Form emits in Step 2 — that
+    ;; recognition is the only place in S-02's body that does not
+    ;; require an ATTENUATE chain to a parent, and S-02's proof
+    ;; explicitly discharges this case.
+    ;; ----------------------------------------------------------------
+
+    PUSH    UNIVERSAL_RIGHTS  ; immediate, defined in seed manifest
+    PUSH    SUBSTRATE_BUDGET  ; immediate, declared at boot
+    PUSH    SEED_MIND_ID      ; immediate, the bootstrap mind id
+    MAKEVEC 3                 ; → Vec{rights, budget, holder}
+    SEAL    RootCap           ; → root-cap-hash
+    STORE   1                 ; locals[1] := root-cap-hash
+
+    ;; ----------------------------------------------------------------
+    ;; Step 2: write the Synthesized weave entry E0.
+    ;;
+    ;; E0's grounding cites A0.7, A2.1, I10. Its rationale_hash is
+    ;; the hash of breakdown/S-01-ignite.md (also an immediate, the
+    ;; build process seals the breakdown into the substance store
+    ;; before this Form's first run and the resulting hash is
+    ;; recorded in the seed manifest).
+    ;;
+    ;; This is the *first* weave entry. Its `prev` is the empty
+    ;; hash, which the weave_log Form (S-04) accepts only when the
+    ;; tip is also empty — i.e., only on first call from a fresh
+    ;; habitat. If E0 is appended to a non-empty weave, S-04 traps
+    ;; ESTALE and we propagate it.
+    ;; ----------------------------------------------------------------
+
+    PUSH    GROUNDING_A07_A21_I10   ; immediate, sealed at build
+    PUSH    BREAKDOWN_S01_HASH      ; immediate, sealed at build
+    LOAD    1                       ; root-cap-hash from Step 1
+    PUSH    "root cap minted"       ; immediate description
+    MAKEVEC 4
+    SEAL    SynthesizedEntry        ; → e0-hash
+    STORE   2                       ; locals[2] := e0-hash
+
+    LOAD    2
+    APPEND                          ; trap propagates ESTALE if non-empty tip
+    STORE   3                       ; locals[3] := tip after E0
+
+    ;; ----------------------------------------------------------------
+    ;; Step 3: self-erase the Form-table slot.
+    ;;
+    ;; Overwrite our own slot with IGNITED. This is the part that
+    ;; makes the I10 exception unrepeatable. After this BINDSLOT
+    ;; succeeds, every later call to the slot named "ignite"
+    ;; dispatches into IGNITED, not into this Form.
+    ;;
+    ;; BINDSLOT requires the kernel mutation cap. ignite holds it
+    ;; for exactly this purpose: the kernel mutation cap is
+    ;; *itself* minted by R (Step 1) before being granted to this
+    ;; Form's running attention by the seed loader at the same
+    ;; moment R is minted. After Step 4 below, this attention has
+    ;; no further use for the kernel mutation cap and the seed
+    ;; loader revokes it.
+    ;; ----------------------------------------------------------------
+
+    LOAD    0                       ; "ignite" name-hash
+    PUSH    IGNITED_FORM_HASH       ; immediate, hash of the IGNITED Form
+    BINDSLOT                        ; advance the binding
+
+    ;; ----------------------------------------------------------------
+    ;; Step 4: return R to the seed loader.
+    ;;
+    ;; The seed loader, holding the result, hands R to the seed
+    ;; mind as its initial cap_view. From here on, every
+    ;; capability in the habitat is a transitive ATTENUATE
+    ;; descendant of R. Step 4 is the closure of the I10 base case.
+    ;; ----------------------------------------------------------------
+
+    LOAD    1                       ; root-cap-hash
+    RET
+
+    ;; ----------------------------------------------------------------
+    ;; Trap target: already ignited.
+    ;; ----------------------------------------------------------------
+
+    :trap_already_ignited
+    TRAP    EIGNITED
+  )
+
+  :rationale-hash BREAKDOWN_S01_HASH
+)
+
+; ============================================================
+; The IGNITED Form, defined inline in the same source.
+; This is a zero-arity Form whose only behavior is to trap.
+; Its hash is referenced by IGNITED_FORM_HASH above.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "IGNITED"
+  :declared-caps ()
+  :declared-traps (EIGNITED)
+  :arity         0
+  :locals-n      0
+  :code (
+
+    ;; The seed loader records every entry into this Form as an
+    ;; IgnitionReplayAttempted weave entry *before* dispatch
+    ;; (that is, the entry is recorded by the dispatch path in
+    ;; S-07 against the slot's history, not by this Form's body —
+    ;; this Form has no caps and could not append a weave entry
+    ;; even if it tried).
+    TRAP    EIGNITED
+  )
+
+  :rationale-hash BREAKDOWN_S01_HASH
+)
