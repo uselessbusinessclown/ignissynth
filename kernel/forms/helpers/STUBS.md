@@ -19,6 +19,14 @@ are post-v0.1.0 work.
 |---------------------------------|------------------------------------------------|
 | `S-07/canon/normalise`          | `kernel/forms/helpers/canon-normalise.form`    |
 | `S-08/equiv_under_canon`        | (in same file as canon-normalise)              |
+| `S-07/parse_form`               | `kernel/forms/helpers/parser.form`             |
+| `Parser/parse_nat_field`        | `kernel/forms/helpers/parser.form`             |
+| `Parser/parse_bytes_field`      | `kernel/forms/helpers/parser.form`             |
+| `Parser/parse_hash_field`       | `kernel/forms/helpers/parser.form`             |
+| `Parser/parse_capid_vec_field`  | `kernel/forms/helpers/parser.form`             |
+| `Parser/parse_trapkind_vec_field`| `kernel/forms/helpers/parser.form`            |
+| `Parser/parse_code_field`       | `kernel/forms/helpers/parser.form`             |
+| `Parser/parse_opcode`           | `kernel/forms/helpers/parser.form`             |
 | `S-04/proj/prev`                | `kernel/forms/helpers/s04-projections.form`    |
 | `S-04/proj/kind`                | `kernel/forms/helpers/s04-projections.form`    |
 | `S-04/proj/grounding`           | `kernel/forms/helpers/s04-projections.form`    |
@@ -45,6 +53,42 @@ are post-v0.1.0 work.
 | `S-05/proj/mind_id`             | `kernel/forms/helpers/s02-s05-projections.form`|
 | `S-05/proj/budget_remaining`    | `kernel/forms/helpers/s02-s05-projections.form`|
 | `S-05/proj/cap_view`            | `kernel/forms/helpers/s02-s05-projections.form`|
+
+## Parser/* primitives (referenced by `parser.form`)
+
+Lower-level helpers the IL parser delegates to. Each is small
+(3-15 instructions of IL: read characters, advance cursor,
+recognise tokens). They will be encoded as a sibling
+`parser-primitives.form` file in the next batch.
+
+| Slot                            | Signature                                  | Status   |
+|---------------------------------|--------------------------------------------|----------|
+| `Parser/expect_open_form`       | `(Bytes) → Cursor`                         | pending  |
+| `Parser/expect_close_form_and_eof`| `(Bytes, Cursor) → ()`                   | pending  |
+| `Parser/expect_open_paren`      | `(Cursor) → Cursor`                        | pending  |
+| `Parser/expect_field_name`      | `(Cursor, Bytes) → Cursor`                 | pending  |
+| `Parser/read_decimal_nat`       | `(Cursor) → Pair{Cursor, Nat}`             | pending  |
+| `Parser/read_quoted_bytes`      | `(Cursor) → Pair{Cursor, Bytes}`           | pending  |
+| `Parser/read_hash_literal`      | `(Cursor) → Pair{Cursor, Hash}`            | pending  |
+| `Parser/read_capid_vec`         | `(Cursor) → Pair{Cursor, Vec{CapId}}`      | pending  |
+| `Parser/read_trapkind_vec`      | `(Cursor) → Pair{Cursor, Vec{TrapKind}}`   | pending  |
+| `Parser/read_identifier`        | `(Cursor) → Pair{Cursor, Bytes}`           | pending  |
+| `Parser/read_operands_for_spec` | `(OpcodeSpec, Cursor) → Pair{Cursor, Vec{Operand}}` | pending |
+| `Parser/opcode_lookup`          | `(Bytes) → OpcodeSpec`                     | pending  |
+| `Parser/parse_opcodes_until_close` | `(Cursor, Vec{Opcode}) → Pair{Cursor, Vec{Opcode}}` | pending |
+
+## Non-exempt helpers requiring proof artifacts
+
+Per `synthesis/PROTOCOL.md` § Helper exemption, helpers larger
+than ~30 IL instructions ship their own proof artifact at
+`kernel/forms/helpers/{helper-name}.proof`. Tracked separately
+from primary-Form proofs because they live under `helpers/`.
+
+| Helper file                     | Proof artifact                        | Status |
+|---------------------------------|---------------------------------------|--------|
+| `parser.form`                   | `parser.proof`                        | pending — drafted in parser.form footer; obligations 1-5 listed |
+| `canon-normalise.form`          | `canon-normalise.proof`               | pending |
+| (trie/treap/forest helpers when encoded) | per-helper                  | pending |
 
 ## Schema/* primitives (referenced by `schema-helpers.form`)
 
@@ -166,7 +210,7 @@ ordering.
 
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
-| `S-07/parse_form`               | `(Bytes) → ParsedForm`                     | pending  |
+| `S-07/parse_form`               | `(Bytes) → ParsedForm`                     | encoded (parser.form; depends on Parser/* primitives) |
 | `S-07/interp/run`               | `(ExecState) → Pair{Verdict, ExecState}`   | pending  |
 | `S-07/parse_exec_state`         | `(Bytes) → ExecState`                      | pending  |
 | `S-07/finalise_invocation`      | `(Pair{Verdict, ExecState}) → InvocationResult` | pending |
@@ -260,9 +304,11 @@ operational form of the IL specification.
 
 | Category              | Count    |
 |-----------------------|----------|
-| Encoded helpers       | 28       |
-| Stub-only helpers     | ~91      |
-| Schema/* primitives   | 7 (newly catalogued, post-audit) |
+| Encoded helpers       | 36       |
+| Stub-only helpers     | ~96      |
+| Schema/* primitives   | 7 (catalogued, pending) |
+| Parser/* primitives   | 13 (catalogued, pending) |
+| Non-exempt helpers requiring proofs | 3+ |
 | Parser stubs          | 4 (one per Form that does parsing) |
 | Trie/forest ops       | 14       |
 | Field projections     | ~50      |
