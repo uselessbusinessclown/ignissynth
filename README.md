@@ -54,6 +54,34 @@ encoded `.form` file references the breakdown that produced its design
 decisions. Every immediate value referenced by name in a `.form` file
 is named in the manifest's `immediates` block.
 
+### Verification chain status
+
+A proof artifact is **end-to-end checkable** when every `S0X
+:obligation N` leaf in its rule tree resolves to a discharged
+obligation in another proof artifact (or in this one). The walker can
+recurse through the proof tree without bottoming out at
+`Reject{MissingDependency}`.
+
+| Form | Proof artifact | Pending leaves | End-to-end checkable? |
+|------|----------------|----------------|------------------------|
+| S-01 `ignite`           | ✓ | none                          | **yes** (closed via S-02, S-03, S-04, S-07) |
+| S-02 `cap_registry`     | ✓ | none                          | **yes** (only cites S-03) |
+| S-03 `substance_store`  | ✓ | none                          | **yes** (the floor — no cross-Form deps) |
+| S-04 `weave_log`        | ✓ | none                          | **yes** (only cites S-03) |
+| S-05 `attention_alloc`  | — | —                             | (no artifact yet) |
+| S-06 `intent_match`     | — | —                             | (no artifact yet) |
+| S-07 `form_runtime`     | ✓ | S-05 #4                       | no (one leaf, closes when S-05 lands) |
+| S-08 `proof_checker`    | — | bootstrap exception           | (inspection-record discharge is out of band) |
+| S-09 `synth_kernel`     | — | —                             | (no artifact yet) |
+| S-10 `hephaistion_seed` | — | —                             | (no artifact yet) |
+| S-11 `bridge_proto`     | — | —                             | (no artifact yet) |
+
+The first closed subgraph is the **I10 base case** — the closure of
+authority chain from R — discharged by S-01 + S-02 + S-03 + S-04 +
+S-07. This is the smallest non-trivial verification surface the seed
+has, and the first one whose ground reflexive acceptance test could
+be exercised against S-08 (once the inspection record is signed).
+
 ## The repository
 
 ```

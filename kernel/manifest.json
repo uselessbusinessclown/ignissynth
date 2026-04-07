@@ -212,18 +212,28 @@
     "S-01-ignite"
   ],
 
-  "proof_obligations_pending": [
-    "_comment: the proof artifacts named in each breakdown's Proof section that have not yet been discharged. Each entry will become a sealed Proof substance under kernel/forms/S-XX-{name}.proof, and the seed loader will refuse to commit a Form whose proof has not been discharged. S-08 is the bootstrap exception (see breakdown § Proof for the three layered discharges).",
-    { "form": "S-01-ignite",          "obligations": ["uniqueness of ignition", "universality of root", "closure of authority", "self-erasure", "replay refusal"] },
-    { "form": "S-02-cap-registry",    "obligations": ["mint uniqueness/reachability", "attenuation monotonicity", "revocation totality", "lookup soundness"] },
-    { "form": "S-03-substance-store", "obligations": ["hash determinism", "cell immutability", "pin conservation", "reclamation totality", "digest substitutivity", "no enumeration"] },
-    { "form": "S-04-weave-log",       "obligations": ["tip uniqueness", "append totality", "no amendment", "why-query soundness/completeness", "no enumeration", "grounding obligation"] },
-    { "form": "S-05-attention-alloc", "obligations": ["budget conservation (I6)", "capability gating (I10)", "no-preemption (A3.4)", "allocator determinism (I7)", "dissolution cascade", "quantum boundedness"] },
-    { "form": "S-06-intent-match",    "obligations": ["policy gating", "sub-intent containment", "no-ambient-fulfillers", "determinism", "acceptance form preservation", "budget conservation at handoff"] },
-    { "form": "S-07-form-runtime",    "obligations": ["form immutability during execution", "continuation faithfulness (I7)", "invocation accounting", "no forging of authority (I10)", "trap totality", "self-execution liveness"] },
-    { "form": "S-08-proof-checker",   "obligations": ["bootstrap: ground reflexive acceptance", "bootstrap: hand inspection of the kernel", "bootstrap: K-of-N multi-kernel consensus for replacement"] },
-    { "form": "S-09-synth-kernel",    "obligations": ["stage uniqueness", "stage ordering", "failure truncation", "binding gating", "capability gating", "loser preservation", "meta-budget conservation", "self-application liveness"] },
-    { "form": "S-10-hephaistion-seed","obligations": ["cap closure (I10)", "heartbeat liveness", "heartbeat absence visibility", "no self-promotion", "bounded epoch budget (I6)", "bootstrap-locked respect", "vigil hand-off completeness", "authorship grounding"] },
-    { "form": "S-11-bridge-proto",    "obligations": ["bridge subordination (I11)", "no human privilege", "receipt chain completeness (A8.5)", "acceptance check totality (A4.5)", "no silent state", "human silence as no-op"] }
-  ]
+  "proof_obligations_status": [
+    "_comment: per-Form obligation tracking. status is one of: discharged (proof artifact exists and the obligation has a rule_tree), pending (no proof artifact), or pending_leaf (artifact exists but cites a still-pending leaf in another Form). Each entry will become a sealed Proof substance under kernel/forms/S-XX-{name}.proof. The seed loader refuses to commit a Form whose proof is not discharged. S-08 is the bootstrap exception — see breakdown § Proof for the three layered discharges.",
+    { "form": "S-01-ignite",          "artifact": "kernel/forms/S-01-ignite.proof",          "status": "discharged", "end_to_end_checkable": true,  "pending_leaves": [], "obligations": ["uniqueness of ignition", "universality of root", "closure of authority", "self-erasure", "replay refusal"] },
+    { "form": "S-02-cap-registry",    "artifact": "kernel/forms/S-02-cap-registry.proof",    "status": "discharged", "end_to_end_checkable": true,  "pending_leaves": [], "obligations": ["mint uniqueness/reachability", "attenuation monotonicity", "revocation totality", "lookup soundness"] },
+    { "form": "S-03-substance-store", "artifact": "kernel/forms/S-03-substance-store.proof", "status": "discharged", "end_to_end_checkable": true,  "pending_leaves": [], "obligations": ["hash determinism", "cell immutability", "pin conservation", "reclamation totality", "digest substitutivity", "no enumeration"] },
+    { "form": "S-04-weave-log",       "artifact": "kernel/forms/S-04-weave-log.proof",       "status": "discharged", "end_to_end_checkable": true,  "pending_leaves": [], "obligations": ["tip uniqueness", "append totality", "no amendment", "why-query soundness/completeness", "no enumeration", "grounding obligation"] },
+    { "form": "S-05-attention-alloc", "artifact": null,                                      "status": "pending",    "end_to_end_checkable": false, "pending_leaves": [], "obligations": ["budget conservation (I6)", "capability gating (I10)", "no-preemption (A3.4)", "allocator determinism (I7)", "dissolution cascade", "quantum boundedness"] },
+    { "form": "S-06-intent-match",    "artifact": null,                                      "status": "pending",    "end_to_end_checkable": false, "pending_leaves": [], "obligations": ["policy gating", "sub-intent containment", "no-ambient-fulfillers", "determinism", "acceptance form preservation", "budget conservation at handoff"] },
+    { "form": "S-07-form-runtime",    "artifact": "kernel/forms/S-07-form-runtime.proof",    "status": "pending_leaf", "end_to_end_checkable": false, "pending_leaves": ["S-05 obligation 4"], "obligations": ["form immutability during execution", "continuation faithfulness (I7)", "invocation accounting", "no forging of authority (I10)", "trap totality", "self-execution liveness"] },
+    { "form": "S-08-proof-checker",   "artifact": null,                                      "status": "pending_bootstrap", "end_to_end_checkable": false, "pending_leaves": [], "obligations": ["bootstrap: ground reflexive acceptance", "bootstrap: hand inspection of the kernel", "bootstrap: K-of-N multi-kernel consensus for replacement"] },
+    { "form": "S-09-synth-kernel",    "artifact": null,                                      "status": "pending",    "end_to_end_checkable": false, "pending_leaves": [], "obligations": ["stage uniqueness", "stage ordering", "failure truncation", "binding gating", "capability gating", "loser preservation", "meta-budget conservation", "self-application liveness"] },
+    { "form": "S-10-hephaistion-seed","artifact": null,                                      "status": "pending",    "end_to_end_checkable": false, "pending_leaves": [], "obligations": ["cap closure (I10)", "heartbeat liveness", "heartbeat absence visibility", "no self-promotion", "bounded epoch budget (I6)", "bootstrap-locked respect", "vigil hand-off completeness", "authorship grounding"] },
+    { "form": "S-11-bridge-proto",    "artifact": null,                                      "status": "pending",    "end_to_end_checkable": false, "pending_leaves": [], "obligations": ["bridge subordination (I11)", "no human privilege", "receipt chain completeness (A8.5)", "acceptance check totality (A4.5)", "no silent state", "human silence as no-op"] }
+  ],
+
+  "verification_summary": {
+    "_comment": "Snapshot of proof verification status. Updated by hand after each proof artifact lands. The seed loader reads this summary as a fast pre-check before invoking the proof checker on individual artifacts; an inconsistency between this summary and the proof_obligations_status array is a build error.",
+    "discharged":           4,
+    "pending_leaf":         1,
+    "pending":              5,
+    "pending_bootstrap":    1,
+    "end_to_end_checkable": 4,
+    "first_closed_subgraph": "S-01 + S-02 + S-03 + S-04 + S-07 (the I10 base case — closure of authority chain from R)"
+  }
 }

@@ -314,11 +314,29 @@
 ;   - S-07 obligation 3: invocation accounting (the dispatch
 ;                        path's trap-entry append)
 ;
-; Until those four Forms have proof artifacts of their own, the
-; walker's recursion at those leaves will fail with
-; Reject{MissingDependency}. This proof is therefore *correct in
-; structure* but *not yet checkable end-to-end* — it becomes
-; checkable when S-02, S-04, and S-07 each have proof artifacts
-; that discharge the cited obligations. That is the next layer
-; of work.
+; STATUS UPDATE (post-S-02/S-03/S-04/S-07 proofs):
+;
+; All four cited Forms now have proof artifacts. The walker's
+; recursion at every leaf above resolves:
+;   - S-02 obligation 1 → S-02-cap-registry.proof obligation 1
+;   - S-02 obligation 4 → S-02-cap-registry.proof obligation 3
+;     (lifted to "post-ignition-no-mutation-cap")
+;   - S-04 obligation 1 → S-04-weave-log.proof obligation 1
+;   - S-04 obligation 6 → S-04-weave-log.proof obligation 6
+;   - S-07 obligation 3 → S-07-form-runtime.proof obligation 3
+;
+; This proof is therefore now FULLY END-TO-END CHECKABLE within
+; the structural-discharge layer of the seed's proof load,
+; subject only to:
+;   - the abstract-model lemma library being sealed under
+;     LEMMA_LIBRARY_HASH
+;   - the inspection-record discharge of S-08 being signed by
+;     the kernel-author identities
+;   - the K-of-N consensus protocol of S-08 being honored before
+;     any future replacement of S-08 itself
+;
+; S-01 is the first seed Form whose proof reaches this state.
+; The I10 base case — the closure of authority chain from R —
+; is a real proof tree the walker can recurse through without
+; bottoming out at a missing leaf.
 ; ============================================================

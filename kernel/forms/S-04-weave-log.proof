@@ -478,9 +478,17 @@
 ; proofs — they are abstract-model facts whose discharge is "look
 ; at the body of S-04/append".
 ;
-; This proof discharges S-01's obligations 1 and 5 dependencies
-; on S-04 (tip uniqueness and grounding, respectively). After
-; this proof's leaves on S-03 (obligations 1, 2, 6) are also
-; discharged, S-01's obligations 1 and 5 become end-to-end
-; checkable.
+; STATUS UPDATE (post-S-03 proof):
+;
+; S-03's proof artifact has landed. The three S-03 leaves cited
+; above (#1 hash determinism, #2 cell immutability, #6 no
+; enumeration) all resolve through S-03-substance-store.proof.
+;
+; This proof is therefore now FULLY END-TO-END CHECKABLE within
+; the structural-discharge layer, subject only to the abstract-
+; model lemma library being sealed.
+;
+; Cascade: this proof's discharge of obligations 1 and 6 was the
+; remaining S-04 dependency in S-01's proof artifact, which is
+; now also fully closed (see S-01-ignite.proof footer).
 ; ============================================================

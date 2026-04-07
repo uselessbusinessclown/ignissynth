@@ -120,19 +120,19 @@ one trivial pending leaf.
 Each step is one substantive commit. Steps that share a natural
 boundary may be bundled.
 
-| Step | Artifact                                           | Unblocks                                         |
-|------|----------------------------------------------------|--------------------------------------------------|
-| **1**    | S-07 proof                                         | S-01 fully closed; S-09's S-07 leaves            |
-| **2**    | S-05 proof                                         | S-06's S-05 leaves; S-10's S-05 leaves           |
-| **3**    | S-06 proof                                         | S-11's S-06 leaves                               |
-| **4**    | S-08 proof (structural piece only)                 | S-09's S-08 leaves                               |
-| **5**    | S-09 proof                                         | S-10's S-09 leaves                               |
-| **6**    | S-10 proof                                         | (no proof depends on S-10)                       |
-| **7**    | S-11 proof                                         | (no proof depends on S-11)                       |
-| **8**    | `kernel/SIMULATION.md` (Stage 4 harness spec)      | item 8 of v0.1.0 checklist                       |
-| **9**    | `kernel/forms/S-08-*.inspection-record.md` draft   | item 9 of v0.1.0 checklist                       |
-| **10**   | Helper stubs (parser, trie ops, lemma library, ranker, surface grammar) | item 10 of v0.1.0 checklist |
-| **11**   | `RELEASE-NOTES-v0.1.0.md` + version bump + tag     | v0.1.0-pre-ignition declared                     |
+| Step | Artifact                                           | Unblocks                                         | Status |
+|------|----------------------------------------------------|--------------------------------------------------|--------|
+| ~~1~~    | ~~S-07 proof~~                                     | S-01 fully closed; S-09's S-07 leaves            | ✓ done (S-01 now fully closed) |
+| **2**    | S-05 proof                                         | S-06's S-05 leaves; S-10's S-05 leaves; S-07's last pending leaf | next   |
+| **3**    | S-06 proof                                         | S-11's S-06 leaves                               | pending|
+| **4**    | S-08 proof (structural piece only)                 | S-09's S-08 leaves                               | pending|
+| **5**    | S-09 proof                                         | S-10's S-09 leaves                               | pending|
+| **6**    | S-10 proof                                         | (no proof depends on S-10)                       | pending|
+| **7**    | S-11 proof                                         | (no proof depends on S-11)                       | pending|
+| **8**    | `kernel/SIMULATION.md` (Stage 4 harness spec)      | item 8 of v0.1.0 checklist                       | pending|
+| **9**    | `kernel/forms/S-08-*.inspection-record.md` draft   | item 9 of v0.1.0 checklist                       | pending|
+| **10**   | Helper stubs (parser, trie ops, lemma library, ranker, surface grammar) | item 10 of v0.1.0 checklist | pending|
+| **11**   | `RELEASE-NOTES-v0.1.0.md` + version bump + tag     | v0.1.0-pre-ignition declared                     | pending|
 
 **Estimated cadence**: 1-2 substantive artifacts per session.
 Steps 1-7 are seven proof artifacts; step 10 is several helper
