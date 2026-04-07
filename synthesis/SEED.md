@@ -109,7 +109,7 @@ rather than in the body:
 
 1. **Verify.** The seed loader reads `kernel/manifest.json`, checks
    every Form source against its declared hash, verifies the cold
-   weave's signatures, and verifies every `proof_obligations_pending`
+   weave's signatures, and verifies every `proof_obligations_status`
    entry is matched by a sealed Proof substance under
    `kernel/forms/S-XX-*.proof` (or a discharged inspection record for
    S-08 specifically).

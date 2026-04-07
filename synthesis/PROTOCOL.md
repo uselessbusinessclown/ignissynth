@@ -132,6 +132,44 @@ relied upon by other syntheses without further review.
 
 ---
 
+## The helper exemption
+
+A *helper Form* is a Form bound at a slot referenced by one or
+more primary Forms (the eleven seed Forms or any post-ignition
+synthesised Form), whose body is small enough — typically
+fewer than 30 instructions of IL — that its correctness is a
+direct structural reading of its bytes by a kernel-author
+identity in the inspection record.
+
+Helper Forms are exempt from the requirement to ship a separate
+`.proof` artifact, on the following terms:
+
+1. The helper's body is included in the inspection record's
+   line-by-line review (or in the inspection record of the
+   Form whose synthesis act produced the helper).
+2. The primary Form that depends on the helper cites the
+   helper's structural property as a `LemmaApp` head in its
+   own proof artifact.
+3. The lemma library entry for that head names the helper Form
+   by hash and gives the structural reading explicitly.
+4. The helper's `:declared-caps` and `:declared-traps` lists
+   are themselves part of what the inspection record verifies.
+
+A helper that does *not* meet the smallness condition (e.g.,
+the IL parser at `S-07/parse_form`, or the trie/treap/forest
+helpers, which are tens to hundreds of lines) is *not* exempt
+and ships its own proof artifact under
+`kernel/forms/helpers/{helper-name}.proof`.
+
+The exemption exists because the alternative — shipping a
+proof artifact for every 5-instruction projection — would
+expand the proof load by an order of magnitude with no
+discharge of any obligation that the inspection record does
+not already discharge by reading the body. The discipline
+remains: every Form's body is verified somewhere; only the
+*shape* of the verification (separate `.proof` artifact vs.
+inspection-record line) varies with the helper's size.
+
 ## What this protocol forbids
 
 - Committing code without a recorded provocation.

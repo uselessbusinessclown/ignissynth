@@ -50,6 +50,10 @@ Each `.proof` artifact's `S0X :obligation N` leaves resolve only
 when the cited proof exists. Listed in dependency order — earlier
 entries unblock later ones.
 
+All eleven proof artifacts have landed. The dependency graph
+below is the **historical** order in which they were closed
+during the v0.1.0 iteration; every node in it now reads ✓.
+
 ```
                  ┌──────────────┐
                  │ S-03 ✓       │  the floor — no cross-Form deps
@@ -59,9 +63,9 @@ entries unblock later ones.
         │               │                         │
         ▼               ▼                         ▼
 ┌──────────────┐ ┌──────────────┐         ┌──────────────┐
-│ S-04 ✓       │ │ S-02 ✓       │         │ S-07         │  pending
+│ S-04 ✓       │ │ S-02 ✓       │         │ S-07 ✓       │
 │ deps: S-03   │ │ deps: S-03   │         │ deps: S-03,  │
-│              │ │              │         │       S-05*  │
+│              │ │              │         │       S-05   │
 └──────┬───────┘ └──────┬───────┘         └──────┬───────┘
        │                │                         │
        │                └──────┬──────────────────┘
@@ -70,36 +74,36 @@ entries unblock later ones.
                    │
                    ▼
           ┌──────────────────┐
-          │ S-01 ✓ (mod S-07)│  fully closed once S-07 lands
+          │ S-01 ✓           │  the I10 base case (closed via the four above)
           └──────────────────┘
 
            ┌──────────────┐
-           │ S-05         │  pending
+           │ S-05 ✓       │
            │ deps: S-02   │
            └──────┬───────┘
                   │
                   ▼
            ┌──────────────┐
-           │ S-06         │  pending
+           │ S-06 ✓       │
            │ deps: S-02,  │
            │       S-05   │
            └──────────────┘
 
            ┌──────────────┐
-           │ S-08         │  bootstrap exception
-           │ deps: S-03   │  (only the structural piece is mechanizable;
-           └──────────────┘   the inspection-record + K-of-N
-                              discharges are out of band)
+           │ S-08 ✓       │  bootstrap exception
+           │ deps: S-03   │  (structural piece via WitnessExec;
+           └──────────────┘   inspection record + K-of-N are
+                              external discharges)
 
            ┌──────────────┐
-           │ S-09         │  pending
+           │ S-09 ✓       │
            │ deps: S-04,  │
            │       S-07,  │
            │       S-08   │
            └──────────────┘
 
            ┌──────────────┐
-           │ S-10         │  pending
+           │ S-10 ✓       │
            │ deps: S-09,  │
            │       S-04,  │
            │       S-05,  │
@@ -107,18 +111,12 @@ entries unblock later ones.
            └──────────────┘
 
            ┌──────────────┐
-           │ S-11         │  pending
+           │ S-11 ✓       │
            │ deps: S-06,  │
            │       S-07,  │
            │       S-04   │
            └──────────────┘
 ```
-
-`*` = S-07's proof references S-05's `forest/cap_view` projection,
-which is structurally trivial but cited as a leaf to make the
-dependency explicit. This means S-07's proof becomes end-to-end
-checkable only after S-05's lands; until then, S-07's proof has
-one trivial pending leaf.
 
 ## Per-step plan from here
 
@@ -145,6 +143,171 @@ stubs that can land in batches. Working at the pace of the proof
 artifacts so far (1 per session, sometimes 2 when they share a
 discharge pattern), this is roughly **9-11 sessions** to v0.1.0
 from the current checkpoint.
+
+## Project review (post-v0.1.0 audit)
+
+A high-level audit conducted after v0.1.0-pre-ignition shipped
+identified six areas where the iteration was either incomplete
+in a way the v0.1.0 narrative did not flag, or where the v0.2.0
+work has dependencies that are not yet catalogued. None of these
+are course corrections — the discipline held — but each is a
+real gap that should be visible to any agent picking up the work.
+
+### Gap 1: the abstract-model lemma library is referenced everywhere but does not yet exist
+
+Every `kernel/forms/S-XX-*.proof` artifact's footer lists
+"Lemmas this proof draws from the abstract-model lemma
+library", and the proofs reference `LEMMA_LIBRARY_HASH` as a
+sealed substance the walker reads at every `LemmaApp` leaf.
+**That substance does not yet exist as a content-addressed
+artifact.** The lemmas are defined implicitly across the proof
+artifacts, never collected in one place, never sealed, never
+verified by the kernel-author identities as a unit.
+
+The S-08 inspection record's checklist item 5 ("the abstract-
+model lemma library") names the library as a review target,
+but the reviewer would have nothing to review.
+
+**Severity: high.** This is the single largest unmet
+dependency in v0.1.0. Every proof artifact's end-to-end
+checkability assumes the library exists.
+
+**Resolution**: produce `kernel/lemma-library.md` (a structured
+list of every lemma referenced across the eleven proof
+artifacts, with each lemma's discharge being a "look at the
+body of {Form} at {lines}" structural reading) and a sealed
+substance `kernel/lemma-library.json` whose hash replaces the
+`LEMMA_LIBRARY_HASH` placeholder. This is **a v0.2.0
+prerequisite** that should land before any further helper
+encoding.
+
+### Gap 2: Schema/* primitives are referenced but not catalogued
+
+`kernel/forms/helpers/schema-helpers.form` calls into seven
+`Schema/*` primitives (`verify_type_tag`, `bytes_in_range`,
+`nat_at`, `mul`, `tail_hash`, `tail_minus_8_nat`,
+`vec_from_offset`). These are smaller than the projections
+themselves and are pure structural functions over byte vectors.
+
+**They are not in `kernel/forms/helpers/STUBS.md`.** The helper
+catalogue's stub-only count therefore underestimates the work
+remaining by exactly seven.
+
+**Severity: low.** A bookkeeping omission. Each primitive is
+3-5 instructions of IL.
+
+**Resolution**: add a "Schema/* primitives" section to STUBS.md
+with all seven cataloged. Bumps stub-only count by 7. Then
+encode them as the next v0.2.0 batch (they unblock every
+schema helper from having pending leaves of its own).
+
+### Gap 3: persistent-data-structure layouts are not specified
+
+The trie/treap/forest helpers (`S-03/trie/*`, `S-02/treap/*`,
+`S-05/forest/*`) implement persistent hash-array-mapped tries
+and persistent treaps. **There is no `kernel/types/Trie.md`,
+`kernel/types/Treap.md`, or `kernel/types/Forest.md`** giving
+the node layouts these helpers walk.
+
+`kernel/types/SCHEMA.md` covers Entry, CapEntry,
+AttentionRecord, Vec, and Bytes — five types — but the
+persistent data structures are also substances and need their
+own layout documents before their helpers can be encoded.
+
+**Severity: medium.** Blocks the trie/treap/forest helper
+batches in v0.2.0-helpers.
+
+**Resolution**: write the three type-layout documents as part
+of the relevant v0.2.0 batches. Each is ~50 lines of table.
+
+### Gap 4: PARSEFORM has no implementation Form, and `S-07/parse_form` is the most foundational unencoded helper
+
+The IL has `PARSEFORM` as opcode #3 in the Reflection group.
+S-07's `execute` body uses it to turn raw Form bytes into a
+ParsedForm record. **The Form bound at `S-07/parse_form` —
+which is what `PARSEFORM`'s rule actually invokes — is in
+STUBS.md as pending.**
+
+Until it is encoded, *no Form's body can actually be loaded
+into an ExecState*. This is the foundational unencoded
+helper: every other helper's body, and every primary Form's
+body, can only run after the parser exists.
+
+**Severity: high (foundational).** v0.3.0-simulation cannot
+proceed without it. v0.2.0-helpers can technically continue
+encoding helpers without it (helpers don't depend on
+parsing), but no helper can actually be exercised.
+
+**Resolution**: write `kernel/forms/helpers/parser.form` early
+in v0.2.0, possibly as the next batch after the schema
+primitives. It will be one of the larger helper Forms (a few
+hundred lines of IL) because it implements the IL wire format
+parser specified in `kernel/IL.md` § Encoding.
+
+### Gap 5: the seed loader is referenced everywhere but never specified
+
+Every artifact says "the seed loader" does X — verifies hashes,
+imports the cold weave, allocates A_synth, revokes the
+bootstrap caps, checks K-of-N signatures, resolves
+`$$BLAKE3$$` placeholders. **`kernel/LOADER.md` does not
+exist.** The loader is treated as a trusted external party
+that will appear at v0.5.0-build time.
+
+This is consistent with the discipline (v0.1.0 deliberately
+ships nothing executable), but the loader's *contract* —
+what it must do, what it must verify, in what order — is not
+specified anywhere except by scattered references.
+
+**Severity: medium.** Not a v0.2.0 blocker. Becomes a v0.5.0
+blocker.
+
+**Resolution**: write `kernel/LOADER.md` no later than the
+start of v0.5.0-build. Should be straightforward — most of the
+contract is implied by the existing artifacts and just needs
+collecting.
+
+### Gap 6: helper Forms have no proof artifacts, and the discipline does not yet say whether they need them
+
+The 28 encoded helper Forms (canonicaliser, S-04/S-02/S-05
+projections, schema helpers) have **no `.proof` files of their
+own**. The primary Forms' proofs cite obligations *of the
+primary Form*, not of the helpers; the helpers are treated as
+abstract-model lemmas verified structurally.
+
+This is consistent with the discipline as written — the
+breakdowns specify proof obligations only for the eleven
+primary Forms, and the helpers are smaller artifacts whose
+correctness is "look at the body" simple. But the discipline
+*does not explicitly say* whether helpers need proofs. A
+strict reading of A0.7 + I9 would say yes; a pragmatic
+reading would say no, because each helper's body is shorter
+than the proof artifact that would discharge it.
+
+**Severity: medium (philosophical, not blocking).** No helper
+encoded so far is incorrect; the question is whether the
+discipline is fully self-consistent without helper proofs.
+
+**Resolution**: add a section to `synthesis/PROTOCOL.md`
+explicitly stating the "helper exemption" — that helpers
+whose body is small enough to be a structural reading by a
+kernel-author identity in the inspection record do not
+require their own `.proof` artifact. This makes the
+discipline consistent and gives the kernel-author identities
+a clear scope for the inspection-record review.
+
+## Action items from the audit (in dependency order)
+
+1. **Catalogue Schema/* primitives in STUBS.md** (low effort, low risk)
+2. **Add the helper exemption to PROTOCOL.md** (low effort, philosophical)
+3. **Produce `kernel/lemma-library.md`** (high effort, high value — the biggest unmet dependency)
+4. **Encode Schema/* primitives** (next v0.2.0 batch)
+5. **Encode the IL parser** (`S-07/parse_form` — foundational; mid v0.2.0)
+6. **Write `kernel/types/Trie.md`, `Treap.md`, `Forest.md`** (alongside their helper batches)
+7. **Write `kernel/LOADER.md`** (no later than v0.5.0 start)
+
+The v0.2.0-helpers milestone in the next section assumed all
+of these would arrive incidentally during helper encoding. The
+audit makes them explicit so they cannot be missed.
 
 ## Post-v0.1.0: the road to ignition
 

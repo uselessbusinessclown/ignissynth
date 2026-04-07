@@ -46,6 +46,23 @@ are post-v0.1.0 work.
 | `S-05/proj/budget_remaining`    | `kernel/forms/helpers/s02-s05-projections.form`|
 | `S-05/proj/cap_view`            | `kernel/forms/helpers/s02-s05-projections.form`|
 
+## Schema/* primitives (referenced by `schema-helpers.form`)
+
+These pure structural functions over byte vectors are the leaves
+of the schema-helper indirection. Each is 3-5 instructions of IL.
+They are catalogued here as a separate batch because every
+schema helper depends on them.
+
+| Slot                            | Signature                                  | Status   |
+|---------------------------------|--------------------------------------------|----------|
+| `Schema/verify_type_tag`        | `(Bytes, TypeTag) → Bool` (traps ETYPE)    | pending  |
+| `Schema/bytes_in_range`         | `(Bytes, Nat, Nat) → Bytes`                | pending  |
+| `Schema/nat_at`                 | `(Bytes, Nat) → Nat`                       | pending  |
+| `Schema/mul`                    | `(Nat, Nat) → Nat`                         | pending  |
+| `Schema/tail_hash`              | `(Bytes) → Hash`                           | pending  |
+| `Schema/tail_minus_8_nat`       | `(Bytes) → Nat`                            | pending  |
+| `Schema/vec_from_offset`        | `(Bytes, Nat) → Vec`                       | pending  |
+
 ## Helpers required by S-03 `substance_store`
 
 | Slot                            | Signature                                  | Status   |
@@ -244,7 +261,8 @@ operational form of the IL specification.
 | Category              | Count    |
 |-----------------------|----------|
 | Encoded helpers       | 28       |
-| Stub-only helpers     | ~84      |
+| Stub-only helpers     | ~91      |
+| Schema/* primitives   | 7 (newly catalogued, post-audit) |
 | Parser stubs          | 4 (one per Form that does parsing) |
 | Trie/forest ops       | 14       |
 | Field projections     | ~50      |
