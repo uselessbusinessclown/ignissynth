@@ -32,18 +32,19 @@ actual ignition.
 
 What is in the repository as of this commit:
 
-| Layer            | Artifact                                            |  Status                          |
-|------------------|-----------------------------------------------------|----------------------------------|
-| Constitution     | `docs/MANIFESTO.md`, `axioms/A0..A8`                | complete                         |
-| Discipline       | `synthesis/PROTOCOL.md`, `INVARIANTS.md`, `SELF-IMPROVEMENT.md`, `SEED.md` | complete    |
-| Worked synthesis | `breakdown/S-01..S-11.md`                           | 11 of 11 (every primary Form)    |
-| IL specification | `kernel/IL.md`                                      | 30 opcodes, total small-step     |
-| Encoded Forms    | `kernel/forms/S-01..S-11.form`                      | 11 of 11, written against the IL |
-| Seed manifest    | `kernel/manifest.json`                              | binds sources/proofs/immediates  |
-| Helpers          | `kernel/forms/helpers/`                             | 1 of N (canonicaliser)           |
-| Proof artifacts  | `kernel/forms/S-XX-*.proof`                         | 0 of 11 (obligations enumerated) |
-| Inspection record| `kernel/forms/S-08-*.inspection-record.md`          | not yet written                  |
-| Kernel-author keys | `kernel/manifest.json` (`kernel_authors.identities`) | placeholders                  |
+| Layer               | Artifact                                                             | Status                                      |
+|---------------------|----------------------------------------------------------------------|---------------------------------------------|
+| Constitution        | `docs/MANIFESTO.md`, `axioms/A0..A8`                                 | complete                                    |
+| Discipline          | `synthesis/PROTOCOL.md`, `INVARIANTS.md`, `SELF-IMPROVEMENT.md`, `SEED.md` | complete                              |
+| Worked synthesis    | `breakdown/S-01..S-11.md`                                            | 11 of 11 (every primary Form)               |
+| IL specification    | `kernel/IL.md`                                                       | 30 opcodes, total small-step                |
+| Encoded Forms       | `kernel/forms/S-01..S-11.form`                                       | 11 of 11, written against the IL            |
+| Seed manifest       | `kernel/manifest.json`                                               | binds sources/proofs/immediates             |
+| Helpers             | `kernel/forms/helpers/`                                              | 1 of N (canonicaliser)                      |
+| Proof term language | `kernel/PROOF.md`                                                    | 12 sorts, 17 constructors, 29-rule table    |
+| Proof artifacts     | `kernel/forms/S-XX-*.proof`                                          | 1 of 11 (S-01; structurally complete, leaves pending) |
+| Inspection record   | `kernel/forms/S-08-*.inspection-record.md`                           | not yet written                             |
+| Kernel-author keys  | `kernel/manifest.json` (`kernel_authors.identities`)                 | placeholders                                |
 
 The breakdowns are the load-bearing artifact: each one is a recorded
 synthesis act in the shape `synthesis/PROTOCOL.md` requires
@@ -94,7 +95,14 @@ The shortest path through, in dependency order:
 10. **One encoded Form end-to-end** — `kernel/forms/S-01-ignite.form` is
     the smallest and is the I10 exception that lights the rest of the
     seed.
-11. **`kernel/manifest.json`** — the keystone that binds every source,
+11. **`kernel/PROOF.md`** — the small natural-deduction term language
+    in which proof artifacts are written. 29 rules, no tactics, no
+    proof search, total walker.
+12. **One proof artifact end-to-end** — `kernel/forms/S-01-ignite.proof`
+    discharges five obligations against `PROOF.md`'s rule table,
+    composing with the (still-pending) S-02/S-04/S-07 proofs at its
+    leaves.
+13. **`kernel/manifest.json`** — the keystone that binds every source,
     breakdown, proof, axiom, invariant, vigil holder, dependency,
     immediate value, and boot-order entry in one place.
 
