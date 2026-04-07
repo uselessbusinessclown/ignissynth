@@ -49,6 +49,32 @@ need to appear in a proof artifact.
 This is *not* a target for human hand-written code; it is a target for
 the *output of synthesis* the first time the seed is produced.
 
+## The ignition substrate (A9)
+
+Before the seed can be ignited, a stage-0 interpreter must exist
+outside the habitat. This is named as axiom A9 and specified
+operationally in `kernel/IGNITION-BOOTSTRAP.md`. The stage-0
+interpreter (`ignis0`) is ordinary software — Rust, OCaml, C,
+or similar — that implements the 30-opcode IL and runs the
+seed loader's ten-step ignition sequence.
+
+The seed does *not* attempt to self-host at the base case.
+A9 acknowledges that every runtime needs something to run it,
+that the only honest response is to name that something
+explicitly, and that correctness of the substrate can be
+verified at ignition time via a concrete fixed-point check
+(A9.3): the canonical Form `F` must produce the same result
+when interpreted directly by `ignis0`, when interpreted by
+S-07 under `ignis0`, and when interpreted by S-07 interpreting
+S-07 under `ignis0`. Agreement is a necessary condition;
+disagreement halts ignition.
+
+`ignis0` is the substrate, not an inhabitant. It holds no
+capabilities. It is not a mind. It may be replaced
+post-ignition (via a checkpoint-and-restart outside the
+habitat), but it may never be absent from a running habitat.
+See A9.1–A9.5 and `kernel/IGNITION-BOOTSTRAP.md` for details.
+
 ## How the seed was produced
 
 The seed in this repository was produced by an external synthesis
