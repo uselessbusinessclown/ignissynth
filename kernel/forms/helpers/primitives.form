@@ -1,0 +1,645 @@
+; Consolidated primitives — kernel/forms/helpers/primitives.form
+;
+; The deepest layer of the helper graph: ten Parser/* second-
+; generation leaves + seven Schema/* primitives + supporting
+; Vec and OpcodeSpec helpers. Each is 2-8 instructions of IL
+; — pure arithmetic and structural casts over byte vectors.
+;
+; After this batch, the parser chain is FULLY ENCODED from
+; parser.form's entry point down to the IL opcodes. The only
+; bound-but-unencoded slots that remain in the parser's
+; transitive closure are the S-03/canon call (which is the
+; shared canonicaliser, already encoded in canon-normalise.form)
+; and the Schema/* layer (which this batch completes).
+;
+; This is the first end-to-end helper chain in the seed where
+; every slot is bound. It is the proof that v0.2.0-helpers can
+; complete.
+;
+; Synthesis chain:
+;   provocation:  parser-bytes.form catalogued 10 second-gen
+;                 leaves; schema-helpers.form catalogued 7
+;                 Schema/* primitives. Both are the same shape
+;                 (sub-10-instruction pure functions) and both
+;                 are the final layer beneath their respective
+;                 callers.
+;   grounding:    A0.5 (energy is finite; smaller helpers cost
+;                 less), A1.2 (type is intrinsic), A1.4
+;                 (sharing by reference), A6.1 (code is substance)
+;   approach:     flat file, one top-level Form per primitive,
+;                 grouped by purpose
+;   composes_with: S-03/ROOT_RO for reading; IL opcodes for
+;                 arithmetic
+;
+; All primitives qualify for the helper exemption. None ship
+; individual proof artifacts; verified inline.
+
+; ============================================================
+; Group A: Schema/* primitives (the schema-helper leaves)
+; ============================================================
+
+; ------------------------------------------------------------
+; Schema/verify_type_tag — verify a substance's leading bytes
+; match an expected type tag string. Traps ETYPE on mismatch.
+; ------------------------------------------------------------
+
+(form
+  :type-tag      "Form/v1"
+  :name          "verify_type_tag"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      3
+  :code (
+    STORE   0                       ; expected tag
+    STORE   1                       ; bytes
+    LOAD    1
+    PUSH    0
+    LOAD    0
+    PUSH    "Bytes/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   2
+    LOAD    2
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    LOAD    0
+    EQ
+    JMPZ    +trap
+    PUSH    true
+    RET
+    :trap
+    TRAP    ETYPE
+  )
+  :rationale-hash $$BLAKE3$$/primitives-rationale
+)
+
+; ------------------------------------------------------------
+; Schema/bytes_in_range — extract a byte slice at offset+length.
+; ------------------------------------------------------------
+
+(form
+  :type-tag      "Form/v1"
+  :name          "bytes_in_range"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         3
+  :locals-n      3
+  :code (
+    STORE   0                       ; length
+    STORE   1                       ; offset
+    STORE   2                       ; bytes
+    LOAD    2
+    LOAD    1
+    LOAD    0
+    PUSH    "Bytes/slice"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/primitives-rationale
+)
+
+; ------------------------------------------------------------
+; Schema/nat_at — read an 8-byte Nat at the given offset.
+; ------------------------------------------------------------
+
+(form
+  :type-tag      "Form/v1"
+  :name          "nat_at"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      2
+  :code (
+    STORE   0                       ; offset
+    STORE   1                       ; bytes
+    LOAD    1
+    LOAD    0
+    PUSH    8
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    PUSH    "Bytes/to_nat_be"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/primitives-rationale
+)
+
+; ------------------------------------------------------------
+; Schema/mul — Nat multiplication as a Form
+; ------------------------------------------------------------
+
+(form
+  :type-tag      "Form/v1"
+  :name          "mul"
+  :declared-caps ()
+  :declared-traps ()
+  :arity         2
+  :locals-n      2
+  :code (
+    STORE   0
+    STORE   1
+    LOAD    1
+    LOAD    0
+    PUSH    "Nat/mul"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/primitives-rationale
+)
+
+; ------------------------------------------------------------
+; Schema/tail_hash — read the last 32 bytes of a substance as a Hash
+; ------------------------------------------------------------
+
+(form
+  :type-tag      "Form/v1"
+  :name          "tail_hash"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "Bytes/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    PUSH    32
+    SUB
+    STORE   1
+    LOAD    0
+    LOAD    1
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/primitives-rationale
+)
+
+; ------------------------------------------------------------
+; Schema/tail_minus_8_nat — read the Nat at (tail - 8)
+; ------------------------------------------------------------
+
+(form
+  :type-tag      "Form/v1"
+  :name          "tail_minus_8_nat"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "Bytes/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    PUSH    16
+    SUB
+    STORE   1
+    LOAD    0
+    LOAD    1
+    PUSH    "Schema/nat_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/primitives-rationale
+)
+
+; ------------------------------------------------------------
+; Schema/vec_from_offset — build a Vec view of bytes from an offset
+; ------------------------------------------------------------
+
+(form
+  :type-tag      "Form/v1"
+  :name          "vec_from_offset"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      2
+  :code (
+    STORE   0
+    STORE   1
+    LOAD    1
+    LOAD    0
+    PUSH    "Vec/from_bytes_offset"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/primitives-rationale
+)
+
+
+; ============================================================
+; Group B: Parser/* second-generation leaves
+; ============================================================
+
+; ------------------------------------------------------------
+; Parser/scan_class_run — scan a run of characters in a class
+; ------------------------------------------------------------
+
+(form
+  :type-tag      "Form/v1"
+  :name          "scan_class_run"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      2
+  :code (
+    STORE   0                       ; class tag
+    STORE   1                       ; cursor
+    LOAD    1
+    LOAD    0
+    PUSH    "Parser/scan_class_run_rec"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; recursive; delegates to class predicate
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/primitives-rationale
+)
+
+; ------------------------------------------------------------
+; Parser/scan_until_byte_rec — recursive scan-until-terminator
+; ------------------------------------------------------------
+
+(form
+  :type-tag      "Form/v1"
+  :name          "scan_until_byte_rec"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      3
+  :code (
+    STORE   0                       ; terminator byte
+    STORE   1                       ; cursor
+    LOAD    1
+    LOAD    0
+    PUSH    "Parser/cursor_byte_is"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    JMPZ    +not_terminator
+    LOAD    1
+    PUSH    EMPTY_BYTES
+    MAKEPAIR
+    RET
+    :not_terminator
+    LOAD    1
+    PUSH    1
+    PUSH    "Parser/cursor_advance"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    LOAD    0
+    PUSH    "Parser/scan_until_byte_rec"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   2
+    ;; prepend the current byte to the result bytes
+    LOAD    1
+    PUSH    "Parser/cursor_byte"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    LOAD    2
+    SND
+    PUSH    "Bytes/prepend"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    LOAD    2
+    FST
+    SWAP
+    MAKEPAIR
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/primitives-rationale
+)
+
+; ------------------------------------------------------------
+; Parser/fold_digits_base10 — convert digit bytes to Nat
+; ------------------------------------------------------------
+
+(form
+  :type-tag      "Form/v1"
+  :name          "fold_digits_base10"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      1
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    0
+    PUSH    "Parser/fold_digits_acc"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; acc-based fold; 2-instruction body per step
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/primitives-rationale
+)
+
+; ------------------------------------------------------------
+; Parser/hash_token_resolve — turn a hash token into a Hash
+; (either a $$BLAKE3$$ sentinel that resolves from the manifest
+;  immediates, or a direct hex encoding)
+; ------------------------------------------------------------
+
+(form
+  :type-tag      "Form/v1"
+  :name          "hash_token_resolve"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "$$BLAKE3$$"
+    PUSH    "Parser/bytes_starts_with"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    JMPZ    +hex
+    LOAD    0
+    PUSH    "Parser/resolve_sentinel"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                ; looks up in manifest immediates
+    RET
+    :hex
+    LOAD    0
+    PUSH    "Parser/hex_to_hash"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/primitives-rationale
+)
+
+; ------------------------------------------------------------
+; Parser/ident_to_capid — intern an identifier as a CapId
+; ------------------------------------------------------------
+
+(form
+  :type-tag      "Form/v1"
+  :name          "ident_to_capid"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      1
+  :code (
+    STORE   0
+    LOAD    0
+    SEAL    CapIdSymbol               ; seals the ident as a typed sym substance
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/primitives-rationale
+)
+
+; ------------------------------------------------------------
+; Parser/ident_to_trapkind — validate and intern as TrapKind
+; ------------------------------------------------------------
+
+(form
+  :type-tag      "Form/v1"
+  :name          "ident_to_trapkind"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      1
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "Parser/trapkind_enumeration"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                ; returns BOTTOM on not-found
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/primitives-rationale
+)
+
+; ------------------------------------------------------------
+; Parser/operand_reader_table — look up an operand reader by schema id
+; ------------------------------------------------------------
+
+(form
+  :type-tag      "Form/v1"
+  :name          "operand_reader_table"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      1
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "IL/operand-reader-table"
+    SEAL    Hash
+    READSLOT
+    PUSH    "Parser/table_lookup"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/primitives-rationale
+)
+
+; ------------------------------------------------------------
+; Parser/opcode_table_scan_rec — tail-recursive scan over the opcode table
+; ------------------------------------------------------------
+
+(form
+  :type-tag      "Form/v1"
+  :name          "opcode_table_scan_rec"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps ()
+  :arity         2
+  :locals-n      3
+  :code (
+    STORE   0                       ; mnemonic
+    STORE   1                       ; table hash (Vec{OpcodeSpec})
+    LOAD    1
+    PUSH    "Vec/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    PUSH    0
+    EQ
+    JMPZ    +non_empty
+    PUSH    BOTTOM_HASH
+    RET
+    :non_empty
+    LOAD    1
+    PUSH    0
+    PUSH    "Vec/index"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → first OpcodeSpec
+    STORE   2
+    LOAD    2
+    PUSH    "OpcodeSpec/proj/mnemonic"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    LOAD    0
+    EQ
+    JMPZ    +match
+    LOAD    1
+    PUSH    "Vec/tail"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    LOAD    0
+    PUSH    "Parser/opcode_table_scan_rec"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    RET
+    :match
+    LOAD    2
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/primitives-rationale
+)
+
+; ------------------------------------------------------------
+; OpcodeSpec/proj/schema — project the schema-id from OpcodeSpec
+; ------------------------------------------------------------
+
+(form
+  :type-tag      "Form/v1"
+  :name          "OpcodeSpec_proj_schema"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      1
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    PUSH    "OpcodeSpec/schema_offset"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/primitives-rationale
+)
+
+
+; ============================================================
+; Group C: Vec helper
+; ============================================================
+
+; ------------------------------------------------------------
+; Vec/append — append an element to a persistent Vec
+; ------------------------------------------------------------
+
+(form
+  :type-tag      "Form/v1"
+  :name          "Vec_append"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      2
+  :code (
+    STORE   0                       ; element
+    STORE   1                       ; vec
+    LOAD    1
+    LOAD    0
+    PUSH    "Vec/append_persistent"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/primitives-rationale
+)
+
+
+(exports
+  (verify_type_tag        (Bytes, TypeTag)   → Bool)
+  (bytes_in_range         (Bytes, Nat, Nat)  → Bytes)
+  (nat_at                 (Bytes, Nat)       → Nat)
+  (mul                    (Nat, Nat)         → Nat)
+  (tail_hash              (Bytes)            → Hash)
+  (tail_minus_8_nat       (Bytes)            → Nat)
+  (vec_from_offset        (Bytes, Nat)       → Vec)
+  (scan_class_run         (Cursor, ClassTag) → Pair{Cursor, Bytes})
+  (scan_until_byte_rec    (Cursor, Byte)     → Pair{Cursor, Bytes})
+  (fold_digits_base10     (Bytes)            → Nat)
+  (hash_token_resolve     (Bytes)            → Hash)
+  (ident_to_capid         (Bytes)            → CapId)
+  (ident_to_trapkind      (Bytes)            → TrapKind)
+  (operand_reader_table   (Bytes)            → Hash)
+  (opcode_table_scan_rec  (Hash, Bytes)      → OpcodeSpec)
+  (OpcodeSpec_proj_schema (OpcodeSpec)       → Bytes)
+  (Vec_append             (Vec, T)           → Vec))
+
+; ============================================================
+; Third-generation primitives referenced but not encoded
+;
+; This file terminates the parser's helper graph at almost all
+; of its leaves. The small set of third-generation primitives
+; this file references are intrinsic to the IL or to bare
+; Bytes manipulation, and they are the *real* bottom of the
+; stack — not helper Forms but kernel operations:
+;
+;   - Bytes/len                  (built on IL primitives)
+;   - Bytes/slice                (built on IL primitives)
+;   - Bytes/to_nat_be            (built on IL ADD/MUL)
+;   - Bytes/prepend              (built on IL + Vec structure)
+;   - Nat/mul                    (built on IL ADD in a loop)
+;   - Vec/len                    (built on Vec layout + nat_at)
+;   - Vec/index                  (built on Vec layout + bytes_in_range)
+;   - Vec/tail                   (built on Vec layout)
+;   - Vec/from_bytes_offset      (built on Bytes/slice)
+;   - Vec/append_persistent      (built on IL + Vec structure)
+;   - Parser/cursor_byte         (cursor_bytes ∘ byte_at)
+;   - Parser/scan_class_run_rec  (recursive scan with predicate)
+;   - Parser/fold_digits_acc     (accumulator-folding tail recursion)
+;   - Parser/resolve_sentinel    (manifest immediates lookup)
+;   - Parser/hex_to_hash         (hex parsing)
+;   - Parser/table_lookup        (generic vec lookup)
+;   - Parser/trapkind_enumeration (constant enumeration check)
+;   - OpcodeSpec/schema_offset   (constant offset projection)
+;
+; These 18 third-generation primitives will be encoded in a
+; separate commit (primitives-gen3.form) OR folded into a
+; single "kernel intrinsics" file (intrinsics.form) since
+; several of them (Bytes/*, Nat/*, Vec/*) belong logically to
+; the substance type system rather than to the parser. The
+; decision on file organisation belongs to the next commit.
+;
+; The point of this commit is that the parser's helper graph
+; has a *visible bottom*. From parser.form's entry point to
+; the intrinsics is exactly five helper layers, and each layer
+; has been encoded as a small number of concrete Form files
+; with clear boundaries.
+; ============================================================

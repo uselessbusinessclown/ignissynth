@@ -60,6 +60,23 @@ are post-v0.1.0 work.
 | `Parser/opcode_table_scan`      | `kernel/forms/helpers/parser-bytes.form`       |
 | `Parser/skip_one_canonical_space`| `kernel/forms/helpers/parser-bytes.form`      |
 | `Parser/vec_append`             | `kernel/forms/helpers/parser-bytes.form`       |
+| `Schema/verify_type_tag`        | `kernel/forms/helpers/primitives.form`         |
+| `Schema/bytes_in_range`         | `kernel/forms/helpers/primitives.form`         |
+| `Schema/nat_at`                 | `kernel/forms/helpers/primitives.form`         |
+| `Schema/mul`                    | `kernel/forms/helpers/primitives.form`         |
+| `Schema/tail_hash`              | `kernel/forms/helpers/primitives.form`         |
+| `Schema/tail_minus_8_nat`       | `kernel/forms/helpers/primitives.form`         |
+| `Schema/vec_from_offset`        | `kernel/forms/helpers/primitives.form`         |
+| `Parser/scan_class_run`         | `kernel/forms/helpers/primitives.form`         |
+| `Parser/scan_until_byte_rec`    | `kernel/forms/helpers/primitives.form`         |
+| `Parser/fold_digits_base10`     | `kernel/forms/helpers/primitives.form`         |
+| `Parser/hash_token_resolve`     | `kernel/forms/helpers/primitives.form`         |
+| `Parser/ident_to_capid`         | `kernel/forms/helpers/primitives.form`         |
+| `Parser/ident_to_trapkind`      | `kernel/forms/helpers/primitives.form`         |
+| `Parser/operand_reader_table`   | `kernel/forms/helpers/primitives.form`         |
+| `Parser/opcode_table_scan_rec`  | `kernel/forms/helpers/primitives.form`         |
+| `Vec/append`                    | `kernel/forms/helpers/primitives.form`         |
+| `OpcodeSpec/proj/schema`        | `kernel/forms/helpers/primitives.form`         |
 | `S-04/proj/prev`                | `kernel/forms/helpers/s04-projections.form`    |
 | `S-04/proj/kind`                | `kernel/forms/helpers/s04-projections.form`    |
 | `S-04/proj/grounding`           | `kernel/forms/helpers/s04-projections.form`    |
@@ -142,16 +159,44 @@ is 2-8 instructions.
 
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
-| `Parser/scan_class_run`         | `(Cursor, ClassTag) → Pair{Cursor, Bytes}` | pending  |
-| `Parser/scan_until_byte_rec`    | `(Cursor, Byte) → Pair{Cursor, Bytes}`     | pending  |
-| `Parser/fold_digits_base10`     | `(Bytes) → Nat`                            | pending  |
-| `Parser/hash_token_resolve`     | `(Bytes) → Hash`                           | pending  |
-| `Parser/ident_to_capid`         | `(Bytes) → CapId`                          | pending  |
-| `Parser/ident_to_trapkind`      | `(Bytes) → TrapKind`                       | pending  |
-| `Parser/operand_reader_table`   | `(Bytes) → Hash`                           | pending  |
-| `Parser/opcode_table_scan_rec`  | `(Hash, Bytes) → OpcodeSpec`               | pending  |
-| `Vec/append`                    | `(Vec, T) → Vec`                           | pending  |
-| `OpcodeSpec/proj/schema`        | `(OpcodeSpec) → Bytes`                     | pending  |
+| `Parser/scan_class_run`         | `(Cursor, ClassTag) → Pair{Cursor, Bytes}` | encoded  |
+| `Parser/scan_until_byte_rec`    | `(Cursor, Byte) → Pair{Cursor, Bytes}`     | encoded  |
+| `Parser/fold_digits_base10`     | `(Bytes) → Nat`                            | encoded  |
+| `Parser/hash_token_resolve`     | `(Bytes) → Hash`                           | encoded  |
+| `Parser/ident_to_capid`         | `(Bytes) → CapId`                          | encoded  |
+| `Parser/ident_to_trapkind`      | `(Bytes) → TrapKind`                       | encoded  |
+| `Parser/operand_reader_table`   | `(Bytes) → Hash`                           | encoded  |
+| `Parser/opcode_table_scan_rec`  | `(Hash, Bytes) → OpcodeSpec`               | encoded  |
+| `Vec/append`                    | `(Vec, T) → Vec`                           | encoded  |
+| `OpcodeSpec/proj/schema`        | `(OpcodeSpec) → Bytes`                     | encoded  |
+
+### Third-generation intrinsics (kernel-level Bytes/Nat/Vec ops)
+
+The absolute bottom of the helper graph. These are smaller still
+(2-5 instructions each) and belong logically to the substance
+type system rather than the parser. To be encoded in a future
+`intrinsics.form` file.
+
+| Slot                            | Signature                                  | Status   |
+|---------------------------------|--------------------------------------------|----------|
+| `Bytes/len`                     | `(Bytes) → Nat`                            | pending  |
+| `Bytes/slice`                   | `(Bytes, Nat, Nat) → Bytes`                | pending  |
+| `Bytes/to_nat_be`               | `(Bytes) → Nat`                            | pending  |
+| `Bytes/prepend`                 | `(Byte, Bytes) → Bytes`                    | pending  |
+| `Nat/mul`                       | `(Nat, Nat) → Nat`                         | pending  |
+| `Vec/len`                       | `(Vec) → Nat`                              | pending  |
+| `Vec/index`                     | `(Vec, Nat) → T`                           | pending  |
+| `Vec/tail`                      | `(Vec) → Vec`                              | pending  |
+| `Vec/from_bytes_offset`         | `(Bytes, Nat) → Vec`                       | pending  |
+| `Vec/append_persistent`         | `(Vec, T) → Vec`                           | pending  |
+| `Parser/cursor_byte`            | `(Cursor) → Byte`                          | pending  |
+| `Parser/scan_class_run_rec`     | `(Cursor, ClassTag) → Pair{Cursor, Bytes}` | pending  |
+| `Parser/fold_digits_acc`        | `(Bytes, Nat) → Nat`                       | pending  |
+| `Parser/resolve_sentinel`       | `(Bytes) → Hash`                           | pending  |
+| `Parser/hex_to_hash`            | `(Bytes) → Hash`                           | pending  |
+| `Parser/table_lookup`           | `(Hash, Bytes) → T`                        | pending  |
+| `Parser/trapkind_enumeration`   | `(Bytes) → TrapKind`                       | pending  |
+| `OpcodeSpec/schema_offset`      | `(Bytes) → Bytes`                          | pending  |
 
 ## Non-exempt helpers requiring proof artifacts
 
@@ -175,13 +220,13 @@ schema helper depends on them.
 
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
-| `Schema/verify_type_tag`        | `(Bytes, TypeTag) → Bool` (traps ETYPE)    | pending  |
-| `Schema/bytes_in_range`         | `(Bytes, Nat, Nat) → Bytes`                | pending  |
-| `Schema/nat_at`                 | `(Bytes, Nat) → Nat`                       | pending  |
-| `Schema/mul`                    | `(Nat, Nat) → Nat`                         | pending  |
-| `Schema/tail_hash`              | `(Bytes) → Hash`                           | pending  |
-| `Schema/tail_minus_8_nat`       | `(Bytes) → Nat`                            | pending  |
-| `Schema/vec_from_offset`        | `(Bytes, Nat) → Vec`                       | pending  |
+| `Schema/verify_type_tag`        | `(Bytes, TypeTag) → Bool` (traps ETYPE)    | encoded  |
+| `Schema/bytes_in_range`         | `(Bytes, Nat, Nat) → Bytes`                | encoded  |
+| `Schema/nat_at`                 | `(Bytes, Nat) → Nat`                       | encoded  |
+| `Schema/mul`                    | `(Nat, Nat) → Nat`                         | encoded  |
+| `Schema/tail_hash`              | `(Bytes) → Hash`                           | encoded  |
+| `Schema/tail_minus_8_nat`       | `(Bytes) → Nat`                            | encoded  |
+| `Schema/vec_from_offset`        | `(Bytes, Nat) → Vec`                       | encoded  |
 
 ## Helpers required by S-03 `substance_store`
 
@@ -380,12 +425,13 @@ operational form of the IL specification.
 
 | Category              | Count    |
 |-----------------------|----------|
-| Encoded helpers       | 69       |
-| Stub-only helpers     | ~74      |
-| Schema/* primitives   | 7 (catalogued, pending) |
+| Encoded helpers       | 86       |
+| Stub-only helpers     | ~56      |
+| Schema/* primitives   | 7 (encoded) |
 | Parser/* primitives   | 13 (encoded) |
 | Parser/* byte-arithmetic leaves | 20 (encoded) |
-| Parser/* second-generation leaves | 10 (catalogued, pending) |
+| Parser/* second-generation leaves | 10 (encoded) |
+| Third-generation intrinsics | 18 (catalogued, pending) |
 | Non-exempt helpers requiring proofs | 3+ |
 | Parser stubs          | 4 (one per Form that does parsing) |
 | Trie/forest ops       | 14       |
