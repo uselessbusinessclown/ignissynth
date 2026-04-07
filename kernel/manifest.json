@@ -1,0 +1,229 @@
+{
+  "$schema":     "ignissynth/seed-manifest/v1",
+  "name":        "ignissynth-seed",
+  "version":     "0.1.0-pre-ignition",
+  "description": "The seed manifest. Binds the eleven seed Form hashes, the immediate values referenced by their encodings, and the kernel-author identities under which the S-08 inspection-record discharge is signed. Read by the seed loader at boot. Not a Form; consumed by the loader before any Form runs.",
+
+  "axioms": {
+    "A0": "axioms/A0-first-principles.md",
+    "A1": "axioms/A1-matter.md",
+    "A2": "axioms/A2-capability.md",
+    "A3": "axioms/A3-attention.md",
+    "A4": "axioms/A4-intent.md",
+    "A5": "axioms/A5-causality.md",
+    "A6": "axioms/A6-fluid-code.md",
+    "A7": "axioms/A7-self-modification.md",
+    "A8": "axioms/A8-bridges.md"
+  },
+
+  "invariants": "synthesis/INVARIANTS.md",
+  "protocol":   "synthesis/PROTOCOL.md",
+  "il":         "kernel/IL.md",
+
+  "forms": {
+    "S-01-ignite": {
+      "source":     "kernel/forms/S-01-ignite.form",
+      "breakdown":  "breakdown/S-01-ignite.md",
+      "proof":      "kernel/forms/S-01-ignite.proof",
+      "axioms":     ["A0.3", "A0.4", "A0.7", "A2.1", "A2.6"],
+      "invariants": ["I1", "I8", "I10"],
+      "binding":    "ignite",
+      "vigil":      "hephaistion-seed",
+      "depends_on": []
+    },
+    "S-02-cap-registry": {
+      "source":     "kernel/forms/S-02-cap-registry.form",
+      "breakdown":  "breakdown/S-02-cap-registry.md",
+      "proof":      "kernel/forms/S-02-cap-registry.proof",
+      "axioms":     ["A2.1", "A2.2", "A2.3", "A2.4", "A2.5", "A2.6", "A0.3", "A0.4"],
+      "invariants": ["I1", "I2", "I3", "I10"],
+      "bindings":   ["S-02/recognise_root", "S-02/attenuate", "S-02/revoke", "S-02/lookup", "S-02/holds"],
+      "vigil":      "hephaistion-seed",
+      "depends_on": []
+    },
+    "S-03-substance-store": {
+      "source":     "kernel/forms/S-03-substance-store.form",
+      "breakdown":  "breakdown/S-03-substance-store.md",
+      "proof":      "kernel/forms/S-03-substance-store.proof",
+      "axioms":     ["A0.3", "A0.4", "A0.5", "A1.1", "A1.2", "A1.3", "A1.4", "A1.5", "A1.6"],
+      "invariants": ["I4", "I10"],
+      "bindings":   ["S-03/seal", "S-03/read", "S-03/pin", "S-03/unpin", "S-03/digest"],
+      "vigil":      "hephaistion-seed",
+      "depends_on": []
+    },
+    "S-04-weave-log": {
+      "source":     "kernel/forms/S-04-weave-log.form",
+      "breakdown":  "breakdown/S-04-weave-log.md",
+      "proof":      "kernel/forms/S-04-weave-log.proof",
+      "axioms":     ["A0.4", "A0.8", "A1.1", "A1.4", "A5.1", "A5.2", "A5.3", "A5.4", "A5.5"],
+      "invariants": ["I4", "I5", "I8", "I10"],
+      "bindings":   ["S-04/append", "S-04/why"],
+      "vigil":      "hephaistion-seed",
+      "depends_on": ["S-03-substance-store"]
+    },
+    "S-05-attention-alloc": {
+      "source":     "kernel/forms/S-05-attention-alloc.form",
+      "breakdown":  "breakdown/S-05-attention-alloc.md",
+      "proof":      "kernel/forms/S-05-attention-alloc.proof",
+      "axioms":     ["A0.2", "A0.5", "A3.1", "A3.2", "A3.3", "A3.4", "A3.5", "A3.6"],
+      "invariants": ["I6", "I7", "I10"],
+      "bindings":   ["S-05/split", "S-05/dissolve", "S-05/grant_quantum", "S-05/yield_to_kernel", "S-05/tick", "S-05/set_deadline"],
+      "vigil":      "hephaistion-seed",
+      "depends_on": ["S-02-cap-registry", "S-04-weave-log"]
+    },
+    "S-06-intent-match": {
+      "source":     "kernel/forms/S-06-intent-match.form",
+      "breakdown":  "breakdown/S-06-intent-match.md",
+      "proof":      "kernel/forms/S-06-intent-match.proof",
+      "axioms":     ["A0.1", "A0.4", "A2.5", "A2.6", "A4.1", "A4.2", "A4.3", "A4.4", "A4.5"],
+      "invariants": ["I1", "I5", "I8", "I10"],
+      "bindings":   ["S-06/match"],
+      "vigil":      "hephaistion-seed",
+      "depends_on": ["S-02-cap-registry", "S-05-attention-alloc"]
+    },
+    "S-07-form-runtime": {
+      "source":     "kernel/forms/S-07-form-runtime.form",
+      "breakdown":  "breakdown/S-07-form-runtime.md",
+      "proof":      "kernel/forms/S-07-form-runtime.proof",
+      "axioms":     ["A0.2", "A0.6", "A0.7", "A1.3", "A1.5", "A3.4", "A3.5", "A6.1", "A6.2", "A6.3", "A6.4", "A6.5"],
+      "invariants": ["I4", "I7", "I8", "I10"],
+      "bindings":   ["S-07/execute", "S-07/resume_continuation", "S-07/canonicalise"],
+      "vigil":      "hephaistion-seed",
+      "depends_on": ["S-03-substance-store", "S-05-attention-alloc"]
+    },
+    "S-08-proof-checker": {
+      "source":     "kernel/forms/S-08-proof-checker.form",
+      "breakdown":  "breakdown/S-08-proof-checker.md",
+      "proof":      "bootstrap",
+      "inspection_record": "kernel/forms/S-08-proof-checker.inspection-record.md",
+      "axioms":     ["A0.4", "A0.6", "A0.7", "A0.8", "A6.5", "A7.1", "A7.2", "A7.3"],
+      "invariants": ["I4", "I8", "I9", "I10"],
+      "bindings":   ["S-08/check"],
+      "bootstrap_locked": true,
+      "consensus_K": 3,
+      "vigil":      "hephaistion-seed + bootstrap-manifest-kernel-authors",
+      "depends_on": ["S-03-substance-store"]
+    },
+    "S-09-synth-kernel": {
+      "source":     "kernel/forms/S-09-synth-kernel.form",
+      "breakdown":  "breakdown/S-09-synth-kernel.md",
+      "proof":      "kernel/forms/S-09-synth-kernel.proof",
+      "axioms":     ["A0.4", "A0.7", "A0.8", "A6.2", "A6.5", "A7.1", "A7.2", "A7.3", "A7.4", "A7.5"],
+      "invariants": ["I5", "I6", "I8", "I9", "I10"],
+      "bindings":   ["S-09/synthesize"],
+      "vigil":      "hephaistion-seed",
+      "depends_on": ["S-04-weave-log", "S-07-form-runtime", "S-08-proof-checker"]
+    },
+    "S-10-hephaistion-seed": {
+      "source":     "kernel/forms/S-10-hephaistion-seed.form",
+      "breakdown":  "breakdown/S-10-hephaistion-seed.md",
+      "proof":      "kernel/forms/S-10-hephaistion-seed.proof",
+      "axioms":     ["A0.1", "A0.4", "A0.7", "A0.8", "A2.2", "A2.6", "A4", "A5", "A7", "A8"],
+      "invariants": ["I6", "I8", "I10", "I12"],
+      "bindings":   ["S-10/epoch"],
+      "vigil":      "bootstrap-manifest-kernel-authors (until 1e9 heartbeats + 1 successful self-replacement chain, then transferred to latest live hephaistion mind id)",
+      "depends_on": ["S-09-synth-kernel"]
+    },
+    "S-11-bridge-proto": {
+      "source":     "kernel/forms/S-11-bridge-proto.form",
+      "breakdown":  "breakdown/S-11-bridge-proto.md",
+      "proof":      "kernel/forms/S-11-bridge-proto.proof",
+      "axioms":     ["A0.1", "A0.4", "A2.2", "A2.6", "A4.1", "A4.2", "A4.5", "A8.1", "A8.2", "A8.3", "A8.4", "A8.5"],
+      "invariants": ["I1", "I5", "I8", "I10", "I11"],
+      "bindings":   ["S-11/handle_request"],
+      "vigil":      "bootstrap-manifest-kernel-authors (until 1e9 BridgeIn entries, then hephaistion-seed)",
+      "depends_on": ["S-06-intent-match"]
+    }
+  },
+
+  "immediates": {
+    "_comment": "These are the immediate values referenced by name in the encoded Forms. The seed loader resolves the symbolic name to the value at parse time, before any Form runs. Hash placeholders use $$BLAKE3$$ as a sentinel — the build process replaces them with the actual canonical hash of the named substance after sealing it through S-03 in topological order.",
+
+    "UNIVERSAL_RIGHTS":            { "type": "Rights", "value": "ALL", "_note": "the universal rights set; the only Rights value not derivable by attenuation" },
+    "SUBSTRATE_BUDGET":            { "type": "Nat",    "value": null, "_note": "set by the seed loader from the underlying substrate's energy declaration; no compile-time default" },
+    "SEED_MIND_ID":                { "type": "MindId", "value": "$$BLAKE3$$/seed-mind-genesis" },
+    "PREDICATE_TRUE":              { "type": "Predicate", "value": "$$BLAKE3$$/predicate-true.form", "_note": "the smallest possible predicate Form: takes any args, returns true" },
+    "BOTTOM_HASH":                 { "type": "Hash", "value": "0x0000000000000000000000000000000000000000000000000000000000000000" },
+    "EMPTY_HASH":                  { "type": "Hash", "value": "0x0000000000000000000000000000000000000000000000000000000000000000" },
+    "EMPTY_TRIE":                  { "type": "Hash", "value": "$$BLAKE3$$/empty-trie" },
+    "EMPTY_VEC":                   { "type": "Hash", "value": "$$BLAKE3$$/empty-vec" },
+    "CURRENT_TIP":                 { "type": "_dynamic", "value": "READSLOT(\"S-04/tip\")", "_note": "not a real immediate; the canonicaliser rewrites it into a READSLOT call at parse time" },
+    "ACCEPT":                      { "type": "Result", "value": "$$BLAKE3$$/result-accept" },
+    "REJECT_CLAIM_MISMATCH":       { "type": "Result", "value": "$$BLAKE3$$/result-reject-claim-mismatch" },
+    "REJECT_UNKNOWN_RULE":         { "type": "Result", "value": "$$BLAKE3$$/result-reject-unknown-rule" },
+    "REJECT_TERM_MISMATCH":        { "type": "Result", "value": "$$BLAKE3$$/result-reject-term-mismatch" },
+    "REJECT_MISSING_PREMISE":      { "type": "Result", "value": "$$BLAKE3$$/result-reject-missing-premise" },
+    "REJECT_NONE_ADMISSIBLE":      { "type": "MatchResult", "value": "$$BLAKE3$$/match-result-none-admissible" },
+    "REJECT_EILLFORMED":           { "type": "Receipt-Reason", "value": "$$BLAKE3$$/receipt-reason-illformed" },
+    "REJECT_EUNHELDFORM":          { "type": "Receipt-Reason", "value": "$$BLAKE3$$/receipt-reason-unheld-form" },
+    "REJECT_ACCEPTANCE_FAILED":    { "type": "Receipt-Reason", "value": "$$BLAKE3$$/receipt-reason-acceptance-failed" },
+    "REJECT_EANONYMOUS":           { "type": "Stage-Reason", "value": "$$BLAKE3$$/stage-reason-anonymous" },
+    "REJECT_EUNGROUNDED":          { "type": "Stage-Reason", "value": "$$BLAKE3$$/stage-reason-ungrounded" },
+    "REJECT_ENOCANDIDATES":        { "type": "Stage-Reason", "value": "$$BLAKE3$$/stage-reason-no-candidates" },
+    "REJECT_EALLFAILED":           { "type": "Stage-Reason", "value": "$$BLAKE3$$/stage-reason-all-failed" },
+    "SYNTHESIZED_KIND":            { "type": "EntryKind", "value": "Synthesized" },
+    "GROUNDING_A07_A21_I10":       { "type": "Grounding", "value": "$$BLAKE3$$/grounding-a07-a21-i10", "_note": "the specific grounding S-01 emits in E0" },
+    "BREAKDOWN_S01_HASH":          { "type": "Hash", "value": "$$BLAKE3$$/breakdown-s01" },
+    "BREAKDOWN_S02_HASH":          { "type": "Hash", "value": "$$BLAKE3$$/breakdown-s02" },
+    "BREAKDOWN_S03_HASH":          { "type": "Hash", "value": "$$BLAKE3$$/breakdown-s03" },
+    "BREAKDOWN_S04_HASH":          { "type": "Hash", "value": "$$BLAKE3$$/breakdown-s04" },
+    "BREAKDOWN_S05_HASH":          { "type": "Hash", "value": "$$BLAKE3$$/breakdown-s05" },
+    "BREAKDOWN_S06_HASH":          { "type": "Hash", "value": "$$BLAKE3$$/breakdown-s06" },
+    "BREAKDOWN_S07_HASH":          { "type": "Hash", "value": "$$BLAKE3$$/breakdown-s07" },
+    "BREAKDOWN_S08_HASH":          { "type": "Hash", "value": "$$BLAKE3$$/breakdown-s08" },
+    "BREAKDOWN_S09_HASH":          { "type": "Hash", "value": "$$BLAKE3$$/breakdown-s09" },
+    "BREAKDOWN_S10_HASH":          { "type": "Hash", "value": "$$BLAKE3$$/breakdown-s10" },
+    "BREAKDOWN_S11_HASH":          { "type": "Hash", "value": "$$BLAKE3$$/breakdown-s11" },
+    "IGNITED_FORM_HASH":           { "type": "Hash", "value": "$$BLAKE3$$/ignited", "_note": "the zero-arity Form defined inline at the bottom of S-01-ignite.form whose only effect is to TRAP EIGNITED" },
+    "PROOF_CHECKER_HASH":          { "type": "Hash", "value": "$$BLAKE3$$/forms/S-08-proof-checker", "_note": "the hash of the canonicalised S-08 Form bytes; used by S-09 and S-10 for the bootstrap-locked check" },
+    "RULE_TABLE_HASH":             { "type": "Hash", "value": "$$BLAKE3$$/rule-table", "_note": "the sealed S-08 rule table substance; the inspection record covers it line by line" },
+    "LEMMA_LIBRARY_HASH":          { "type": "Hash", "value": "$$BLAKE3$$/lemma-library", "_note": "the abstract-model lemma library substance the walker takes as given" },
+    "BRIDGE_INBOUND_ENDPOINT_HASH":{ "type": "Hash", "value": "$$BLAKE3$$/bridge-endpoint" },
+    "HEARTBEAT_QUANTUM":           { "type": "Nat",  "value": 256 },
+    "BRIDGE/POLICY_CAP":           { "type": "CapId", "value": "$$BLAKE3$$/bridge-policy-cap", "_note": "the policy cap held by the bridge mind, attenuated at ignition from the bootstrap caps" },
+    "HEPHAISTION/READ_WEAVE":      { "type": "CapId", "value": "$$BLAKE3$$/hephaistion-read-weave" },
+    "HEPHAISTION/READ_METRICS":    { "type": "CapId", "value": "$$BLAKE3$$/hephaistion-read-metrics" },
+    "HEPHAISTION/PROPOSE_SYNTHESIS": { "type": "CapId", "value": "$$BLAKE3$$/hephaistion-propose-synthesis" },
+    "HEPHAISTION/MUTATE_KERNEL_GATED": { "type": "CapId", "value": "$$BLAKE3$$/hephaistion-mutate-kernel-gated", "_note": "the cap whose predicate is `Stage6Accept ∧ ¬proof_checker_target ∧ rewrite_to_shadow_binding`" }
+  },
+
+  "kernel_authors": {
+    "_comment": "The identities under whose joint signature the S-08 inspection record is signed. K-of-N consensus for replacement of S-08 itself requires K signatures from this set, where K = forms[S-08-proof-checker].consensus_K. The seed ships with K = 3 and three placeholder identities; before any actual ignition, this list must be replaced with real public keys by a synthesis act against this manifest, recorded in the weave.",
+    "K": 3,
+    "identities": [
+      { "id": "kernel-author-0", "pubkey": "$$ED25519$$/placeholder-0", "_note": "placeholder; replace before ignition" },
+      { "id": "kernel-author-1", "pubkey": "$$ED25519$$/placeholder-1", "_note": "placeholder; replace before ignition" },
+      { "id": "kernel-author-2", "pubkey": "$$ED25519$$/placeholder-2", "_note": "placeholder; replace before ignition" }
+    ]
+  },
+
+  "boot_order": [
+    "_comment: the topological order in which the seed loader binds Forms. Each entry must have all its depends_on already bound. S-01 ignite is the only entry whose binding step is itself a Form invocation rather than a static bind, because S-01's body performs the I10 exception in the same single weave entry that the loader records as the genesis act.",
+    "S-03-substance-store",
+    "S-04-weave-log",
+    "S-02-cap-registry",
+    "S-05-attention-alloc",
+    "S-06-intent-match",
+    "S-07-form-runtime",
+    "S-08-proof-checker",
+    "S-09-synth-kernel",
+    "S-10-hephaistion-seed",
+    "S-11-bridge-proto",
+    "S-01-ignite"
+  ],
+
+  "proof_obligations_pending": [
+    "_comment: the proof artifacts named in each breakdown's Proof section that have not yet been discharged. Each entry will become a sealed Proof substance under kernel/forms/S-XX-{name}.proof, and the seed loader will refuse to commit a Form whose proof has not been discharged. S-08 is the bootstrap exception (see breakdown § Proof for the three layered discharges).",
+    { "form": "S-01-ignite",          "obligations": ["uniqueness of ignition", "universality of root", "closure of authority", "self-erasure", "replay refusal"] },
+    { "form": "S-02-cap-registry",    "obligations": ["mint uniqueness/reachability", "attenuation monotonicity", "revocation totality", "lookup soundness"] },
+    { "form": "S-03-substance-store", "obligations": ["hash determinism", "cell immutability", "pin conservation", "reclamation totality", "digest substitutivity", "no enumeration"] },
+    { "form": "S-04-weave-log",       "obligations": ["tip uniqueness", "append totality", "no amendment", "why-query soundness/completeness", "no enumeration", "grounding obligation"] },
+    { "form": "S-05-attention-alloc", "obligations": ["budget conservation (I6)", "capability gating (I10)", "no-preemption (A3.4)", "allocator determinism (I7)", "dissolution cascade", "quantum boundedness"] },
+    { "form": "S-06-intent-match",    "obligations": ["policy gating", "sub-intent containment", "no-ambient-fulfillers", "determinism", "acceptance form preservation", "budget conservation at handoff"] },
+    { "form": "S-07-form-runtime",    "obligations": ["form immutability during execution", "continuation faithfulness (I7)", "invocation accounting", "no forging of authority (I10)", "trap totality", "self-execution liveness"] },
+    { "form": "S-08-proof-checker",   "obligations": ["bootstrap: ground reflexive acceptance", "bootstrap: hand inspection of the kernel", "bootstrap: K-of-N multi-kernel consensus for replacement"] },
+    { "form": "S-09-synth-kernel",    "obligations": ["stage uniqueness", "stage ordering", "failure truncation", "binding gating", "capability gating", "loser preservation", "meta-budget conservation", "self-application liveness"] },
+    { "form": "S-10-hephaistion-seed","obligations": ["cap closure (I10)", "heartbeat liveness", "heartbeat absence visibility", "no self-promotion", "bounded epoch budget (I6)", "bootstrap-locked respect", "vigil hand-off completeness", "authorship grounding"] },
+    { "form": "S-11-bridge-proto",    "obligations": ["bridge subordination (I11)", "no human privilege", "receipt chain completeness (A8.5)", "acceptance check totality (A4.5)", "no silent state", "human silence as no-op"] }
+  ]
+}
