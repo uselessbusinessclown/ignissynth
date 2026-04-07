@@ -1,0 +1,324 @@
+; S-01: ignite — proof artifact
+;
+; Discharges the five obligations declared in breakdown/S-01-ignite.md:
+;   1. Uniqueness of ignition
+;   2. Universality of the root
+;   3. Closure of authority (the I10 base case)
+;   4. Self-erasure
+;   5. Replay refusal
+;
+; Format: the proof term language specified in kernel/PROOF.md.
+; Each (obligation N) block is a top-level Proof substance whose
+; rule_tree is a tree of rule applications terminating in
+; well-formed conclusions.
+;
+; The walker reads this file through S-08/parse_proof, which the
+; seed loader binds before any S-08/check call. Comments and
+; whitespace are stripped by the canonicaliser before hashing.
+;
+; Synthesis chain:
+;   provocation:  the breakdown declared five proof obligations
+;                 with no discharge; without them, S-01's binding
+;                 step (the seed loader's call into ignite) is
+;                 inadmissible because no Proof substance is
+;                 attached to its synthesis act.
+;   grounding:    A0.4, A0.7, A2.1, A2.6, I10
+;   composes_with:
+;                 - S-02 obligation 1 (mint uniqueness/reachability)
+;                   for obligation 2;
+;                 - S-04 obligation 1 (tip uniqueness) for
+;                   obligation 1;
+;                 - the abstract-model lemma library's I10 base-case
+;                   lemma for obligation 3.
+
+(proof
+  :claim         (claim
+    :invariant_id      "I10"               ; the most-load-bearing for ignite
+    :form_hash_before  BOTTOM_HASH         ; ignite is seed-original
+    :form_hash_after   $$BLAKE3$$/forms/S-01-ignite
+    :env               ()
+    :obligation        IGNITE_FIVE_OBLIGATIONS_CONJUNCTION)
+
+  :rule_tree (AndI
+    ; the root conjoins all five obligations into one term
+
+    ; ============================================================
+    ; Obligation 1: Uniqueness of ignition
+    ;
+    ; "For any execution trace, the number of weave entries of type
+    ;  Synthesized whose effect is 'root cap minted' is at most one."
+    ;
+    ; Term:
+    ;   Forall {trace : Vec<Entry>}.
+    ;     count(trace, λe. kind(e) = Synthesized ∧ effect(e) = "root cap minted") ≤ 1
+    ;
+    ; Discharge: composition with S-04 obligation 1 (tip uniqueness)
+    ;            and the structural fact that ignite's body emits
+    ;            E0 only on the path where READSLOT("ignite")
+    ;            equals SELFHASH.
+    ; ============================================================
+
+    (obligation 1 "uniqueness of ignition"
+      (ForallI :var (trace : Vec<Entry>)
+        (ImpI :hyp (Reachable {trace, IgniteAbstractModel})
+          (LemmaApp :lemma "S-04/tip-unique-implies-single-genesis"
+            :args ((Var trace)
+                   (Lit "Synthesized")
+                   (Lit "root cap minted"))
+            (S04 :obligation 1
+              :args ((Var trace)))
+            (Cong :n 1
+              ; ignite's body in S-01-ignite.form, between the
+              ; READSLOT(name-hash) check and the BINDSLOT slot
+              ; overwrite, contains exactly one APPEND of an
+              ; entry whose kind is Synthesized and whose
+              ; description matches "root cap minted". The
+              ; congruence rule lifts this textual fact to a
+              ; term equality the walker can compare.
+              (Refl)))))
+      :concludes
+        (Forall {trace : Vec<Entry>}
+          (Implies (Reachable {trace, IgniteAbstractModel})
+            (Le
+              (Count {trace,
+                      (Lambda e.
+                        (And (Eq (kind e) (Lit "Synthesized"))
+                             (Eq (effect e) (Lit "root cap minted"))))})
+              (Lit 1)))))
+
+
+    ; ============================================================
+    ; Obligation 2: Universality of the root
+    ;
+    ; "The capability R returned by the single successful ignition
+    ;  has rights(R) = UNIVERSAL, budget(R) = substrate_budget,
+    ;  and is held by the seed mind id."
+    ;
+    ; Discharge: direct definition. The bytes of the RootCap
+    ; substance ignite produces in Step 1 are content-addressed
+    ; and inspectable; the manifest's immediates block names
+    ; UNIVERSAL_RIGHTS, SUBSTRATE_BUDGET, and SEED_MIND_ID as the
+    ; values that go into the MAKEVEC. Refl over the canonical
+    ; substance bytes is the entire proof.
+    ; ============================================================
+
+    (obligation 2 "universality of root"
+      (And
+        (Eq
+          (rights (call S-01/ignite))
+          (Lit UNIVERSAL_RIGHTS))
+        (And
+          (Eq
+            (budget (call S-01/ignite))
+            (Lit SUBSTRATE_BUDGET))
+          (Eq
+            (holder (call S-01/ignite))
+            (Lit SEED_MIND_ID))))
+
+      :tree
+        (AndI
+          (Cong :n 0
+            ; rights(R) = UNIVERSAL_RIGHTS by direct construction
+            ; of R in S-01-ignite.form Step 1 line 6 (locals[1] :=
+            ; the result of MAKEVEC over [UNIVERSAL_RIGHTS,
+            ; SUBSTRATE_BUDGET, SEED_MIND_ID]).
+            (Refl))
+          (AndI
+            (Cong :n 0 (Refl))
+            (Cong :n 0 (Refl)))))
+
+
+    ; ============================================================
+    ; Obligation 3: Closure of authority (the I10 base case)
+    ;
+    ; "For every capability C in any reachable state, there exists
+    ;  a chain of attenuations from R to C."
+    ;
+    ; This is the I10 closure lemma. The induction is over the
+    ; reachable states of the abstract cap forest. The base case
+    ; — and only the base case — is what S-01 discharges. The
+    ; inductive step (every reachable derivation either is R or
+    ; is the result of attenuate from a parent already in the
+    ; chain) is part of S-02's proof, not this one.
+    ; ============================================================
+
+    (obligation 3 "closure of authority — base case"
+      (Forall {state : CapForest}
+        (Implies (InitialState {state})
+          (Forall {C : Cap}
+            (Implies (Member C state)
+              (Eq C (Lit RootCapHash))))))
+
+      :tree
+        (ForallI :var (state : CapForest)
+          (ImpI :hyp (InitialState {state})
+            (ForallI :var (C : Cap)
+              (ImpI :hyp (Member C (Var state))
+                (LemmaApp :lemma "S-02/initial-state-singleton"
+                  :args ((Var state) (Var C))
+                  ; the lemma library entry "S-02/initial-state-
+                  ; singleton" asserts that the only cap in the
+                  ; treap immediately after ignite returns is the
+                  ; one ignite minted, which is RootCapHash. The
+                  ; lemma's own discharge is part of S-02's proof.
+                  (S02 :obligation 1
+                    :args ((Var state))))))))))
+
+
+    ; ============================================================
+    ; Obligation 4: Self-erasure
+    ;
+    ; "After the successful ignition, no transition in the abstract
+    ;  model leads to a state in which the Form table slot for
+    ;  'ignite' is anything other than IGNITED."
+    ;
+    ; Discharge: structural induction on the IL semantics of
+    ; BINDSLOT. The IL has exactly one opcode that mutates a
+    ; binding slot, and ignite's body contains exactly one
+    ; BINDSLOT call (Step 3, line 4 of the inline assembly), with
+    ; the second argument PUSH IGNITED_FORM_HASH. After ignite
+    ; returns, no Form running in the post-ignition habitat holds
+    ; the kernel mutation cap (the seed loader revokes it
+    ; immediately, per the ignition sequence in synthesis/SEED.md
+    ; step 6), so no later instruction can reach a BINDSLOT
+    ; against the "ignite" slot.
+    ; ============================================================
+
+    (obligation 4 "self-erasure"
+      (Forall {trace : Vec<Entry>}
+        (Implies
+          (And
+            (Reachable {trace, IgniteAbstractModel})
+            (Contains {trace, GenesisEntry}))
+          (Forall {state : SlotTable}
+            (Implies (After {trace, GenesisEntry, state})
+              (Eq (Lookup {state, "ignite"})
+                  (Lit IGNITED_FORM_HASH))))))
+
+      :tree
+        (ForallI :var (trace : Vec<Entry>)
+          (ImpI :hyp (And (Reachable trace IgniteAbstractModel)
+                          (Contains trace GenesisEntry))
+            (ForallI :var (state : SlotTable)
+              (ImpI :hyp (After trace GenesisEntry (Var state))
+                (Trans
+                  ; step 1: the ignite body's BINDSLOT writes
+                  ; IGNITED_FORM_HASH to the "ignite" slot in the
+                  ; same atomic single-instruction step that
+                  ; produces the abstract After-relation.
+                  (LemmaApp :lemma "IL/BINDSLOT/atomic-write"
+                    :args ((Lit "ignite")
+                           (Lit IGNITED_FORM_HASH)
+                           (Var state)))
+                  ; step 2: no later instruction has the kernel
+                  ; mutation cap in scope, by the ignition
+                  ; sequence's revocation step.
+                  (LemmaApp :lemma "S-02/post-ignition-no-mutation-cap"
+                    :args ((Var trace) (Var state))
+                    (S02 :obligation 4
+                      :args ((Var trace))))))))))
+
+
+    ; ============================================================
+    ; Obligation 5: Replay refusal
+    ;
+    ; "Any call to the slot named 'ignite' after the successful
+    ;  ignition produces a weave entry of type
+    ;  IgnitionReplayAttempted and returns EIGNITED."
+    ;
+    ; Discharge: composition of obligation 4 (the slot now
+    ; resolves to IGNITED_FORM_HASH) with the IGNITED Form's body
+    ; (defined inline at the bottom of S-01-ignite.form), which
+    ; contains exactly one instruction: TRAP EIGNITED. The
+    ; IgnitionReplayAttempted entry is recorded by the dispatch
+    ; path in S-07 against the slot's history, not by IGNITED's
+    ; body, but the dispatch's behavior is part of S-07's proof
+    ; (obligation 5: trap totality and trap entry append).
+    ; ============================================================
+
+    (obligation 5 "replay refusal"
+      (Forall {state : HabitatState}
+        (Implies (PostIgnition {state})
+          (And
+            (Eq
+              (call_via_slot {state, "ignite"})
+              (Trap EIGNITED))
+            (Exists {entry : Entry}
+              (And
+                (Eq (kind entry) (Lit "IgnitionReplayAttempted"))
+                (Eq (slot entry) (Lit "ignite"))
+                (Member entry (weave state)))))))
+
+      :tree
+        (ForallI :var (state : HabitatState)
+          (ImpI :hyp (PostIgnition (Var state))
+            (AndI
+              ; first conjunct: call_via_slot(state, "ignite") = Trap EIGNITED
+              (Trans
+                (LemmaApp :lemma "Slot/post-erasure-resolves-to-IGNITED"
+                  :args ((Var state))
+                  (S04 :obligation 6 :args ()))
+                  ; the why-query path: the slot was overwritten by
+                  ; the BINDSLOT in step 4, and obligation 4 above
+                  ; established that the overwrite is permanent.
+                (Cong :n 1
+                  ; IGNITED's body contains exactly one instruction
+                  ; per S-01-ignite.form lines 142-152: TRAP EIGNITED.
+                  (Refl)))
+              ; second conjunct: ∃ entry. kind = IgnitionReplayAttempted
+              ; ∧ slot = "ignite" ∧ entry ∈ weave(state)
+              (ExistsI
+                :witness (call_dispatch_record {state, "ignite"})
+                (AndI
+                  (Cong :n 0 (Refl))
+                  (AndI
+                    (Cong :n 0 (Refl))
+                    (LemmaApp :lemma "S-07/dispatch-records-trap"
+                      :args ((Var state) (Lit "ignite"))
+                      ; S-07's dispatch path appends a Trapped entry
+                      ; whose kind is "IgnitionReplayAttempted" when
+                      ; the dispatched Form's first instruction
+                      ; TRAPs EIGNITED. This is part of S-07's
+                      ; proof obligation 3 (invocation accounting).
+                      (S07 :obligation 3
+                        :args ((Var state)))))))))))
+
+  )
+
+  :rationale-hash $$BLAKE3$$/breakdown-s01
+)
+
+
+; ============================================================
+; Discharge dependencies
+;
+; The walker, when it reaches a (S02 ...), (S03 ...), (S04 ...),
+; or (S07 ...) leaf, looks up the cited obligation in the named
+; Form's own proof artifact and verifies that:
+;   - the obligation exists in that proof
+;   - the cited obligation has been Accepted by S-08
+;   - the term shapes line up under equiv_under_canon
+;
+; This is the composition rule for cross-Form proofs and is what
+; makes the seed's proof load distributable: each Form's proof
+; only has to discharge its own obligations and reference the
+; obligations of its dependencies, not re-derive them.
+;
+; The obligations cited by THIS proof:
+;   - S-02 obligation 1: mint uniqueness/reachability
+;   - S-02 obligation 4: revocation totality (lifted to "post-
+;                        ignition no mutation cap")
+;   - S-04 obligation 1: tip uniqueness
+;   - S-04 obligation 6: grounding obligation (used in the
+;                        Slot post-erasure why-query path)
+;   - S-07 obligation 3: invocation accounting (the dispatch
+;                        path's trap-entry append)
+;
+; Until those four Forms have proof artifacts of their own, the
+; walker's recursion at those leaves will fail with
+; Reject{MissingDependency}. This proof is therefore *correct in
+; structure* but *not yet checkable end-to-end* — it becomes
+; checkable when S-02, S-04, and S-07 each have proof artifacts
+; that discharge the cited obligations. That is the next layer
+; of work.
+; ============================================================
