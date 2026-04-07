@@ -1,0 +1,292 @@
+; S-07: form_runtime
+;
+; The pure interpreter over Form IL with continuations as sealed
+; substances. Three exports: execute, resume_continuation,
+; canonicalise. The runtime is itself written in the IL whose
+; semantics it implements (A6.5).
+;
+; Synthesis chain:
+;   provocation:  breakdown/S-07-form-runtime.md
+;   grounding:    A0.2 A0.6 A0.7 A1.3 A1.5 A3.4 A3.5 A6.1..A6.5
+;   selected:     Candidate A — Pure interpreter, Cont = sealed
+;                 ExecState
+;   proof:        kernel/forms/S-07-form-runtime.proof  (six
+;                 obligations: form immutability during execution,
+;                 continuation faithfulness, invocation accounting,
+;                 no forging of authority, trap totality, self-
+;                 execution liveness)
+
+; ============================================================
+; execute(form_hash, attention_id, inputs_vec) → result_hash
+;
+; The entry point. Initialise an ExecState from the call,
+; interpret instructions until yield/return/trap, append exactly
+; one Invoked weave entry on return, return the result hash.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "execute"
+  :declared-caps (S-03/ROOT_RO S-04/APPEND S-05/FOREST_RW)
+  :declared-traps (ETYPE EUNHELD ENOTHELD ESTALE EOVERBUDGET EBADLOCAL
+                    EUNDERFLOW EASSERT EUNAUTHORISED EREPLAYDIVERGED
+                    EIGNITED)
+  :arity         3
+  :locals-n      12
+  :code (
+
+    STORE   0                           ; inputs_vec
+    STORE   1                           ; attention_id
+    STORE   2                           ; form_hash
+
+    ;; Build the initial ExecState. The form_hash is read through
+    ;; S-03 (READ); the resulting bytes are parsed through
+    ;; PARSEFORM into a code vec + locals_n + arity + declared
+    ;; caps + declared traps.
+
+    LOAD    2
+    READ                                ; trap EUNHELD if no Read cap
+    STORE   3                           ; raw form bytes
+
+    LOAD    3
+    PARSEFORM                           ; → ParsedForm record
+    STORE   4
+
+    ;; Verify arity == |inputs_vec|. If not, trap ETYPE.
+    LOAD    4
+    PUSH    "S-07/proj/arity"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    LOAD    0
+    PUSH    "S-07/vec/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    EQ
+    JMPZ    +trap_arity
+
+    ;; Verify all declared_caps are in attention.cap_view.
+    LOAD    4
+    PUSH    "S-07/proj/declared_caps"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    LOAD    1
+    PUSH    "S-07/check/cap_view_contains"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    JMPZ    +trap_notheld
+
+    ;; Build ExecState{form_hash, pc=0, locals=zeros(locals_n),
+    ;; stack=inputs_reversed, cap_view=attention.cap_view,
+    ;; weave_prev=current_tip, inputs_hash=hash(inputs_vec),
+    ;; attention_id}.
+    LOAD    2
+    PUSH    0                           ; pc
+    LOAD    4
+    PUSH    "S-07/proj/locals_n"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    PUSH    "S-07/zeros"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                    ; → zeroed locals vec
+    LOAD    0
+    PUSH    "S-07/reverse"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                    ; → stack
+    LOAD    1
+    PUSH    "S-05/proj/cap_view"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    PUSH    "S-04/tip"
+    SEAL    Hash
+    READSLOT
+    LOAD    0
+    SEAL    Hash                        ; inputs_hash
+    LOAD    1
+    MAKEVEC 8
+    SEAL    ExecState
+    STORE   5                           ; locals[5] := initial state
+
+    ;; Enter the interpreter loop helper. The loop runs until the
+    ;; state's pc points at a RET, a YIELD, or a trap-producing
+    ;; instruction. It returns Pair{Result, FinalState}.
+    LOAD    5
+    PUSH    "S-07/interp/run"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                    ; → Pair{verdict, final state}
+    STORE   6
+
+    LOAD    6
+    FST
+    STORE   7                           ; verdict (Returned/Yielded/Trapped)
+
+    ;; Branch on verdict shape.
+    LOAD    7
+    PUSH    "Returned"
+    EQ
+    JMPZ    +not_returned
+
+    ;; ----------------------------------------------------------------
+    ;; Returned: append Invoked entry, return result hash.
+    ;; ----------------------------------------------------------------
+
+    LOAD    6
+    SND                                 ; final state
+    PUSH    "S-07/proj/return_value"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   8                           ; result hash
+
+    ;; Compute attention_spent = initial_budget - final_budget.
+    ;; The IL helper does this from the ExecState pair.
+    LOAD    5
+    LOAD    6
+    SND
+    PUSH    "S-07/spent"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   9
+
+    ;; Append Invoked{form_hash, attention_id, inputs_hash,
+    ;; outputs_hash=result, attention_spent}.
+    LOAD    2
+    LOAD    1
+    LOAD    0
+    SEAL    Hash
+    LOAD    8
+    LOAD    9
+    MAKEVEC 5
+    PUSH    "Invoked"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+
+    LOAD    8
+    RET
+
+    :not_returned
+
+    ;; Yielded or Trapped: hand the verdict back as a sealed
+    ;; result substance. The caller (typically S-09 or another
+    ;; Form's CALL frame) inspects the verdict shape.
+    LOAD    6
+    SEAL    InvocationResult
+    RET
+
+    :trap_arity
+    TRAP    ETYPE
+
+    :trap_notheld
+    TRAP    ENOTHELD
+  )
+  :rationale-hash BREAKDOWN_S07_HASH
+)
+
+; ============================================================
+; resume_continuation(cont_hash) → result_hash
+;
+; Read the continuation substance, restore ExecState, run the
+; interpreter loop from the sealed pc. Same shape as execute but
+; without the initial-state construction step.
+;
+; The continuation's substance hash is its identity: replaying
+; the same continuation on a clean attention produces a
+; byte-identical successor (S-07 obligation 2). If the original
+; consumed an Entropy/Clock/Network/SensorInput cap, the
+; continuation's cap_view will contain it; if the resumer does
+; not also hold that cap, the IL READ inside the resumed
+; instruction traps EUNHELD, which we surface as
+; EREPLAYDIVERGED.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "resume_continuation"
+  :declared-caps (S-03/ROOT_RO S-04/APPEND S-05/FOREST_RW)
+  :declared-traps (ETYPE EUNHELD ENOTHELD ESTALE EOVERBUDGET EBADLOCAL
+                    EUNDERFLOW EASSERT EUNAUTHORISED EREPLAYDIVERGED)
+  :arity         1
+  :locals-n      6
+  :code (
+    STORE   0                           ; cont_hash
+
+    LOAD    0
+    READ                                ; trap EUNHELD if no Read cap on continuation
+    PUSH    "S-07/parse_exec_state"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                    ; → ExecState
+    STORE   1
+
+    LOAD    1
+    PUSH    "S-07/interp/run"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   2
+
+    ;; Same verdict-handling as execute. Forwarded to a shared
+    ;; helper to keep both bodies short.
+    LOAD    2
+    PUSH    "S-07/finalise_invocation"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash BREAKDOWN_S07_HASH
+)
+
+; ============================================================
+; canonicalise(form_substance) → form_substance
+;
+; The shared canonicaliser. Strips comments and whitespace from
+; the wire form, normalises the opcode encoding, re-seals through
+; S-03. The canonicaliser is shared with S-08 (the ~400-line
+; "shared canonicaliser delta" both budgets reference). Two
+; encodings of the same Form produce the same hash iff they
+; canonicalise to the same bytes.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "canonicalise"
+  :declared-caps (S-03/ROOT_RW)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      3
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    PUSH    "S-07/canon/normalise"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                    ; → canonical bytes
+    STORE   1
+    PUSH    "Form/v1"
+    LOAD    1
+    PUSH    "S-03/seal"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    RET
+  )
+  :rationale-hash BREAKDOWN_S07_HASH
+)
+
+(exports
+  (execute             (Hash, AttId, Vec{Value}) → Hash)
+  (resume_continuation (Hash)                    → Hash)
+  (canonicalise        (Hash)                    → Hash))

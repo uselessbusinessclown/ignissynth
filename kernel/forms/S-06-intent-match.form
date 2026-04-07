@@ -1,0 +1,257 @@
+; S-06: intent_match
+;
+; Single export: match. The matcher is a deterministic function
+; from (intent, mind cap_view) to MatchResult. There is NO global
+; fulfiller index in the body — the policy capability's predicate
+; is the only source of admissibility, and `enumerate_fulfillers`
+; is an operation on the policy cap, not on a global registry.
+;
+; Synthesis chain:
+;   provocation:  breakdown/S-06-intent-match.md
+;   grounding:    A0.1 A0.4 A2.5 A2.6 A4.1..A4.5
+;   selected:     Candidate A — Predicate-driven candidate
+;                 enumeration with deterministic ranking
+;   proof:        kernel/forms/S-06-intent-match.proof  (six
+;                 obligations: policy gating, sub-intent
+;                 containment, no-ambient-fulfillers, determinism,
+;                 acceptance form preservation, budget conservation
+;                 at handoff)
+
+; ============================================================
+; match(intent_hash, policy_cap_id) → MatchResult
+;
+; MatchResult is one of:
+;   Matched{fulfiller_hash, sub_attention_id, acceptance_form_hash}
+;   MatchedNone{reason}
+;
+; The body never returns a fulfiller hash whose existence the
+; caller could not have derived from the policy cap they passed
+; in. This is the "no ambient fulfillers" property and is
+; structural: there is no other source the matcher consults.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "match"
+  :declared-caps (S-04/APPEND S-02/TREAP_RO S-03/ROOT_RO S-05/FOREST_RW)
+  :declared-traps (EILLFORMED ENOPOLICY ETYPE)
+  :arity         2
+  :locals-n      14
+  :code (
+
+    STORE   0                           ; policy_cap_id
+    STORE   1                           ; intent_hash
+
+    ;; ----------------------------------------------------------------
+    ;; Step 1: read and verify the intent.
+    ;; ----------------------------------------------------------------
+
+    LOAD    1
+    READ                                ; trap EUNHELD if no read cap
+    PUSH    "S-06/parse_intent"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                    ; → Intent or BOTTOM
+    STORE   2
+
+    LOAD    2
+    PUSH    BOTTOM_HASH
+    EQ
+    JMPZ    +intent_ok
+    JMP     +trap_illformed
+
+    :intent_ok
+
+    ;; ----------------------------------------------------------------
+    ;; Step 2: verify the policy cap is held and look it up.
+    ;; ----------------------------------------------------------------
+
+    LOAD    0
+    CAPHELD
+    JMPZ    +trap_nopolicy
+
+    LOAD    0
+    PUSH    "S-02/lookup"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                    ; → CapEntry or BOTTOM
+    STORE   3
+
+    LOAD    3
+    PUSH    BOTTOM_HASH
+    EQ
+    JMPZ    +policy_alive
+    JMP     +trap_nopolicy
+
+    :policy_alive
+
+    ;; ----------------------------------------------------------------
+    ;; Step 3: compute parent chain admissible-set intersection.
+    ;;
+    ;; Walk intent.parent up to root, collecting each parent's
+    ;; policy cap, calling each cap's enumerate_fulfillers operation
+    ;; on this intent, and intersecting the resulting fulfiller-hash
+    ;; vectors. The walk is bounded by the parent chain length.
+    ;; ----------------------------------------------------------------
+
+    LOAD    2
+    LOAD    1
+    PUSH    "S-06/parent_chain_intersect"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                    ; → Vec{FulfillerHash}, possibly empty
+    STORE   4
+
+    ;; ----------------------------------------------------------------
+    ;; Step 4: enumerate via this intent's policy cap and intersect
+    ;; with the parent chain set.
+    ;; ----------------------------------------------------------------
+
+    LOAD    0                           ; policy_cap_id
+    LOAD    1                           ; intent_hash
+    PUSH    "S-06/enumerate_via_cap"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                    ; → Vec{FulfillerHash}
+    STORE   5
+
+    LOAD    4
+    LOAD    5
+    PUSH    "S-06/vec_intersect"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   6                           ; admissible vec
+
+    LOAD    6
+    PUSH    "S-07/vec/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    PUSH    0
+    EQ
+    JMPZ    +none_admissible
+
+    ;; ----------------------------------------------------------------
+    ;; Step 5: filter by per-fulfiller predicate evaluation.
+    ;; ----------------------------------------------------------------
+
+    LOAD    6
+    LOAD    1
+    LOAD    3
+    PUSH    "S-06/filter_by_predicate"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                    ; → Vec{FulfillerHash}
+    STORE   7
+
+    LOAD    7
+    PUSH    "S-07/vec/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    PUSH    0
+    EQ
+    JMPZ    +none_admissible
+
+    ;; ----------------------------------------------------------------
+    ;; Step 6: deterministic rank.
+    ;;
+    ;; The ranking function is named in the policy cap. Tie-break
+    ;; on (fulfiller_hash) ascending, total because hashes are
+    ;; content addressed.
+    ;; ----------------------------------------------------------------
+
+    LOAD    7
+    LOAD    3
+    PUSH    "S-06/rank"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                    ; → Vec sorted, top first
+    STORE   8
+
+    LOAD    8
+    PUSH    0
+    PUSH    "S-07/vec/index"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                    ; → top fulfiller hash
+    STORE   9
+
+    ;; ----------------------------------------------------------------
+    ;; Step 7: allocate sub-attention bounded by min(intent.budget,
+    ;; parent.remaining).
+    ;; ----------------------------------------------------------------
+
+    LOAD    2
+    PUSH    "S-06/proj/intent_budget"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   10
+
+    PUSH    SELF_ATTENTION_ID
+    LOAD    10
+    PUSH    "S-05/split"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                    ; → child attention id
+    STORE   11
+
+    ;; ----------------------------------------------------------------
+    ;; Step 8: append Matched entry, return MatchResult.
+    ;; ----------------------------------------------------------------
+
+    LOAD    2
+    PUSH    "S-06/proj/acceptance_form"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   12                          ; acceptance_form_hash
+
+    LOAD    1                           ; intent
+    LOAD    9                           ; fulfiller
+    LOAD    0                           ; policy cap
+    LOAD    11                          ; sub attention
+    LOAD    12                          ; acceptance form
+    MAKEVEC 5
+    PUSH    "Matched"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+
+    LOAD    9
+    LOAD    11
+    LOAD    12
+    MAKEVEC 3
+    PUSH    "Matched"
+    MAKEPAIR
+    SEAL    MatchResult
+    RET
+
+    ;; ----------------------------------------------------------------
+    ;; Failure path: no admissible fulfiller.
+    ;; ----------------------------------------------------------------
+
+    :none_admissible
+    LOAD    1
+    PUSH    "NoneAdmissible"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+    PUSH    REJECT_NONE_ADMISSIBLE
+    RET
+
+    :trap_illformed
+    TRAP    EILLFORMED
+
+    :trap_nopolicy
+    TRAP    ENOPOLICY
+  )
+  :rationale-hash BREAKDOWN_S06_HASH
+)
+
+(exports
+  (match (Hash, CapId) → MatchResult))

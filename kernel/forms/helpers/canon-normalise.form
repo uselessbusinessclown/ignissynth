@@ -1,0 +1,191 @@
+; helpers/canon-normalise.form
+;
+; The shared canonicaliser. Bound under "S-07/canon/normalise".
+; Referenced by:
+;   - S-07/canonicalise (which seals the result through S-03)
+;   - S-08/equiv_under_canon (which compares two canonicalisations)
+;   - every Form indirectly, via the IL parser's hash-of-bytes
+;     step at SEAL time
+;
+; Synthesis chain:
+;   provocation:  the encoded primary Forms reference
+;                 "S-07/canon/normalise" but no Form was bound at
+;                 that slot; without it, equiv_under_canon has no
+;                 referent and S-08's accept-monotonicity property
+;                 cannot be discharged.
+;   grounding:    A1.1 (substance is named by hash of contents),
+;                 A1.2 (type is part of the hash), A1.3 (sealing
+;                 is becoming matter), A6.1 (a unit of code is a
+;                 substance), A6.2 (Forms are derivable from
+;                 forms — including via canonicalisation, which is
+;                 a strict-equality-preserving derivation)
+;   approach:     three-pass normalisation: strip comments and
+;                 whitespace, fold the opcode encoding to its
+;                 minimal byte form, sort the export and immediate
+;                 declaration blocks lexicographically. The result
+;                 is byte-deterministic given the input parse tree.
+;   proof:        composition with S-03 obligation 1 (hash
+;                 determinism). Because the canonicaliser is a
+;                 pure function of its input bytes, two inputs
+;                 that differ only in non-canonical features
+;                 (comments, whitespace, opcode-encoding choice,
+;                 export-block ordering) produce identical output
+;                 bytes, and S-03 then assigns them identical
+;                 hashes.
+;
+; This Form is total. Its declared-traps list contains only ETYPE,
+; which fires if the input is not a Form-shaped substance to begin
+; with. Comment-stripping never fails; whitespace folding never
+; fails; opcode normalisation never fails (every opcode in the
+; IL has exactly one canonical encoding by IL.md's table).
+
+(form
+  :type-tag      "Form/v1"
+  :name          "normalise"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      6
+  :code (
+
+    STORE   0                                   ; raw bytes hash
+
+    ;; ----------------------------------------------------------------
+    ;; Pass 1: parse the wire form into a Form record. The parser
+    ;; is itself a sibling helper Form bound under "S-07/parse_form".
+    ;; A failure to parse is the only place this canonicaliser can
+    ;; trap — everything downstream is total.
+    ;; ----------------------------------------------------------------
+
+    LOAD    0
+    READ                                        ; trap EUNHELD propagates
+    PUSH    "S-07/parse_form"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                            ; → ParsedForm or BOTTOM
+    STORE   1
+
+    LOAD    1
+    PUSH    BOTTOM_HASH
+    EQ
+    JMPZ    +parsed_ok
+    JMP     +trap_type
+
+    :parsed_ok
+
+    ;; ----------------------------------------------------------------
+    ;; Pass 2: fold the opcode encoding. Every opcode in IL.md has
+    ;; exactly one canonical byte encoding; the parser may have
+    ;; accepted a non-canonical encoding (e.g., a JMP+0 that should
+    ;; have been NOOP-elided, or an integer literal with leading
+    ;; zero bytes). The opcode_fold helper rewrites the parsed
+    ;; instruction sequence into its canonical form.
+    ;; ----------------------------------------------------------------
+
+    LOAD    1
+    PUSH    "S-07/canon/opcode_fold"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                            ; → ParsedForm with canonical opcodes
+    STORE   2
+
+    ;; ----------------------------------------------------------------
+    ;; Pass 3: sort the export and immediate-declaration blocks
+    ;; lexicographically by name. The parser preserves source
+    ;; order; the canonicaliser collapses that order into the
+    ;; canonical lexicographic one. After this pass, two source
+    ;; files that declare the same exports in different orders
+    ;; produce byte-identical output.
+    ;; ----------------------------------------------------------------
+
+    LOAD    2
+    PUSH    "S-07/canon/sort_blocks"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                            ; → ParsedForm with sorted blocks
+    STORE   3
+
+    ;; ----------------------------------------------------------------
+    ;; Pass 4: re-emit the canonical wire form bytes. This is the
+    ;; inverse of the parser, restricted to the canonical subset
+    ;; the parser would emit if it round-tripped its own output.
+    ;; ----------------------------------------------------------------
+
+    LOAD    3
+    PUSH    "S-07/canon/emit"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                            ; → canonical bytes
+    STORE   4
+
+    LOAD    4
+    RET
+
+    :trap_type
+    TRAP    ETYPE
+  )
+  :rationale-hash $$BLAKE3$$/canon-rationale
+)
+
+; ============================================================
+; equiv_under_canon(a_hash, b_hash) → Bool
+;
+; Convenience wrapper used by S-08/walker/visit. Returns true iff
+; canonicalising both inputs produces byte-identical hashes.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "equiv_under_canon"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      4
+  :code (
+    STORE   0                                   ; b
+    STORE   1                                   ; a
+
+    LOAD    1
+    PUSH    "S-07/canon/normalise"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   2
+
+    LOAD    0
+    PUSH    "S-07/canon/normalise"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   3
+
+    ;; The canonicalised forms are byte vectors. Their hashes
+    ;; (computed by the IL canonicaliser's own emit step) are
+    ;; equal iff the bytes are equal.
+    LOAD    2
+    PUSH    "Form/v1"
+    PUSH    "S-03/seal"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   2
+
+    LOAD    3
+    PUSH    "Form/v1"
+    PUSH    "S-03/seal"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   3
+
+    LOAD    2
+    LOAD    3
+    EQ
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/canon-rationale
+)
+
+(exports
+  (normalise         (Hash)        → Bytes)
+  (equiv_under_canon (Hash, Hash)  → Bool))

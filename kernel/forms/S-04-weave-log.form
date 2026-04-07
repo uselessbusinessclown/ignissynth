@@ -1,0 +1,227 @@
+; S-04: weave_log
+;
+; The strict Merkle chain with per-substance back-index. Two
+; exports: append and why. The chain's tip is held under the
+; kernel-private slot "S-04/tip"; the back-index (a sibling
+; persistent hash trie of the same shape S-03 uses) is held under
+; "S-04/back-index".
+;
+; Synthesis chain:
+;   provocation:  breakdown/S-04-weave-log.md
+;   grounding:    A0.4 A0.8 A1.1 A1.4 A5.* A1.4 A0.4
+;   selected:     Candidate A — Strict Merkle chain + back-index
+;   proof:        kernel/forms/S-04-weave-log.proof  (six obligations:
+;                 tip uniqueness, append totality, no amendment,
+;                 why-query soundness/completeness, no enumeration,
+;                 grounding obligation for synthesised entries)
+;
+; The IL opcode `APPEND` calls into this Form's `append`. We are
+; the layer below the opcode: the opcode is shorthand for
+; READSLOT "S-04/append" + CALL.
+
+; ============================================================
+; append(entry) → tip_hash
+;
+; Atomically:
+;   1. Verify entry.prev = current tip; trap ESTALE otherwise.
+;   2. Seal the entry into S-03 (giving it its hash).
+;   3. Advance "S-04/tip" to the new entry hash.
+;   4. For each (output_substance_hash, this_entry_hash) pair,
+;      insert into the back-index.
+;   5. If the entry kind is `Synthesized`, verify grounding is
+;      non-empty and rationale_hash references a non-empty
+;      substance — trap EUNGROUNDED otherwise. This is I8 enforced
+;      at the weave layer (S-04 obligation 6).
+;   6. Return the new tip hash.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "append"
+  :declared-caps (S-04/TIP_RW S-04/BACKIDX_RW S-03/ROOT_RW)
+  :declared-traps (ESTALE EUNGROUNDED ETYPE)
+  :arity         1
+  :locals-n      10
+  :code (
+
+    STORE   0                           ; locals[0] := entry value (unsealed)
+
+    ;; Read current tip.
+    PUSH    "S-04/tip"
+    SEAL    Hash
+    READSLOT
+    STORE   1                           ; locals[1] := current_tip
+
+    ;; entry.prev — projection from the entry value via "S-04/proj/prev"
+    LOAD    0
+    PUSH    "S-04/proj/prev"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   2                           ; locals[2] := entry.prev
+
+    ;; Verify prev = current_tip; trap ESTALE otherwise.
+    LOAD    2
+    LOAD    1
+    EQ
+    JMPZ    +trap_stale
+
+    ;; ----------------------------------------------------------------
+    ;; If kind = Synthesized, enforce I8 grounding obligation.
+    ;; We project entry.kind, entry.grounding, entry.rationale_hash
+    ;; via the same per-field projection scheme.
+    ;; ----------------------------------------------------------------
+
+    LOAD    0
+    PUSH    "S-04/proj/kind"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   3                           ; entry.kind
+
+    LOAD    3
+    PUSH    SYNTHESIZED_KIND
+    EQ
+    JMPZ    +skip_grounding_check
+
+    ;; entry.grounding must be non-empty
+    LOAD    0
+    PUSH    "S-04/proj/grounding"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                    ; → Vec{AxiomId}
+    STORE   4
+    LOAD    4
+    PUSH    "S-04/vec/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                    ; → Nat
+    PUSH    0
+    EQ
+    JMPZ    +grounding_present
+    JMP     +trap_ungrounded
+
+    :grounding_present
+
+    ;; entry.rationale_hash must reference a non-empty substance
+    LOAD    0
+    PUSH    "S-04/proj/rationale"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                    ; → Hash
+    STORE   5
+    LOAD    5
+    READ                                ; trap EUNHELD if no Read cap; otherwise → bytes
+    PUSH    "S-04/bytes/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                    ; → Nat
+    PUSH    0
+    EQ
+    JMPZ    +rationale_present
+    JMP     +trap_ungrounded
+
+    :rationale_present
+    :skip_grounding_check
+
+    ;; ----------------------------------------------------------------
+    ;; Seal the entry through S-03. This produces its hash.
+    ;; ----------------------------------------------------------------
+
+    PUSH    "WeaveEntry"
+    LOAD    0
+    PUSH    "S-03/seal"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   6                           ; locals[6] := new_entry_hash
+
+    ;; ----------------------------------------------------------------
+    ;; Advance the tip atomically.
+    ;; ----------------------------------------------------------------
+
+    PUSH    "S-04/tip"
+    SEAL    Hash
+    LOAD    6
+    BINDSLOT
+
+    ;; ----------------------------------------------------------------
+    ;; For each output hash in entry.outputs, insert into back-index.
+    ;; ----------------------------------------------------------------
+
+    LOAD    0
+    PUSH    "S-04/proj/outputs"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                    ; → Vec{Hash}
+    STORE   7
+
+    PUSH    "S-04/backidx/insert_all"
+    SEAL    Hash
+    READSLOT
+    LOAD    7                           ; outputs vec
+    LOAD    6                           ; entry hash
+    CALL    h=$ /n=2
+    POP                                 ; back-index helper returns unit
+
+    LOAD    6
+    RET
+
+    :trap_stale
+    TRAP    ESTALE
+
+    :trap_ungrounded
+    TRAP    EUNGROUNDED
+  )
+  :rationale-hash BREAKDOWN_S04_HASH
+)
+
+; ============================================================
+; why(substance_hash) → Vec{EntryHash}
+;
+; The transitive set of weave entries whose outputs the queried
+; substance hash transitively depends on. Bounded in time by the
+; size of that set (S-04 obligation 4). Returns the empty vec for
+; substances that were never produced through this weave.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "why"
+  :declared-caps (S-04/BACKIDX_RO S-03/ROOT_RO)
+  :declared-traps ()
+  :arity         1
+  :locals-n      6
+  :code (
+
+    STORE   0                           ; substance_hash
+
+    ;; Initialise the work vector with [substance_hash] and the
+    ;; result vector empty. The traversal helper takes both as
+    ;; input and folds depth-first along producer-of-input edges.
+
+    LOAD    0
+    MAKEVEC 1
+    STORE   1                           ; locals[1] := work
+
+    PUSH    EMPTY_VEC
+    STORE   2                           ; locals[2] := result
+
+    PUSH    EMPTY_VEC                   ; visited set as a vec
+    STORE   3                           ; locals[3] := visited
+
+    LOAD    1
+    LOAD    2
+    LOAD    3
+    PUSH    "S-04/why/traverse"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                    ; → Vec{EntryHash}
+    RET
+  )
+  :rationale-hash BREAKDOWN_S04_HASH
+)
+
+(exports
+  (append (WeaveEntry)   → Hash)
+  (why    (Hash)         → Vec{Hash}))

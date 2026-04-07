@@ -1,0 +1,460 @@
+; S-05: attention_alloc
+;
+; The recursive-descent allocator over the attention forest.
+; Six exports: split, dissolve, grant_quantum, yield_to_kernel,
+; tick, set_deadline. Forest state lives under "S-05/forest".
+;
+; Synthesis chain:
+;   provocation:  breakdown/S-05-attention-alloc.md
+;   grounding:    A0.2 A0.5 A3.1..A3.6
+;   selected:     Candidate A — Discrete recursive descent, time
+;                 = weave-tip order, deterministic by (deadline, id)
+;   proof:        kernel/forms/S-05-attention-alloc.proof  (six
+;                 obligations: budget conservation, capability
+;                 gating, no-preemption, allocator determinism,
+;                 dissolution cascade, quantum boundedness)
+;
+; Important: this Form contains NO clock read, NO entropy use, NO
+; wall-time op. Deadlines are weave-entry counts past the current
+; tip, computed via S-04/digest indirectly. The allocator itself
+; is deterministic-clean (S-05 obligation 4).
+;
+; The IL opcode SPLIT is shorthand for READSLOT "S-05/split" + CALL.
+
+; ============================================================
+; split(parent_attention_id, child_budget) → AttId
+;
+; Atomically check parent.budget_remaining >= child_budget,
+; deduct child_budget from parent's remaining, create the child
+; node with budget = child_budget and parent = parent_attention_id,
+; append a Split weave entry, return child id.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "split"
+  :declared-caps (S-05/FOREST_RW S-04/APPEND S-02/TREAP_RO)
+  :declared-traps (EOVERBUDGET ENOTHELD)
+  :arity         2
+  :locals-n      8
+  :code (
+
+    STORE   0                           ; child_budget
+    STORE   1                           ; parent_attention_id
+
+    ;; Verify parent's focus capability is still held by the
+    ;; calling mind (we composed with S-02 lookup in the spec).
+    ;; The focus cap id is part of the parent attention's record.
+    PUSH    "S-05/forest"
+    SEAL    Hash
+    READSLOT
+    STORE   2                           ; forest_root
+
+    LOAD    2
+    LOAD    1
+    PUSH    "S-05/forest/get"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                    ; → AttentionRecord
+    STORE   3
+
+    LOAD    3
+    PUSH    "S-05/proj/cap_id"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                    ; → focus cap id
+    STORE   4
+
+    LOAD    3
+    PUSH    "S-05/proj/mind_id"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                    ; → mind id
+    LOAD    4
+    PUSH    "S-02/holds"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                    ; → Bool
+    JMPZ    +trap_notheld
+
+    ;; Verify parent.budget_remaining >= child_budget.
+    LOAD    3
+    PUSH    "S-05/proj/budget_remaining"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                    ; → Nat
+    STORE   5
+
+    LOAD    5
+    LOAD    0
+    LT
+    JMPZ    +budget_ok
+    JMP     +trap_overbudget
+
+    :budget_ok
+
+    ;; Compute new parent budget = parent.remaining - child_budget.
+    LOAD    5
+    LOAD    0
+    SUB
+    STORE   6
+
+    ;; Build the child attention record:
+    ;;   id = hash(parent_id ‖ current_tip ‖ child_budget)
+    ;;   parent = parent_id
+    ;;   budget_remaining = child_budget
+    ;;   cap_id = parent.cap_id (inherited; sub-attention is the
+    ;;            same focus capability scope unless explicitly
+    ;;            re-attenuated by the caller in a separate call)
+    LOAD    1
+    PUSH    "S-05/forest/new_child"
+    SEAL    Hash
+    READSLOT
+    LOAD    0                           ; child_budget
+    LOAD    4                           ; parent's cap_id
+    CALL    h=$ /n=3                    ; → child_attention_id
+    STORE   7
+
+    ;; Atomically: update parent's budget_remaining, install the
+    ;; child as a leaf under parent. The forest helper handles
+    ;; both in one persistent-trie update.
+    LOAD    2                           ; old forest_root
+    LOAD    1                           ; parent id
+    LOAD    6                           ; new parent budget
+    LOAD    7                           ; child id
+    LOAD    0                           ; child budget
+    PUSH    "S-05/forest/atomic_split"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=5                    ; → new_forest_root
+    STORE   2
+
+    PUSH    "S-05/forest"
+    SEAL    Hash
+    LOAD    2
+    BINDSLOT
+
+    ;; Append a Split weave entry.
+    LOAD    1
+    LOAD    7
+    LOAD    0
+    MAKEVEC 3
+    PUSH    "Split"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+
+    LOAD    7
+    RET
+
+    :trap_overbudget
+    TRAP    EOVERBUDGET
+
+    :trap_notheld
+    TRAP    ENOTHELD
+  )
+  :rationale-hash BREAKDOWN_S05_HASH
+)
+
+; ============================================================
+; dissolve(attention_id) → ()
+;
+; Walk the subtree rooted at attention_id in post-order, returning
+; each descendant's remaining budget to its parent's pool, then
+; the attention itself to its parent's pool. Append exactly one
+; Dissolved entry per node visited. Per S-05 obligation 5, the
+; cascade returns budget to the *parent* of the dissolved subtree
+; root, never to the global pool.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "dissolve"
+  :declared-caps (S-05/FOREST_RW S-04/APPEND)
+  :declared-traps ()
+  :arity         1
+  :locals-n      4
+  :code (
+    STORE   0                           ; attention_id
+
+    PUSH    "S-05/forest"
+    SEAL    Hash
+    READSLOT
+    STORE   1
+
+    LOAD    1
+    LOAD    0
+    PUSH    "S-05/forest/dissolve_subtree_postorder"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                    ; → Pair{new_forest, Vec{dissolved_ids}}
+    STORE   2
+
+    LOAD    2
+    FST
+    STORE   3
+    PUSH    "S-05/forest"
+    SEAL    Hash
+    LOAD    3
+    BINDSLOT
+
+    ;; For each id in the dissolved vec, append a Dissolved entry.
+    ;; The helper Form below walks the vec.
+    LOAD    2
+    SND
+    PUSH    "S-05/append_dissolved_entries"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    POP
+
+    PUSH    ()
+    RET
+  )
+  :rationale-hash BREAKDOWN_S05_HASH
+)
+
+; ============================================================
+; grant_quantum(attention_id, q) → ()
+;
+; Grant q energy units to the attention. The caller is the
+; allocator's tick loop, which has already verified the
+; attention is in the yielded set, its cap predicate evaluates
+; true, and q ≤ min(remaining, parent_share, available_global).
+; The body re-checks all three (defense in depth) and traps
+; EOVERBUDGET on any violation.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "grant_quantum"
+  :declared-caps (S-05/FOREST_RW S-04/APPEND S-02/TREAP_RO)
+  :declared-traps (EOVERBUDGET ENOTHELD)
+  :arity         2
+  :locals-n      6
+  :code (
+    STORE   0                           ; q
+    STORE   1                           ; attention_id
+
+    PUSH    "S-05/forest"
+    SEAL    Hash
+    READSLOT
+    STORE   2
+
+    LOAD    2
+    LOAD    1
+    PUSH    "S-05/forest/get"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   3                           ; AttentionRecord
+
+    ;; Re-check cap.
+    LOAD    3
+    PUSH    "S-05/proj/cap_id"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    LOAD    3
+    PUSH    "S-05/proj/mind_id"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    SWAP                                ; want (mind_id, cap_id) order
+    PUSH    "S-02/holds"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    JMPZ    +trap_notheld
+
+    ;; Re-check q ≤ remaining.
+    LOAD    3
+    PUSH    "S-05/proj/budget_remaining"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    LOAD    0
+    LT
+    JMPZ    +budget_ok
+    JMP     +trap_overbudget
+
+    :budget_ok
+
+    ;; Deduct q from attention.budget_remaining.
+    LOAD    2
+    LOAD    1
+    LOAD    0
+    PUSH    "S-05/forest/deduct"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   4
+
+    PUSH    "S-05/forest"
+    SEAL    Hash
+    LOAD    4
+    BINDSLOT
+
+    ;; Append Granted{attention_id, q, weave_prev}.
+    LOAD    1
+    LOAD    0
+    PUSH    "S-04/tip"
+    SEAL    Hash
+    READSLOT
+    MAKEVEC 3
+    PUSH    "Granted"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+
+    PUSH    ()
+    RET
+
+    :trap_overbudget
+    TRAP    EOVERBUDGET
+
+    :trap_notheld
+    TRAP    ENOTHELD
+  )
+  :rationale-hash BREAKDOWN_S05_HASH
+)
+
+; ============================================================
+; yield_to_kernel(continuation_hash) → ()
+;
+; The IL YIELD opcode is shorthand for SEAL the current ExecState
+; as a Cont substance + READSLOT "S-05/yield_to_kernel" + CALL.
+; The body marks the attention as yielded, stores the continuation
+; hash for resume, and returns control to the tick loop.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "yield_to_kernel"
+  :declared-caps (S-05/FOREST_RW)
+  :declared-traps ()
+  :arity         1
+  :locals-n      3
+  :code (
+    STORE   0                           ; continuation hash
+    PUSH    "S-05/forest"
+    SEAL    Hash
+    READSLOT
+    STORE   1
+    LOAD    1
+    PUSH    SELF_ATTENTION_ID            ; immediate, the IL fills this in
+    LOAD    0
+    PUSH    "S-05/forest/mark_yielded"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   2
+    PUSH    "S-05/forest"
+    SEAL    Hash
+    LOAD    2
+    BINDSLOT
+    PUSH    ()
+    RET
+  )
+  :rationale-hash BREAKDOWN_S05_HASH
+)
+
+; ============================================================
+; tick() → ()
+;
+; The allocator's main loop body. One tick:
+;   1. Compute the yielded set whose cap predicates evaluate true
+;      and whose budget_remaining > 0.
+;   2. Sort by (deadline, id) — id is a content hash, so the
+;      tie-break is total and deterministic.
+;   3. For each in order, grant a quantum bounded by min(remaining,
+;      parent_share, available_global), via grant_quantum + resume
+;      the attention's continuation through S-07.
+;
+; The tick is itself a deterministic-clean Form: it consumes no
+; entropy, no clock, no network. Its inputs are the forest state,
+; the cap registry state, and the available global energy — all
+; substances. Two ticks on identical inputs produce identical
+; weave appends.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "tick"
+  :declared-caps (S-05/FOREST_RW S-04/APPEND S-02/TREAP_RO)
+  :declared-traps ()
+  :arity         0
+  :locals-n      6
+  :code (
+    PUSH    "S-05/forest"
+    SEAL    Hash
+    READSLOT
+    PUSH    "S-05/tick/compute_yielded_eligible"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                    ; → Vec{AttentionId}, sorted
+    STORE   0
+
+    PUSH    "S-05/tick/grant_each"
+    SEAL    Hash
+    READSLOT
+    LOAD    0
+    CALL    h=$ /n=1                    ; runs grant_quantum + resume in order
+    POP
+
+    PUSH    ()
+    RET
+  )
+  :rationale-hash BREAKDOWN_S05_HASH
+)
+
+; ============================================================
+; set_deadline(attention_id, deadline_offset) → ()
+;
+; Sets a weave-entry-count deadline relative to the current tip.
+; "Deadline 0" means "the tick after the current tip"; the
+; allocator's tick loop ranks attentions by ascending deadline.
+; There is no wall-clock argument anywhere in this Form's body.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "set_deadline"
+  :declared-caps (S-05/FOREST_RW)
+  :declared-traps ()
+  :arity         2
+  :locals-n      4
+  :code (
+    STORE   0                           ; deadline_offset
+    STORE   1                           ; attention_id
+    PUSH    "S-05/forest"
+    SEAL    Hash
+    READSLOT
+    STORE   2
+    LOAD    2
+    LOAD    1
+    LOAD    0
+    PUSH    "S-05/forest/set_deadline"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   3
+    PUSH    "S-05/forest"
+    SEAL    Hash
+    LOAD    3
+    BINDSLOT
+    PUSH    ()
+    RET
+  )
+  :rationale-hash BREAKDOWN_S05_HASH
+)
+
+(exports
+  (split           (AttId, Nat)         → AttId)
+  (dissolve        (AttId)              → ())
+  (grant_quantum   (AttId, Nat)         → ())
+  (yield_to_kernel (Hash)               → ())
+  (tick            ()                   → ())
+  (set_deadline    (AttId, Nat)         → ()))

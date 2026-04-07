@@ -1,0 +1,361 @@
+; S-03: substance_store
+;
+; The persistent hash-trie of sealed cells. Every other seed Form
+; reaches matter through this Form's exported surface. Its digest
+; is the identity of habitat matter at any checkpoint.
+;
+; Synthesis chain:
+;   provocation:  breakdown/S-03-substance-store.md
+;   grounding:    A0.3 A0.4 A0.5 A1.1 A1.2 A1.3 A1.4 A1.5 A1.6
+;   selected:     Candidate A — Persistent hash-array-mapped trie
+;   proof:        kernel/forms/S-03-substance-store.proof  (six
+;                 obligations: hash determinism, immutability,
+;                 pin conservation, reclamation totality, digest
+;                 substitutivity, no enumeration)
+;
+; This file encodes five exported Forms — `seal`, `read`, `pin`,
+; `unpin`, `digest` — all of which share the same trie state held
+; in a kernel-private substance whose hash is bound under the
+; private slot name "S-03/root". The trie itself is a recursive
+; sealed substance type defined in `kernel/types/Trie.md` (a
+; sibling spec produced alongside S-03's encoding); for the
+; purposes of this Form, all the IL needs to know is that
+; `Trie` operations are sealed substances and are themselves
+; manipulated through SEAL/READ.
+;
+; The exported surface deliberately contains no `list`, no
+; `iterate`, no `find_by_type`. That absence is enforced at the
+; type level by S-08's checker against this file's `:exports`
+; metadata — no Form whose return type contains an unbounded
+; `Vec{Hash}` not function-of-arguments is admissible here.
+
+; ============================================================
+; seal(type_tag, value) → Hash
+;
+; Idempotent: same (type, value) always produces the same hash and
+; increments pin_count. The first occurrence appends a Sealed{h}
+; weave entry; subsequent occurrences are no-ops at the substance
+; layer (only pin_count moves), so I5 sees one Sealed entry per
+; distinct substance, never per seal call.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "seal"
+  :declared-caps (S-03/ROOT_RW S-04/APPEND)
+  :declared-traps (ETYPE)
+  :arity         2                ; (type_tag, value) on stack
+  :locals-n      8
+  :code (
+
+    ;; locals[0] := value, locals[1] := type_tag
+    STORE   0
+    STORE   1
+
+    ;; Compute the canonical hash of (type_tag ‖ canonical(value)).
+    ;; The canonicaliser is itself a Form bound under "S-03/canon"
+    ;; which we summon via READSLOT + CALL. It is shared with S-07
+    ;; and S-08 (the ~400-line shared canonicaliser delta).
+    LOAD    1
+    LOAD    0
+    PUSH    "S-03/canon"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2              ; → canonical-hash on stack
+    STORE   2                     ; locals[2] := h
+
+    ;; Read the current trie root through the kernel-private slot.
+    PUSH    "S-03/root"
+    SEAL    Hash
+    READSLOT
+    STORE   3                     ; locals[3] := root_hash_before
+
+    ;; Look up h in the trie. The trie operations are themselves
+    ;; sealed Forms exported under "S-03/trie/*"; we summon them.
+    LOAD    3
+    LOAD    2
+    PUSH    "S-03/trie/lookup"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2              ; → Pair{Bool present, Cell cell_or_null}
+    STORE   4
+    LOAD    4
+    FST                           ; → present?
+    JMPZ    +insert_new
+
+    ;; ----------------------------------------------------------------
+    ;; Hit: bump pin_count, no Sealed entry, return h.
+    ;; ----------------------------------------------------------------
+
+    LOAD    3                     ; root_hash_before
+    LOAD    2                     ; h
+    PUSH    "S-03/trie/bump_pin"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2              ; → new_root_hash
+    STORE   5
+
+    PUSH    "S-03/root"
+    SEAL    Hash
+    LOAD    5
+    BINDSLOT                      ; advance the kernel-private slot
+
+    LOAD    2
+    RET
+
+    ;; ----------------------------------------------------------------
+    ;; Miss: insert a fresh cell with pin_count = 1, append Sealed.
+    ;; ----------------------------------------------------------------
+
+    :insert_new
+
+    ;; Build the cell substance.
+    LOAD    1                     ; type_tag
+    LOAD    0                     ; value
+    PUSH    1                     ; pin_count
+    PUSH    CURRENT_TIP           ; sealed_at — read by the IL bridge
+    MAKEVEC 4
+    SEAL    Cell
+    STORE   6                     ; locals[6] := cell_hash (== h by canonicaliser)
+
+    ;; Insert into the trie.
+    LOAD    3                     ; root_hash_before
+    LOAD    2                     ; h
+    LOAD    6                     ; cell_hash
+    PUSH    "S-03/trie/insert"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3              ; → new_root_hash
+    STORE   5
+
+    PUSH    "S-03/root"
+    SEAL    Hash
+    LOAD    5
+    BINDSLOT
+
+    ;; Append a Sealed{h} weave entry. S-04 will trap ESTALE if
+    ;; another append has interleaved; we let it propagate, the
+    ;; caller decides whether to retry.
+    LOAD    2
+    PUSH    "Sealed"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP                           ; discard the new tip hash
+
+    LOAD    2
+    RET
+  )
+  :rationale-hash BREAKDOWN_S03_HASH
+)
+
+; ============================================================
+; read(h) → value
+;
+; Returns the cell's contents iff the caller already holds h.
+; The IL's READ opcode performs the cap check; we layer the
+; trie lookup on top of it. There is no `list` Form anywhere in
+; this file — that absence is structural, not by-convention.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "read"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (EUNHELD)
+  :arity         1
+  :locals-n      4
+  :code (
+
+    STORE   0                     ; locals[0] := h
+
+    PUSH    "S-03/root"
+    SEAL    Hash
+    READSLOT
+    STORE   1                     ; locals[1] := root
+
+    LOAD    1
+    LOAD    0
+    PUSH    "S-03/trie/lookup"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2              ; → Pair{present, cell}
+    STORE   2
+
+    LOAD    2
+    FST
+    ASSERT                        ; trap EASSERT (≈ EUNHELD by convention)
+                                  ; if present? = false. The caller's
+                                  ; cap check is enforced separately by
+                                  ; the IL READ opcode that fetches
+                                  ; the cell's bytes; this ASSERT is
+                                  ; for the trie-presence case only.
+
+    LOAD    2
+    SND                           ; → cell
+    READ                          ; IL opcode: reads the cell bytes;
+                                  ; traps EUNHELD if no Read cap on h
+    RET
+  )
+  :rationale-hash BREAKDOWN_S03_HASH
+)
+
+; ============================================================
+; pin(h) → ()
+;
+; Increment pin_count for h. Caller must hold h (enforced by
+; the IL's READ opcode at the trie-cell read step).
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "pin"
+  :declared-caps (S-03/ROOT_RW)
+  :declared-traps (EUNHELD)
+  :arity         1
+  :locals-n      3
+  :code (
+    STORE   0
+    PUSH    "S-03/root"
+    SEAL    Hash
+    READSLOT
+    STORE   1
+
+    LOAD    1
+    LOAD    0
+    PUSH    "S-03/trie/bump_pin"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   2
+
+    PUSH    "S-03/root"
+    SEAL    Hash
+    LOAD    2
+    BINDSLOT
+
+    PUSH    ()                    ; unit
+    RET
+  )
+  :rationale-hash BREAKDOWN_S03_HASH
+)
+
+; ============================================================
+; unpin(h) → ()
+;
+; Decrement pin_count. If it reaches zero, schedule reclamation
+; in a single Reclaimed{h} weave entry — A0.5's "no waste" and
+; A1.6's "persistence by pinning" both ride on this being a
+; single atomic act.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "unpin"
+  :declared-caps (S-03/ROOT_RW S-04/APPEND)
+  :declared-traps (EUNHELD EUNDERFLOW)
+  :arity         1
+  :locals-n      5
+  :code (
+    STORE   0                     ; h
+
+    PUSH    "S-03/root"
+    SEAL    Hash
+    READSLOT
+    STORE   1
+
+    LOAD    1
+    LOAD    0
+    PUSH    "S-03/trie/decr_pin"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2              ; → Pair{new_root, reached_zero?}
+    STORE   2
+
+    LOAD    2
+    FST
+    STORE   3                     ; new_root
+    LOAD    2
+    SND
+    STORE   4                     ; reached_zero?
+
+    PUSH    "S-03/root"
+    SEAL    Hash
+    LOAD    3
+    BINDSLOT
+
+    LOAD    4
+    JMPZ    +done
+
+    ;; reached_zero: append Reclaimed{h} and remove the cell.
+    LOAD    0
+    PUSH    "Reclaimed"
+    MAKEPAIR
+    SEAL    WeaveEntry
+    APPEND
+    POP
+
+    LOAD    1                     ; old root (we re-derive removal)
+    LOAD    0
+    PUSH    "S-03/trie/remove"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2              ; → final_root
+    STORE   3
+    PUSH    "S-03/root"
+    SEAL    Hash
+    LOAD    3
+    BINDSLOT
+
+    :done
+    PUSH    ()
+    RET
+  )
+  :rationale-hash BREAKDOWN_S03_HASH
+)
+
+; ============================================================
+; digest() → Hash
+;
+; Returns the root hash of the trie. Two stores with the same
+; digest are bitwise-equivalent for every operation any mind can
+; perform on them. This is the property the rest of the seed's
+; checkpointing depends on (S-04 tip + S-07 continuation +
+; S-03 digest = entire habitat state).
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "digest"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps ()
+  :arity         0
+  :locals-n      0
+  :code (
+    PUSH    "S-03/root"
+    SEAL    Hash
+    READSLOT
+    RET
+  )
+  :rationale-hash BREAKDOWN_S03_HASH
+)
+
+; ============================================================
+; Exported surface manifest.
+;
+; This block is read by S-08's proof checker as part of the
+; "no enumeration" type-level discharge of obligation 6. The
+; checker enumerates the exports and verifies that no return
+; type contains an unbounded Vec{Hash} not function-of-arguments.
+; The five exports above all return either a single Hash, a
+; single value, or unit. The absence of `list`, `iterate`, or
+; `find_by_type` is structural — they are not in this file, so
+; they cannot be invoked.
+; ============================================================
+
+(exports
+  (seal    (Vec{TypeTag, Value})         → Hash)
+  (read    (Hash)                        → Value)
+  (pin     (Hash)                        → ())
+  (unpin   (Hash)                        → ())
+  (digest  ()                            → Hash))
