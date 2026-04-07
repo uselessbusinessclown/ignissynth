@@ -42,7 +42,7 @@ What is in the repository as of this commit:
 | Seed manifest       | `kernel/manifest.json`                                               | binds sources/proofs/immediates             |
 | Helpers             | `kernel/forms/helpers/`                                              | 1 of N (canonicaliser)                      |
 | Proof term language | `kernel/PROOF.md`                                                    | 12 sorts, 17 constructors, 29-rule table    |
-| Proof artifacts     | `kernel/forms/S-XX-*.proof`                                          | 4 of 11 (S-01, S-02, S-03, S-04; S-01 closed mod S-07 #3) |
+| Proof artifacts     | `kernel/forms/S-XX-*.proof`                                          | 5 of 11 (S-01, S-02, S-03, S-04, S-07; **S-01 fully closed**) |
 | Inspection record   | `kernel/forms/S-08-*.inspection-record.md`                           | not yet written                             |
 | Kernel-author keys  | `kernel/manifest.json` (`kernel_authors.identities`)                 | placeholders                                |
 
