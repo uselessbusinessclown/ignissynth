@@ -13,19 +13,24 @@ complete it without consulting any other implementer.
 
 ## Task index
 
-| ID    | Form              | Cites axioms     | Depends on        | Proof?|
-|-------|-------------------|------------------|-------------------|-------|
-| S-01  | `ignite`          | A0.7, A2.1       | —                 | yes   |
-| S-02  | `cap_registry`    | A2.*             | —                 | yes   |
-| S-03  | `substance_store` | A1.*, A0.5       | —                 | yes   |
-| S-04  | `weave_log`       | A5.*             | S-03              | yes   |
-| S-05  | `attention_alloc` | A3.*, A0.5       | S-02, S-04        | yes   |
-| S-06  | `intent_match`    | A4.*, A2.5       | S-02, S-05        | yes   |
-| S-07  | `form_runtime`    | A6.*             | S-03, S-05        | yes   |
-| S-08  | `proof_checker`   | A0.4, A6.5, A7.3 | S-03              | bootstrap |
-| S-09  | `synth_kernel`    | A0.7, A7.*       | S-04, S-07, S-08  | yes   |
-| S-10  | `hephaistion_seed`| A7, A8           | S-09              | yes   |
-| S-11  | `bridge_proto`    | A8.*             | S-06              | yes   |
+| ID    | Form              | Cites axioms     | Depends on        | Proof?     | Breakdown |
+|-------|-------------------|------------------|-------------------|------------|-----------|
+| S-01  | `ignite`          | A0.7, A2.1       | —                 | yes        | [S-01](S-01-ignite.md) |
+| S-02  | `cap_registry`    | A2.*             | —                 | yes        | [S-02](S-02-cap-registry.md) |
+| S-03  | `substance_store` | A1.*, A0.5       | —                 | yes        | [S-03](S-03-substance-store.md) |
+| S-04  | `weave_log`       | A5.*             | S-03              | yes        | [S-04](S-04-weave-log.md) |
+| S-05  | `attention_alloc` | A3.*, A0.5       | S-02, S-04        | yes        | [S-05](S-05-attention-alloc.md) |
+| S-06  | `intent_match`    | A4.*, A2.5       | S-02, S-05        | yes        | [S-06](S-06-intent-match.md) |
+| S-07  | `form_runtime`    | A6.*             | S-03, S-05        | yes        | [S-07](S-07-form-runtime.md) |
+| S-08  | `proof_checker`   | A0.4, A6.5, A7.3 | S-03              | bootstrap  | [S-08](S-08-proof-checker.md) |
+| S-09  | `synth_kernel`    | A0.7, A7.*       | S-04, S-07, S-08  | yes        | [S-09](S-09-synth-kernel.md) |
+| S-10  | `hephaistion_seed`| A7, A8           | S-09              | yes        | [S-10](S-10-hephaistion-seed.md) |
+| S-11  | `bridge_proto`    | A8.*             | S-06              | yes        | [S-11](S-11-bridge-proto.md) |
+
+All eleven seed tasks now have worked breakdowns. The next stage of
+work is encoding the chosen candidates in Form IL and running the
+Stage 4 simulation harnesses. The proof artifacts named in each
+breakdown's Proof section are committed alongside their Forms.
 
 ## How to take a task
 
