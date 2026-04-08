@@ -27,9 +27,13 @@ A compilable, testable Rust scaffold that:
 
 - A complete stage-0 implementation. Most opcodes are stubbed
   with `Trap::NotImplemented`.
-- A Form parser. The canonical `F` is hand-constructed in
-  `src/fixed_point.rs` rather than parsed from wire bytes.
-  Parsing comes in a later batch.
+- Wired up to the wire parser yet. A byte-exact codec for
+  Form wire bytes lives in `src/wire.rs` and is exercised by
+  `tests/wire.rs` (round-trip property tests over randomly
+  generated Forms), but the interpreter still runs against
+  hand-constructed or line-parsed `Vec<Opcode>` because CALL
+  and a form loader are prerequisites — see v0.2.1-ignis0-call
+  in `../ROADMAP.md`.
 - A proof checker. Step 4 of the ignition sequence
   (`IGNITION-BOOTSTRAP.md` § Step 4) is not yet implemented.
 - A ten-step ignition sequence. Only Step 2 (the fixed-point
@@ -74,9 +78,12 @@ ignis0/
     exec.rs         # ExecState + small-step interpreter
     store.rs        # in-memory substance store
     fixed_point.rs  # A9.3 check harness
+    parser.rs       # line-oriented scaffold parser (pre-wire)
+    wire.rs         # byte-exact wire codec (v0.2.2)
     main.rs         # CLI
   tests/
-    fixed_point_test.rs  # integration test
+    fixed_point_test.rs  # A9.3 direct-case integration test
+    wire.rs              # wire codec round-trip + negative tests
 ```
 
 ## Relationship to IgnisSynth

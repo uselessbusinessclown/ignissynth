@@ -382,7 +382,7 @@ the habitat self-hosts. It has its own version line.
 |---------------------|--------------------------------------------------------------------------------------------|--------|
 | v0.2.0-ignition     | Scaffold: Value/Hash/TrapKind, 34 Opcodes, line-oriented parser, A9.3 direct case passes   | ✓ done |
 | v0.2.1-ignis0-call  | Implement `CALL`, form loader (read sealed Form bytes → Vec<Opcode>), invocation frames    | next   |
-| v0.2.2-ignis0-wire  | Replace line-oriented parser with the canonical IL wire-form parser (per `IL.md` § Encoding); enables loading the encoded `S-07/execute` and helper Forms | after CALL |
+| v0.2.2-ignis0-wire  | Byte-exact wire codec (`ignis0/src/wire.rs`) per `IL.md` § Byte-exact wire grammar (v1); decode + encode + round-trip + negative tests over all 34 opcodes, 7 Value variants, 11 TrapKind variants; **not yet wired into exec.rs** (blocked on CALL per v0.2.1) | ✓ codec landed; exec.rs wiring deferred to v0.2.1 landing |
 | v0.2.3-ignis0-fp    | A9.3 indirect cases pass: `S-07` interpreting `F`, then `S-07` interpreting `S-07` interpreting `F`; full `FixedPointVerdict::Pass` | depends on CALL + wire parser |
 | v0.2.4-ignis0-cap   | Implement CAPHELD/ATTENUATE/INVOKE/REVOKE + APPEND/WHY (weave) + YIELD/SPLIT (attention) so S-01..S-11 bodies are runnable end-to-end | depends on indirect FP |
 | v0.2.5-ignis0-store | Replace HashMap-backed `SubstanceStore` with the persistent hash trie spec (S-03) so `digest` is substitutive | depends on Trie.md |

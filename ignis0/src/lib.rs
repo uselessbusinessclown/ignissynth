@@ -14,6 +14,7 @@ pub mod opcode;
 pub mod parser;
 pub mod store;
 pub mod value;
+pub mod wire;
 
 pub use exec::{ExecState, ExecVerdict, Interpreter};
 pub use fixed_point::{FixedPointCheck, FixedPointVerdict};
@@ -21,3 +22,4 @@ pub use opcode::Opcode;
 pub use parser::{parse_form_lines, ParseError};
 pub use store::SubstanceStore;
 pub use value::{Hash, TrapKind, Value};
+pub use wire::{decode_form, encode_form, Form, WireError};
