@@ -4,6 +4,17 @@
 > `RELEASE-NOTES-v0.1.0.md`. The post-v0.1.0 milestone schedule
 > is the path to ignition: external build, helper encoding,
 > simulation runs, signed inspection record, first boot.
+>
+> **Since v0.1.0**: axiom **A9 (Ignition Substrate)** landed
+> (`axioms/A9-ignition-substrate.md` + `kernel/IGNITION-BOOTSTRAP.md`),
+> resolving the Turing-flavoured base-case bootstrap problem by
+> naming an external stage-0 interpreter. The Rust prototype of
+> that interpreter — **`ignis0/`** — is at `v0.2.0-ignition` and
+> passes the A9.3 fixed-point check's *direct* case (canonical F
+> on input 42 yields 43, via both hand-constructed and
+> parser-constructed code paths). The two indirect cases remain
+> stubbed pending CALL + a loadable `S-07/execute`. See the new
+> **ignis0 milestone track** below.
 
 This document tracks what is needed to declare a *prototypical release
 form* of IgnisSynth — the smallest set of artifacts that, taken
@@ -300,9 +311,10 @@ a clear scope for the inspection-record review.
 6. ~~**Encode Parser/* byte-arithmetic leaves**~~ ✓ done (`parser-bytes.form` ships 20 sub-Forms; 10 second-generation leaves catalogued)
 7. ~~**Encode Parser/* second-generation leaves + Schema/* primitives**~~ ✓ done (`primitives.form` ships 17 sub-Forms; 18 third-generation intrinsics catalogued)
 8. **Encode third-generation intrinsics** (`intrinsics.form` — kernel-level Bytes/Nat/Vec ops and the parser's deepest primitives)
-7. **Write `kernel/types/Trie.md`, `Treap.md`, `Forest.md`** (alongside their helper batches)
-8. **Write `kernel/forms/helpers/parser.proof`** (non-exempt helper)
-9. **Write `kernel/LOADER.md`** (no later than v0.5.0 start)
+9. **Write `kernel/types/Trie.md`, `Treap.md`, `Forest.md`** (alongside their helper batches)
+10. **Write `kernel/forms/helpers/parser.proof` and `canon-normalise.proof`** (non-exempt helpers)
+11. ~~**Write `kernel/LOADER.md`**~~ — superseded by `kernel/IGNITION-BOOTSTRAP.md`, which is the loader contract under axiom A9. Cross-reference from `kernel/README.md` if not already present.
+12. **Wire ignis0 CALL + a loadable `S-07/execute`** so the A9.3 indirect cases can run (see ignis0 milestone track below).
 
 The v0.2.0-helpers milestone in the next section assumed all
 of these would arrive incidentally during helper encoding. The
@@ -358,6 +370,53 @@ session (each helper is small). Multiple agents can work
 without coordination beyond reading STUBS.md. Estimated 6-10
 sessions for one agent; fewer with parallelism.
 
+### ignis0 milestone track (parallel to v0.2.0-helpers)
+
+`ignis0/` is the Rust implementation of the stage-0 substrate
+named by axiom A9. It is **not** part of IgnisSynth proper —
+it is the interpreter the seed runs *on top of* at first
+ignition, analogous to a CPU. Its lifecycle ends the moment
+the habitat self-hosts. It has its own version line.
+
+| Tag                 | Goal                                                                                       | Status |
+|---------------------|--------------------------------------------------------------------------------------------|--------|
+| v0.2.0-ignition     | Scaffold: Value/Hash/TrapKind, 34 Opcodes, line-oriented parser, A9.3 direct case passes   | ✓ done |
+| v0.2.1-ignis0-call  | Implement `CALL`, form loader (read sealed Form bytes → Vec<Opcode>), invocation frames    | next   |
+| v0.2.2-ignis0-wire  | Replace line-oriented parser with the canonical IL wire-form parser (per `IL.md` § Encoding); enables loading the encoded `S-07/execute` and helper Forms | after CALL |
+| v0.2.3-ignis0-fp    | A9.3 indirect cases pass: `S-07` interpreting `F`, then `S-07` interpreting `S-07` interpreting `F`; full `FixedPointVerdict::Pass` | depends on CALL + wire parser |
+| v0.2.4-ignis0-cap   | Implement CAPHELD/ATTENUATE/INVOKE/REVOKE + APPEND/WHY (weave) + YIELD/SPLIT (attention) so S-01..S-11 bodies are runnable end-to-end | depends on indirect FP |
+| v0.2.5-ignis0-store | Replace HashMap-backed `SubstanceStore` with the persistent hash trie spec (S-03) so `digest` is substitutive | depends on Trie.md |
+
+When v0.2.5 lands, ignis0 is feature-complete against the
+contract in `kernel/IGNITION-BOOTSTRAP.md`, and v0.3.0-simulation
+no longer needs to defer "build an interpreter" as a separate
+problem — it *is* ignis0.
+
+**Audit observations from the Rust component review** (commits
+`cdeeb2e`..`1e05d1a`):
+
+- Opcode coverage is 33/34 spec-defined variants — missing
+  none; the count discrepancy is the IL.md prose-vs-table bug
+  documented in `ignis0/README.md`. (Stack 4 + arith 4 + ctrl 4
+  + struct 4 + subst 4 + cap 4 + weave 2 + att 2 + trap 2 +
+  refl 4 = 34. ✓)
+- Borrowed-store design (`Interpreter<'a> { store: &'a mut
+  SubstanceStore }`) composes correctly for the future indirect
+  case: a single store can be threaded through nested
+  `Interpreter::new` calls.
+- `JMPZ` polarity matches `IL.md` § Control flow (branches when
+  Bool is *false*), with an inline comment defending the choice.
+- `Opcode::Trap(TrapKind)` round-trips through the parser only
+  via `TrapKind::NotImplemented(name)` since the parser does
+  not yet enumerate trap kinds — adequate for the scaffold,
+  noted as a v0.2.2 follow-up.
+- `cargo` is not available in the current sandbox so the
+  scaffold has not been compile-verified in this environment.
+  Recommended next-session step: `cd ignis0 && cargo test` and
+  fix any drift before starting v0.2.1-ignis0-call work.
+- No drift detected between `ignis0/src/exec.rs` and
+  `kernel/IL.md` for the implemented opcodes.
+
 ### v0.3.0-simulation: run Stage 4 against the encoded seed
 
 Goal: every primary Form has a sealed `TrialRecord` substance
@@ -376,9 +435,10 @@ Done when:
 4. Trial records are sealed and referenced from the manifest.
 
 This stage requires a working interpreter for the IL outside
-the habitat (to actually run the harness). Building that
-interpreter is itself a separate effort and should be tracked
-under v0.3.0 explicitly.
+the habitat (to actually run the harness). That interpreter is
+**ignis0** (see the ignis0 milestone track above); v0.3.0
+becomes unblocked when ignis0 reaches v0.2.4 (full opcode
+coverage including caps/weave/attention).
 
 ### v0.4.0-inspection: sign the inspection record
 
