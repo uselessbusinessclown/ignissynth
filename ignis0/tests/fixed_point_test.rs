@@ -297,3 +297,93 @@ fn parser_rejects_unknown_mnemonic() {
     assert_eq!(err.line_number, 1);
     assert_eq!(err.line, "FOOBAR 42");
 }
+
+// ── Capability / INVOKE tests ─────────────────────────────────────────────
+
+use ignis0::capability::{builtin_cap_id, CapabilityInvoker, CapabilityRegistry};
+
+/// A minimal capability invoker for testing: doubles its single Nat arg.
+struct DoubleCapability;
+impl CapabilityInvoker for DoubleCapability {
+    fn name(&self) -> &str {
+        "test/double"
+    }
+    fn invoke(
+        &self,
+        _cap_id: Hash,
+        args: Vec<Value>,
+        _store: &mut SubstanceStore,
+    ) -> Result<Value, ignis0::value::TrapKind> {
+        match args.as_slice() {
+            [Value::Nat(n)] => Ok(Value::Nat(n * 2)),
+            _ => Err(ignis0::value::TrapKind::EType(
+                "test/double: expected 1 Nat".into(),
+            )),
+        }
+    }
+}
+
+/// INVOKE dispatches through the CapabilityRegistry and returns the
+/// capability's result onto the caller's stack.
+#[test]
+fn invoke_dispatches_to_registered_capability() {
+    use std::sync::Arc;
+
+    let cap_id = builtin_cap_id(b"test/double/v1");
+    let mut reg = CapabilityRegistry::new();
+    reg.register(cap_id, Box::new(DoubleCapability));
+    let reg = Arc::new(reg);
+
+    let mut store = SubstanceStore::new();
+    let code = vec![
+        Opcode::Push(Value::Nat(21)),  // arg
+        Opcode::Push(Value::Hash(cap_id)), // cap_id on top
+        Opcode::Invoke { n: 1 },
+        Opcode::Ret,
+    ];
+    let mut state = ExecState::new(Hash::BOTTOM, code, 0, vec![]);
+    let mut interp = Interpreter::new(&mut store).with_cap_registry(reg);
+    match interp.run(&mut state, 32) {
+        ExecVerdict::Returned(Value::Nat(42)) => {}
+        other => panic!("expected Returned(Nat(42)), got {:?}", other),
+    }
+}
+
+/// INVOKE with no cap_registry traps ENotHeld.
+#[test]
+fn invoke_without_registry_traps_enotheld() {
+    let mut store = SubstanceStore::new();
+    let cap_id = builtin_cap_id(b"test/any");
+    let code = vec![
+        Opcode::Push(Value::Hash(cap_id)),
+        Opcode::Invoke { n: 0 },
+        Opcode::Ret,
+    ];
+    let mut state = ExecState::new(Hash::BOTTOM, code, 0, vec![]);
+    let mut interp = Interpreter::new(&mut store);
+    match interp.run(&mut state, 16) {
+        ExecVerdict::Trapped(ignis0::value::TrapKind::ENotHeld) => {}
+        other => panic!("expected Trapped(ENotHeld), got {:?}", other),
+    }
+}
+
+/// INVOKE on an unknown cap_id (not in the registry) traps ENotHeld.
+#[test]
+fn invoke_unknown_cap_traps_enotheld() {
+    use std::sync::Arc;
+
+    let reg = Arc::new(CapabilityRegistry::new()); // empty
+    let mut store = SubstanceStore::new();
+    let cap_id = builtin_cap_id(b"test/nonexistent");
+    let code = vec![
+        Opcode::Push(Value::Hash(cap_id)),
+        Opcode::Invoke { n: 0 },
+        Opcode::Ret,
+    ];
+    let mut state = ExecState::new(Hash::BOTTOM, code, 0, vec![]);
+    let mut interp = Interpreter::new(&mut store).with_cap_registry(reg);
+    match interp.run(&mut state, 16) {
+        ExecVerdict::Trapped(ignis0::value::TrapKind::ENotHeld) => {}
+        other => panic!("expected Trapped(ENotHeld), got {:?}", other),
+    }
+}

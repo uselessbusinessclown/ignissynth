@@ -91,6 +91,7 @@ fn parse_line(line: &str) -> Option<Opcode> {
         "RET" => Some(Opcode::Ret),
         // CALL intentionally omitted — needs hash parsing which
         // the line-oriented scaffold does not support.
+        "INVOKE" => parts.get(1).and_then(|s| s.parse::<u32>().ok()).map(|n| Opcode::Invoke { n }),
 
         // Structure
         "MAKEPAIR" => Some(Opcode::MakePair),

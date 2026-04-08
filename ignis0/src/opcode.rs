@@ -65,8 +65,10 @@ pub enum Opcode {
     CapHeld,
     /// ATTENUATE — pop (cap, predicate), push child cap.
     Attenuate,
-    /// INVOKE — pop cap + args, invoke named operation.
-    Invoke,
+    /// INVOKE n — pop CapId, then pop n args, invoke the named
+    /// operation, push the result. Traps `ENOTHELD` if the CapId
+    /// is not in the current `cap_view`.
+    Invoke { n: u32 },
     /// REVOKE — pop cap.
     Revoke,
 
@@ -126,7 +128,7 @@ impl Opcode {
             Opcode::Unpin => "UNPIN",
             Opcode::CapHeld => "CAPHELD",
             Opcode::Attenuate => "ATTENUATE",
-            Opcode::Invoke => "INVOKE",
+            Opcode::Invoke { .. } => "INVOKE",
             Opcode::Revoke => "REVOKE",
             Opcode::Append => "APPEND",
             Opcode::Why => "WHY",

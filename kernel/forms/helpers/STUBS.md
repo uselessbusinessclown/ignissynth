@@ -278,6 +278,16 @@ independently of the body.
 | `S-02/proj/holder`              | `(CapEntry) → MindId`                      | encoded  |
 | `S-02/proj/generation`          | `(CapEntry) → Nat`                         | encoded  |
 
+## Substrate compute capability wrappers (ignis0 built-ins)
+
+Thin IL Forms that marshal arguments and invoke the `ignis0` built-in
+capability backends (INVOKE n). Encoded in `compute.form`.
+
+| Slot                            | Signature                                          | Status  |
+|---------------------------------|----------------------------------------------------|---------|
+| `Synthesis/infer`               | `(prompt_hash, params_hash) → result_hash`         | encoded (compute.form) |
+| `Compute/gpu`                   | `(shader_hash, input_hash, output_size) → out_hash`| encoded (compute.form) |
+
 `S-02/lemma/i2_check` is the load-bearing one: its body *is* the
 abstract-model fact discharging S-02 obligation 2 (attenuation
 monotonicity). The kernel-author identities sign its review as
@@ -425,7 +435,7 @@ operational form of the IL specification.
 
 | Category              | Count    |
 |-----------------------|----------|
-| Encoded helpers       | 104      |
+| Encoded helpers       | 106      |
 | Stub-only helpers     | ~56      |
 | Schema/* primitives   | 7 (encoded) |
 | Parser/* primitives   | 13 (encoded) |

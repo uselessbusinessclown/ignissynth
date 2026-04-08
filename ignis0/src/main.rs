@@ -4,9 +4,13 @@
 //!   ignis0 fixed-point          Run the A9.3 fixed-point check.
 //!   ignis0 pretty-print <file>  Parse a .form source file and
 //!                               pretty-print the opcode sequence.
+//!   ignis0 caps                 Print canonical CapIds for built-in capabilities.
 //!   ignis0 version              Print the scaffold version.
 //!   ignis0 help                 Print this message.
 
+use ignis0::capability::{
+    builtin_cap_id, GPU_COMPUTE_CAP_DESCRIPTOR, INFER_CAP_DESCRIPTOR,
+};
 use ignis0::fixed_point::{FixedPointCheck, FixedPointVerdict};
 use ignis0::parser::parse_form_lines;
 use ignis0::pretty::pretty_print;
@@ -18,6 +22,7 @@ fn main() {
     match cmd {
         "fixed-point" => run_fixed_point(),
         "pretty-print" => run_pretty_print(&args),
+        "caps" => run_caps(),
         "version" => {
             println!("ignis0 v{}", env!("CARGO_PKG_VERSION"));
         }
@@ -33,11 +38,55 @@ fn print_help() {
          \n\
              ignis0 fixed-point          Run the A9.3 fixed-point check\n\
              ignis0 pretty-print <file>  Parse and pretty-print a .form file\n\
+             ignis0 caps                 Print canonical CapIds for built-in capabilities\n\
              ignis0 version              Print the scaffold version\n\
              ignis0 help                 Print this message\n\
          \n\
+         Capability features (rebuild with --features to enable):\n\
+             --features infer   HTTP inference backend (ollama / llama.cpp / vllm)\n\
+             --features gpu     wgpu GPU compute shader dispatch\n\
+             --features compute both infer + gpu\n\
+         \n\
          See ../kernel/IGNITION-BOOTSTRAP.md for the full contract."
     );
+}
+
+/// Print the canonical CapIds for built-in capabilities.
+///
+/// These hashes are stable; they are the values that IL code must push
+/// before INVOKE n to reach a built-in capability backend. The hash is
+/// derived from the descriptor string, so it cannot change without
+/// bumping the descriptor and all Forms that reference the old hash.
+fn run_caps() {
+    let infer_id = builtin_cap_id(INFER_CAP_DESCRIPTOR);
+    let gpu_id = builtin_cap_id(GPU_COMPUTE_CAP_DESCRIPTOR);
+
+    println!("ignis0 built-in capability IDs");
+    println!();
+    println!(
+        "  Synthesis/infer/v1  descriptor = {:?}",
+        std::str::from_utf8(INFER_CAP_DESCRIPTOR).unwrap_or("(non-utf8)")
+    );
+    println!("                      cap_id     = {}", infer_id.short());
+    println!();
+    println!(
+        "  Compute/gpu/v1      descriptor = {:?}",
+        std::str::from_utf8(GPU_COMPUTE_CAP_DESCRIPTOR).unwrap_or("(non-utf8)")
+    );
+    println!("                      cap_id     = {}", gpu_id.short());
+    println!();
+    println!("IL usage (inference, INVOKE 2):");
+    println!("  PUSH <prompt_hash>   ; Hash of a Bytes/v1 substance");
+    println!("  PUSH <params_hash>   ; Hash of InferParams/v1 or BOTTOM");
+    println!("  PUSH {}  ; infer_cap_id (above)", infer_id.short());
+    println!("  INVOKE 2");
+    println!();
+    println!("IL usage (GPU compute, INVOKE 3):");
+    println!("  PUSH <shader_hash>   ; Hash of a Bytes/v1 substance (WGSL source)");
+    println!("  PUSH <input_hash>    ; Hash of a Bytes/v1 substance (input bytes)");
+    println!("  PUSH <output_size>   ; Nat — output buffer size in bytes");
+    println!("  PUSH {}  ; gpu_cap_id (above)", gpu_id.short());
+    println!("  INVOKE 3");
 }
 
 fn run_pretty_print(args: &[String]) {
