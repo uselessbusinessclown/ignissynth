@@ -132,7 +132,7 @@ kernel directory. This release adds:
 |-------|-------|
 | MIT license | `LICENSE` |
 | Worked breakdowns | S-01, S-03, S-04, S-05, S-06, S-07, S-08, S-09, S-10, S-11 |
-| IL specification | `kernel/IL.md` (30 opcodes) |
+| IL specification | `kernel/IL.md` (34 opcodes) |
 | Encoded primary Forms | `kernel/forms/S-01..S-11.form` (11 Forms) |
 | Manifest | `kernel/manifest.json` |
 | Proof term language | `kernel/PROOF.md` (12 sorts, 17 term constructors, 30 rules) |

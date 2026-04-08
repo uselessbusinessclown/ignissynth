@@ -64,7 +64,7 @@ intermediate language itself.
 
 - **source**: `kernel/IL.md` § Opcodes
 - **claim**: There is no `MINT` opcode in the IL.
-- **discharge**: Enumerate the 30 opcodes in the IL.md table.
+- **discharge**: Enumerate the 34 opcodes in the IL.md table.
   None of them is named `MINT` or has the effect of producing a
   `CapId` not derived from one already in `cap_view`. This is the
   load-bearing fact for I10 instantiated to the IL.
@@ -74,7 +74,7 @@ intermediate language itself.
 - **source**: `kernel/IL.md` § Opcodes (per-opcode rules)
 - **claim**: For every IL opcode, the rule preserves `cap_view`
   or extends it only with `ATTENUATE` results.
-- **discharge**: Per-opcode case analysis. The 30 rules in IL.md
+- **discharge**: Per-opcode case analysis. The 34 rules in IL.md
   each touch `cap_view` in at most one of three ways: leave it
   unchanged (most opcodes), add an entry produced by `ATTENUATE`
   (the `ATTENUATE` opcode itself), or remove an entry produced
@@ -95,7 +95,7 @@ intermediate language itself.
 - **claim**: Given two `ExecState`s with identical components and
   no Entropy/Clock/Network/SensorInput cap usage, the per-opcode
   rule produces identical successors.
-- **discharge**: Per-opcode rule analysis. None of the 30 rules
+- **discharge**: Per-opcode rule analysis. None of the 34 rules
   consults a substance outside the `ExecState`'s `cap_view` or a
   cap of those four declared kinds. The rules are all pure
   functions of `(ExecState, accessible_substances)`.

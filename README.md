@@ -39,7 +39,7 @@ What is in the repository as of this commit:
 | Constitution        | `docs/MANIFESTO.md`, `axioms/A0..A8`                                 | complete                                    |
 | Discipline          | `synthesis/PROTOCOL.md`, `INVARIANTS.md`, `SELF-IMPROVEMENT.md`, `SEED.md` | complete                              |
 | Worked synthesis    | `breakdown/S-01..S-11.md`                                            | 11 of 11 (every primary Form)               |
-| IL specification    | `kernel/IL.md`                                                       | 30 opcodes, total small-step                |
+| IL specification    | `kernel/IL.md`                                                       | 34 opcodes, total small-step                |
 | Encoded Forms       | `kernel/forms/S-01..S-11.form`                                       | 11 of 11, written against the IL            |
 | Seed manifest       | `kernel/manifest.json`                                               | binds sources/proofs/immediates             |
 | Helper stubs        | `kernel/forms/helpers/STUBS.md`                                      | ~110 stubs catalogued; 1 helper encoded     |
@@ -96,10 +96,11 @@ axioms/      First-principles axioms — the only source of normative truth
 synthesis/   How the OS reasons about itself and rewrites itself
 breakdown/   Worked synthesis acts for each seed Form
 kernel/      The encoded seed
-  IL.md      The 30-opcode Form intermediate language
+  IL.md      The 34-opcode Form intermediate language
   forms/     S-01..S-11, plus helpers/
   manifest.json    Sources, breakdowns, proofs, immediates, boot order
   README.md  Encoding status
+ignis0/      Stage-0 IL interpreter (Rust) — the ignition substrate
 LICENSE      MIT
 ```
 
@@ -123,7 +124,7 @@ The shortest path through, in dependency order:
 8. **One worked breakdown end-to-end** — `breakdown/S-02-cap-registry.md`
    is the model the others follow; `breakdown/S-08-proof-checker.md` is
    the bootstrap exception worth reading for its three-layered discharge.
-9. **`kernel/IL.md`** — the 30-opcode Form intermediate language. Total
+9. **`kernel/IL.md`** — the 34-opcode Form intermediate language. Total
    small-step semantics, no ambient authority, no implicit clock, no
    implicit entropy.
 10. **One encoded Form end-to-end** — `kernel/forms/S-01-ignite.form` is
@@ -139,6 +140,61 @@ The shortest path through, in dependency order:
 13. **`kernel/manifest.json`** — the keystone that binds every source,
     breakdown, proof, axiom, invariant, vigil holder, dependency,
     immediate value, and boot-order entry in one place.
+
+## ignis0 — the stage-0 interpreter
+
+`ignis0/` is a Rust crate that implements the IL from `kernel/IL.md`
+as an ordinary executable (the ignition substrate named by axiom A9).
+It is not part of IgnisSynth; it is the software IgnisSynth runs on
+top of.
+
+### Build requirements
+
+- [Rust stable toolchain](https://rustup.rs/) (edition 2021, 1.75+)
+
+### Quick start
+
+```sh
+cd ignis0
+
+# Run the test suite (includes the A9.3 fixed-point check)
+cargo test
+
+# Run the fixed-point check and print the verdict
+cargo run -- fixed-point
+
+# Parse a scaffold .form source file and pretty-print its opcodes
+cargo run -- pretty-print ../kernel/forms/helpers/canon-normalise.form
+
+# Print version
+cargo run -- version
+```
+
+### What the crate contains
+
+| Module | Purpose |
+|--------|---------|
+| `value.rs` | `Value`, `Hash` (BLAKE3), `TrapKind` |
+| `opcode.rs` | All 34 IL opcode variants |
+| `exec.rs` | `ExecState` (call-frame stack), `Interpreter`, `CALL`/`RET` |
+| `store.rs` | In-memory substance store (S-03 abstract interface) |
+| `registry.rs` | Content-addressed `FormRegistry` for CALL resolution |
+| `parser.rs` | Line-oriented scaffold parser (`parse_form_lines`) |
+| `pretty.rs` | Pretty-printer: `Vec<Opcode>` → scaffold source text |
+| `fixed_point.rs` | A9.3 fixed-point check harness |
+
+### CI
+
+GitHub Actions runs `cargo fmt --check`, `cargo clippy`, `cargo build`,
+`cargo test`, and the fixed-point CLI smoke-test on every push and pull
+request. It also lints the proof artifacts and manifest structurally.
+See `.github/workflows/ci.yml`.
+
+### Relationship to IgnisSynth
+
+This crate lives in the repo for convenience during the scaffold phase.
+A production `ignis0` will graduate to its own repository. The interface
+between the two worlds is exactly `kernel/IL.md`.
 
 ## What is in each `.form` file
 
