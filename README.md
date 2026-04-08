@@ -178,8 +178,10 @@ cargo run -- version
 | `opcode.rs` | All 34 IL opcode variants |
 | `exec.rs` | `ExecState` (call-frame stack), `Interpreter`, `CALL`/`RET` |
 | `store.rs` | In-memory substance store (S-03 abstract interface) |
-| `registry.rs` | Content-addressed `FormRegistry` for CALL resolution |
+| `registry.rs` | Content-addressed `FormRegistry` for CALL resolution (incl. `register_wire`) |
+| `capability.rs` | `CapabilityRegistry`, `CapabilityInvoker` trait, builtin GPU + inference caps for `INVOKE` |
 | `parser.rs` | Line-oriented scaffold parser (`parse_form_lines`) |
+| `wire.rs` | Byte-exact Form wire codec (`encode_form`/`decode_form`) per IL.md § "Byte-exact wire grammar (v1)" |
 | `pretty.rs` | Pretty-printer: `Vec<Opcode>` → scaffold source text |
 | `fixed_point.rs` | A9.3 fixed-point check harness |
 

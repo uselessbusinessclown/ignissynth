@@ -304,7 +304,10 @@ fn read_opcode_nom(i: &[u8]) -> IResult<&[u8], Opcode> {
         0x13 => Ok((i, Opcode::Unpin)),
         0x14 => Ok((i, Opcode::CapHeld)),
         0x15 => Ok((i, Opcode::Attenuate)),
-        0x16 => Ok((i, Opcode::Invoke)),
+        0x16 => {
+            let (i, n) = read_uleb128_u32_nom(i)?;
+            Ok((i, Opcode::Invoke { n }))
+        }
         0x17 => Ok((i, Opcode::Revoke)),
         0x18 => Ok((i, Opcode::Append)),
         0x19 => Ok((i, Opcode::Why)),
@@ -549,7 +552,10 @@ fn encode_opcode(out: &mut Vec<u8>, op: &Opcode) -> Result<(), WireError> {
         Opcode::Unpin => out.push(0x13),
         Opcode::CapHeld => out.push(0x14),
         Opcode::Attenuate => out.push(0x15),
-        Opcode::Invoke => out.push(0x16),
+        Opcode::Invoke { n } => {
+            out.push(0x16);
+            write_uleb128_u32(out, *n);
+        }
         Opcode::Revoke => out.push(0x17),
         Opcode::Append => out.push(0x18),
         Opcode::Why => out.push(0x19),
