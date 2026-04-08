@@ -55,7 +55,7 @@ Before the seed can be ignited, a stage-0 interpreter must exist
 outside the habitat. This is named as axiom A9 and specified
 operationally in `kernel/IGNITION-BOOTSTRAP.md`. The stage-0
 interpreter (`ignis0`) is ordinary software — Rust, OCaml, C,
-or similar — that implements the 30-opcode IL and runs the
+or similar — that implements the 34-opcode IL and runs the
 seed loader's ten-step ignition sequence.
 
 The seed does *not* attempt to self-host at the base case.

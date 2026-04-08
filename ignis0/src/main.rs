@@ -1,12 +1,15 @@
 //! ignis0 CLI — a thin wrapper around the library.
 //!
 //! Usage:
-//!   ignis0 fixed-point    Run the A9.3 fixed-point check and
-//!                         print the verdict.
-//!   ignis0 version        Print the scaffold version.
-//!   ignis0 help           Print this message.
+//!   ignis0 fixed-point          Run the A9.3 fixed-point check.
+//!   ignis0 pretty-print <file>  Parse a .form source file and
+//!                               pretty-print the opcode sequence.
+//!   ignis0 version              Print the scaffold version.
+//!   ignis0 help                 Print this message.
 
 use ignis0::fixed_point::{FixedPointCheck, FixedPointVerdict};
+use ignis0::parser::parse_form_lines;
+use ignis0::pretty::pretty_print;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -14,6 +17,7 @@ fn main() {
 
     match cmd {
         "fixed-point" => run_fixed_point(),
+        "pretty-print" => run_pretty_print(&args),
         "version" => {
             println!("ignis0 v{}", env!("CARGO_PKG_VERSION"));
         }
@@ -27,12 +31,45 @@ fn print_help() {
          \n\
          Usage:\n\
          \n\
-             ignis0 fixed-point    Run the A9.3 fixed-point check\n\
-             ignis0 version        Print the scaffold version\n\
-             ignis0 help           Print this message\n\
+             ignis0 fixed-point          Run the A9.3 fixed-point check\n\
+             ignis0 pretty-print <file>  Parse and pretty-print a .form file\n\
+             ignis0 version              Print the scaffold version\n\
+             ignis0 help                 Print this message\n\
          \n\
          See ../kernel/IGNITION-BOOTSTRAP.md for the full contract."
     );
+}
+
+fn run_pretty_print(args: &[String]) {
+    let path = match args.get(2) {
+        Some(p) => p,
+        None => {
+            eprintln!("Usage: ignis0 pretty-print <file>");
+            eprintln!("       <file> must be a line-oriented scaffold .form source.");
+            std::process::exit(1);
+        }
+    };
+
+    let source = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error reading {}: {}", path, e);
+            std::process::exit(1);
+        }
+    };
+
+    match parse_form_lines(&source) {
+        Ok(code) => {
+            println!("; pretty-printed from: {}", path);
+            println!("; {} opcode(s)", code.len());
+            println!();
+            print!("{}", pretty_print(&code));
+        }
+        Err(e) => {
+            eprintln!("parse error in {}: {}", path, e);
+            std::process::exit(1);
+        }
+    }
 }
 
 fn run_fixed_point() {

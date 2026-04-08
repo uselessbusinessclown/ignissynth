@@ -349,7 +349,7 @@ ordering.
 | `S-07/vec/len`                  | `(Vec{T}) → Nat`                           | pending  |
 | `S-07/vec/index`                | `(Vec{T}, Nat) → T`                        | pending  |
 
-`S-07/interp/run` is the load-bearing one: it is the 30-opcode
+`S-07/interp/run` is the load-bearing one: it is the 34-opcode
 dispatch table. Its body has one case per IL opcode, each case
 implementing the rule from `kernel/IL.md`. This is the helper
 the inspection record covers most heavily, because it is the

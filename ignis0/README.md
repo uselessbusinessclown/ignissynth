@@ -39,13 +39,11 @@ A compilable, testable Rust scaffold that:
 
 ## Note on the opcode count
 
-`kernel/IL.md` § Opcodes says "Thirty exactly" in its prose but
-the per-group tables enumerate 34 opcodes (4 stack/locals + 4
-arith + 4 control + 4 structure + 4 substance + 4 capability +
-2 weave + 2 attention + 2 trap + 4 reflection). This scaffold
-implements the 34 the tables name. The discrepancy between the
-prose count and the table count is a docs bug in `IL.md` and
-should be fixed in a future synthesis act against the IL spec.
+`kernel/IL.md` § Opcodes enumerates 34 opcodes (4 stack/locals +
+4 arith + 4 control + 4 structure + 4 substance + 4 capability +
+2 weave + 2 attention + 2 trap + 4 reflection). The IL prose and
+all cross-references now consistently say "Thirty-four". This
+scaffold implements all 34.
 
 ## Running
 
