@@ -12,12 +12,14 @@ pub mod exec;
 pub mod fixed_point;
 pub mod opcode;
 pub mod parser;
+pub mod registry;
 pub mod store;
 pub mod value;
 
-pub use exec::{ExecState, ExecVerdict, Interpreter};
+pub use exec::{ExecState, ExecVerdict, Frame, Interpreter};
 pub use fixed_point::{FixedPointCheck, FixedPointVerdict};
 pub use opcode::Opcode;
 pub use parser::{parse_form_lines, ParseError};
+pub use registry::{FormRegistry, LoadedForm};
 pub use store::SubstanceStore;
 pub use value::{Hash, TrapKind, Value};

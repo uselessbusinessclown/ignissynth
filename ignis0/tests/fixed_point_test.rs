@@ -9,6 +9,7 @@ use ignis0::exec::{ExecState, ExecVerdict, Interpreter};
 use ignis0::fixed_point::{FixedPointCheck, FixedPointVerdict};
 use ignis0::opcode::Opcode;
 use ignis0::parser::parse_form_lines;
+use ignis0::registry::{FormRegistry, LoadedForm};
 use ignis0::store::SubstanceStore;
 use ignis0::value::{Hash, TrapKind, Value};
 
@@ -152,6 +153,137 @@ fn sub_underflow_traps() {
     match interp.run(&mut state, 16) {
         ExecVerdict::Trapped(TrapKind::EUnderflow) => {}
         other => panic!("expected Trapped(EUnderflow), got {:?}", other),
+    }
+}
+
+/// CALL/RET round-trip: caller pushes 42, calls F (the +1
+/// Form), and observes 43 on its own stack after RET.
+#[test]
+fn call_ret_invokes_registered_form() {
+    let mut store = SubstanceStore::new();
+
+    // Register F (+1) under a fabricated hash. The hash content
+    // is irrelevant for dispatch — only equality matters here.
+    let f_hash = Hash::of(b"test:F/+1");
+    let mut registry = FormRegistry::new();
+    registry.register(
+        f_hash,
+        LoadedForm {
+            code: FixedPointCheck::build_F(),
+            locals_n: 1,
+            name: "F+1".to_string(),
+        },
+    );
+
+    // Caller: push 42, CALL F with 1 arg, RET the result.
+    let caller_code = vec![
+        Opcode::Push(Value::Nat(42)),
+        Opcode::Call { form: f_hash, n: 1 },
+        Opcode::Ret,
+    ];
+    let mut state = ExecState::new(Hash::BOTTOM, caller_code, 0, vec![]);
+    let mut interp = Interpreter::new(&mut store).with_registry(&registry);
+    match interp.run(&mut state, 64) {
+        ExecVerdict::Returned(Value::Nat(43)) => {}
+        other => panic!("expected Returned(Nat(43)), got {:?}", other),
+    }
+}
+
+/// CALL with no registry attached traps `NotImplemented` rather
+/// than panicking. Documents the scaffold-only fallback.
+#[test]
+fn call_without_registry_traps() {
+    let mut store = SubstanceStore::new();
+    let code = vec![
+        Opcode::Call {
+            form: Hash::BOTTOM,
+            n: 0,
+        },
+        Opcode::Ret,
+    ];
+    let mut state = ExecState::new(Hash::BOTTOM, code, 0, vec![]);
+    let mut interp = Interpreter::new(&mut store);
+    match interp.run(&mut state, 16) {
+        ExecVerdict::Trapped(TrapKind::NotImplemented(_)) => {}
+        other => panic!("expected Trapped(NotImplemented), got {:?}", other),
+    }
+}
+
+/// CALL with an unknown form hash traps `EUnheld`.
+#[test]
+fn call_unknown_form_traps_eunheld() {
+    let mut store = SubstanceStore::new();
+    let registry = FormRegistry::new();
+    let code = vec![
+        Opcode::Call {
+            form: Hash::of(b"nope"),
+            n: 0,
+        },
+        Opcode::Ret,
+    ];
+    let mut state = ExecState::new(Hash::BOTTOM, code, 0, vec![]);
+    let mut interp = Interpreter::new(&mut store).with_registry(&registry);
+    match interp.run(&mut state, 16) {
+        ExecVerdict::Trapped(TrapKind::EUnheld(_)) => {}
+        other => panic!("expected Trapped(EUnheld), got {:?}", other),
+    }
+}
+
+/// CALL with too few stack args traps `EType`.
+#[test]
+fn call_with_insufficient_args_traps() {
+    let mut store = SubstanceStore::new();
+    let f_hash = Hash::of(b"test:F/+1");
+    let mut registry = FormRegistry::new();
+    registry.register(
+        f_hash,
+        LoadedForm {
+            code: FixedPointCheck::build_F(),
+            locals_n: 1,
+            name: "F+1".to_string(),
+        },
+    );
+    let code = vec![
+        // Want 1 arg, supply 0.
+        Opcode::Call { form: f_hash, n: 1 },
+        Opcode::Ret,
+    ];
+    let mut state = ExecState::new(Hash::BOTTOM, code, 0, vec![]);
+    let mut interp = Interpreter::new(&mut store).with_registry(&registry);
+    match interp.run(&mut state, 16) {
+        ExecVerdict::Trapped(TrapKind::EType(_)) => {}
+        other => panic!("expected Trapped(EType), got {:?}", other),
+    }
+}
+
+/// Nested CALL: G calls F twice (+1 then +1) to compute +2.
+#[test]
+fn nested_calls_compose() {
+    let mut store = SubstanceStore::new();
+    let f_hash = Hash::of(b"test:F/+1");
+    let mut registry = FormRegistry::new();
+    registry.register(
+        f_hash,
+        LoadedForm {
+            code: FixedPointCheck::build_F(),
+            locals_n: 1,
+            name: "F+1".to_string(),
+        },
+    );
+
+    // G: push input, CALL F, CALL F, RET.
+    let g_code = vec![
+        Opcode::Store(0),
+        Opcode::Load(0),
+        Opcode::Call { form: f_hash, n: 1 },
+        Opcode::Call { form: f_hash, n: 1 },
+        Opcode::Ret,
+    ];
+    let mut state = ExecState::new(Hash::BOTTOM, g_code, 1, vec![Value::Nat(40)]);
+    let mut interp = Interpreter::new(&mut store).with_registry(&registry);
+    match interp.run(&mut state, 128) {
+        ExecVerdict::Returned(Value::Nat(42)) => {}
+        other => panic!("expected Returned(Nat(42)), got {:?}", other),
     }
 }
 
