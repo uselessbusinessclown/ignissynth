@@ -27,17 +27,35 @@
 //!   early-exit.
 
 use crate::opcode::Opcode;
+use crate::registry::FormRegistry;
 use crate::store::SubstanceStore;
 use crate::value::{Hash, TrapKind, Value};
 
-/// Runtime state of one Form invocation.
-#[derive(Debug)]
-pub struct ExecState {
+/// A single activation frame. Each CALL pushes one of these;
+/// each RET pops one. The topmost frame is the one `step()`
+/// operates on — its fields are mirrored directly into the
+/// `ExecState` wrapper's public getters so existing callers
+/// that read `state.pc`, `state.stack`, etc. continue to see
+/// the current frame.
+#[derive(Debug, Clone)]
+pub struct Frame {
     pub form_hash: Hash,
     pub pc: usize,
     pub stack: Vec<Value>,
     pub locals: Vec<Value>,
     pub code: Vec<Opcode>,
+}
+
+/// Runtime state of a running Form stack.
+///
+/// Invariant: `frames` is non-empty while execution is in
+/// progress. The top frame (`frames.last()`) is the currently
+/// executing activation. On RET the top frame is popped and
+/// its return value is pushed onto the caller's stack; when
+/// the final frame is popped, `run()` returns that value.
+#[derive(Debug)]
+pub struct ExecState {
+    pub frames: Vec<Frame>,
 }
 
 impl ExecState {
@@ -50,12 +68,27 @@ impl ExecState {
             stack.push(v);
         }
         ExecState {
-            form_hash,
-            pc: 0,
-            stack,
-            locals: vec![Value::Unit; locals_n],
-            code,
+            frames: vec![Frame {
+                form_hash,
+                pc: 0,
+                stack,
+                locals: vec![Value::Unit; locals_n],
+                code,
+            }],
         }
+    }
+
+    /// Topmost frame, panics if empty (violated invariant).
+    pub fn top(&self) -> &Frame {
+        self.frames.last().expect("ExecState frames empty")
+    }
+
+    pub fn top_mut(&mut self) -> &mut Frame {
+        self.frames.last_mut().expect("ExecState frames empty")
+    }
+
+    pub fn depth(&self) -> usize {
+        self.frames.len()
     }
 }
 
@@ -86,11 +119,25 @@ pub enum ExecVerdict {
 /// opcodes that need them return `NotImplemented`.
 pub struct Interpreter<'a> {
     pub store: &'a mut SubstanceStore,
+    pub registry: Option<&'a FormRegistry>,
+    /// Maximum call depth. A trap fires when CALL would exceed
+    /// this. Keeps runaway recursion bounded in the scaffold.
+    pub max_call_depth: usize,
 }
 
 impl<'a> Interpreter<'a> {
     pub fn new(store: &'a mut SubstanceStore) -> Self {
-        Self { store }
+        Self {
+            store,
+            registry: None,
+            max_call_depth: 256,
+        }
+    }
+
+    /// Attach a form registry so CALL can resolve callees.
+    pub fn with_registry(mut self, registry: &'a FormRegistry) -> Self {
+        self.registry = Some(registry);
+        self
     }
 
     /// Run an ExecState to a verdict. Bounded by `max_steps`
@@ -107,13 +154,34 @@ impl<'a> Interpreter<'a> {
         ExecVerdict::Trapped(TrapKind::NotImplemented("max_steps exceeded".into()))
     }
 
-    /// Execute one instruction.
-    pub fn step(&mut self, s: &mut ExecState) -> StepResult {
-        if s.pc >= s.code.len() {
-            return StepResult::Trapped(TrapKind::type_mismatch("pc past end of code"));
+    /// Execute one instruction on the topmost frame.
+    pub fn step(&mut self, state: &mut ExecState) -> StepResult {
+        // Fetch the next opcode in a scoped borrow, then release
+        // the borrow so arms like CALL/RET can mutate the frame
+        // stack itself.
+        let op = {
+            let s = state.top_mut();
+            if s.pc >= s.code.len() {
+                return StepResult::Trapped(TrapKind::type_mismatch("pc past end of code"));
+            }
+            let op = s.code[s.pc].clone();
+            s.pc += 1;
+            op
+        };
+
+        // CALL and RET mutate state.frames; handle them before
+        // reborrowing the top frame.
+        match &op {
+            Opcode::Call { form, n } => {
+                return self.do_call(state, *form, *n);
+            }
+            Opcode::Ret => {
+                return self.do_ret(state);
+            }
+            _ => {}
         }
-        let op = s.code[s.pc].clone();
-        s.pc += 1;
+
+        let s = state.top_mut();
 
         match op {
             // ---- Stack and locals ----
@@ -204,15 +272,10 @@ impl<'a> Interpreter<'a> {
                 }
                 StepResult::Step
             }
-            Opcode::Call { .. } => {
-                StepResult::Trapped(TrapKind::NotImplemented("CALL — requires IL parser + form loader".into()))
-            }
-            Opcode::Ret => {
-                let v = match s.stack.pop() {
-                    Some(v) => v,
-                    None => return StepResult::Trapped(TrapKind::type_mismatch("RET on empty stack")),
-                };
-                StepResult::Returned(v)
+            // CALL and RET are handled above the match, before
+            // the top-frame borrow is re-acquired.
+            Opcode::Call { .. } | Opcode::Ret => {
+                unreachable!("CALL/RET handled above the match in step()")
             }
 
             // ---- Structure ----
@@ -339,16 +402,96 @@ impl<'a> Interpreter<'a> {
     }
 }
 
+impl<'a> Interpreter<'a> {
+    /// Resolve `form` in the attached registry, push a new frame
+    /// onto `state.frames`, and move the top `n` stack values
+    /// from the caller's stack into the callee's stack as its
+    /// initial inputs (in order — arg0 ends up on top).
+    fn do_call(&mut self, state: &mut ExecState, form: Hash, n: u32) -> StepResult {
+        if state.frames.len() >= self.max_call_depth {
+            return StepResult::Trapped(TrapKind::type_mismatch(
+                "CALL: max_call_depth exceeded",
+            ));
+        }
+        let registry = match self.registry {
+            Some(r) => r,
+            None => {
+                return StepResult::Trapped(TrapKind::NotImplemented(
+                    "CALL: no FormRegistry attached to Interpreter".into(),
+                ))
+            }
+        };
+        let loaded = match registry.get(&form) {
+            Some(lf) => lf.clone(),
+            None => {
+                return StepResult::Trapped(TrapKind::EUnheld(format!(
+                    "CALL: no Form at {}",
+                    form.short()
+                )))
+            }
+        };
+        let n = n as usize;
+        // Pop the n args from the caller's stack. IL.md says CALL
+        // consumes n arguments from the caller's stack; we
+        // preserve their order so the callee sees arg0 on top.
+        let caller = state.top_mut();
+        if caller.stack.len() < n {
+            return StepResult::Trapped(TrapKind::type_mismatch(
+                "CALL: not enough stack args",
+            ));
+        }
+        let split_at = caller.stack.len() - n;
+        let callee_stack: Vec<Value> = caller.stack.split_off(split_at);
+        // split_off preserves order so the deepest caller arg is
+        // at index 0; to match `ExecState::new`'s "arg0 on top"
+        // convention we treat these as already in the desired
+        // order — caller pushed arg_{n-1}, ..., arg_0, so the
+        // popped region ends with arg_0 on top.
+        state.frames.push(Frame {
+            form_hash: form,
+            pc: 0,
+            stack: callee_stack,
+            locals: vec![Value::Unit; loaded.locals_n],
+            code: loaded.code,
+        });
+        StepResult::Step
+    }
+
+    /// Pop the top frame, take its return value, and either
+    /// push the value onto the caller's stack or return it to
+    /// `run()` if the stack is now empty.
+    fn do_ret(&mut self, state: &mut ExecState) -> StepResult {
+        let v = {
+            let s = state.top_mut();
+            match s.stack.pop() {
+                Some(v) => v,
+                None => {
+                    return StepResult::Trapped(TrapKind::type_mismatch(
+                        "RET on empty stack",
+                    ))
+                }
+            }
+        };
+        state.frames.pop();
+        if state.frames.is_empty() {
+            StepResult::Returned(v)
+        } else {
+            state.top_mut().stack.push(v);
+            StepResult::Step
+        }
+    }
+}
+
 // --- helpers ---
 
-fn pop_nat(s: &mut ExecState) -> Result<u128, TrapKind> {
+fn pop_nat(s: &mut Frame) -> Result<u128, TrapKind> {
     match s.stack.pop() {
         Some(v) => v.as_nat(),
         None => Err(TrapKind::type_mismatch("expected Nat, stack empty")),
     }
 }
 
-fn binary_nat(s: &mut ExecState, f: impl Fn(u128, u128) -> Value) -> StepResult {
+fn binary_nat(s: &mut Frame, f: impl Fn(u128, u128) -> Value) -> StepResult {
     let b = match pop_nat(s) {
         Ok(v) => v,
         Err(k) => return StepResult::Trapped(k),
