@@ -19,7 +19,7 @@ read every opcode in one sitting.
 
 ## Design constraints (from the breakdowns)
 
-1. **~30 opcodes** (S-07 budget claim).
+1. **34 opcodes** (S-07 budget claim of "~30" resolved to exactly 34).
 2. **Total small-step semantics**: every instruction is one of
    `step`, `trap{kind}`, `yield{continuation}` — no undefined
    behavior (S-07 obligation 5).
@@ -83,7 +83,7 @@ sealed `ExecState`.
 
 ## Opcodes
 
-Thirty exactly. Grouped by purpose. Each line names the opcode,
+Thirty-four exactly. Grouped by purpose. Each line names the opcode,
 its stack effect, and the small-step rule. Every rule is total:
 it produces `step(s')`, `trap{kind}`, or `yield(cont)` and
 nothing else.
@@ -177,7 +177,7 @@ holds.
 | `BINDSLOT`  | `(name_hash, form_hash) → ()`      | atomically advance the binding `name_hash → form_hash`; trap `EUNAUTHORISED` if no kernel mutation cap held |
 | `READSLOT`  | `(name_hash) → (form_hash)`        | look up the current binding for `name_hash`                                                      |
 
-That is the entire IL. Thirty opcodes. Three of them
+That is the entire IL. Thirty-four opcodes. Three of them
 (`ATTENUATE`, `INVOKE`, `BINDSLOT`) reduce to operations on other
 seed Forms, and the rest are fully defined by their rules above.
 

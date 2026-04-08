@@ -9,6 +9,7 @@ use ignis0::exec::{ExecState, ExecVerdict, Interpreter};
 use ignis0::fixed_point::{FixedPointCheck, FixedPointVerdict};
 use ignis0::opcode::Opcode;
 use ignis0::parser::parse_form_lines;
+use ignis0::registry::{FormRegistry, LoadedForm};
 use ignis0::store::SubstanceStore;
 use ignis0::value::{Hash, TrapKind, Value};
 
@@ -155,6 +156,137 @@ fn sub_underflow_traps() {
     }
 }
 
+/// CALL/RET round-trip: caller pushes 42, calls F (the +1
+/// Form), and observes 43 on its own stack after RET.
+#[test]
+fn call_ret_invokes_registered_form() {
+    let mut store = SubstanceStore::new();
+
+    // Register F (+1) under a fabricated hash. The hash content
+    // is irrelevant for dispatch — only equality matters here.
+    let f_hash = Hash::of(b"test:F/+1");
+    let mut registry = FormRegistry::new();
+    registry.register(
+        f_hash,
+        LoadedForm {
+            code: FixedPointCheck::build_F(),
+            locals_n: 1,
+            name: "F+1".to_string(),
+        },
+    );
+
+    // Caller: push 42, CALL F with 1 arg, RET the result.
+    let caller_code = vec![
+        Opcode::Push(Value::Nat(42)),
+        Opcode::Call { form: f_hash, n: 1 },
+        Opcode::Ret,
+    ];
+    let mut state = ExecState::new(Hash::BOTTOM, caller_code, 0, vec![]);
+    let mut interp = Interpreter::new(&mut store).with_registry(&registry);
+    match interp.run(&mut state, 64) {
+        ExecVerdict::Returned(Value::Nat(43)) => {}
+        other => panic!("expected Returned(Nat(43)), got {:?}", other),
+    }
+}
+
+/// CALL with no registry attached traps `NotImplemented` rather
+/// than panicking. Documents the scaffold-only fallback.
+#[test]
+fn call_without_registry_traps() {
+    let mut store = SubstanceStore::new();
+    let code = vec![
+        Opcode::Call {
+            form: Hash::BOTTOM,
+            n: 0,
+        },
+        Opcode::Ret,
+    ];
+    let mut state = ExecState::new(Hash::BOTTOM, code, 0, vec![]);
+    let mut interp = Interpreter::new(&mut store);
+    match interp.run(&mut state, 16) {
+        ExecVerdict::Trapped(TrapKind::NotImplemented(_)) => {}
+        other => panic!("expected Trapped(NotImplemented), got {:?}", other),
+    }
+}
+
+/// CALL with an unknown form hash traps `EUnheld`.
+#[test]
+fn call_unknown_form_traps_eunheld() {
+    let mut store = SubstanceStore::new();
+    let registry = FormRegistry::new();
+    let code = vec![
+        Opcode::Call {
+            form: Hash::of(b"nope"),
+            n: 0,
+        },
+        Opcode::Ret,
+    ];
+    let mut state = ExecState::new(Hash::BOTTOM, code, 0, vec![]);
+    let mut interp = Interpreter::new(&mut store).with_registry(&registry);
+    match interp.run(&mut state, 16) {
+        ExecVerdict::Trapped(TrapKind::EUnheld(_)) => {}
+        other => panic!("expected Trapped(EUnheld), got {:?}", other),
+    }
+}
+
+/// CALL with too few stack args traps `EType`.
+#[test]
+fn call_with_insufficient_args_traps() {
+    let mut store = SubstanceStore::new();
+    let f_hash = Hash::of(b"test:F/+1");
+    let mut registry = FormRegistry::new();
+    registry.register(
+        f_hash,
+        LoadedForm {
+            code: FixedPointCheck::build_F(),
+            locals_n: 1,
+            name: "F+1".to_string(),
+        },
+    );
+    let code = vec![
+        // Want 1 arg, supply 0.
+        Opcode::Call { form: f_hash, n: 1 },
+        Opcode::Ret,
+    ];
+    let mut state = ExecState::new(Hash::BOTTOM, code, 0, vec![]);
+    let mut interp = Interpreter::new(&mut store).with_registry(&registry);
+    match interp.run(&mut state, 16) {
+        ExecVerdict::Trapped(TrapKind::EType(_)) => {}
+        other => panic!("expected Trapped(EType), got {:?}", other),
+    }
+}
+
+/// Nested CALL: G calls F twice (+1 then +1) to compute +2.
+#[test]
+fn nested_calls_compose() {
+    let mut store = SubstanceStore::new();
+    let f_hash = Hash::of(b"test:F/+1");
+    let mut registry = FormRegistry::new();
+    registry.register(
+        f_hash,
+        LoadedForm {
+            code: FixedPointCheck::build_F(),
+            locals_n: 1,
+            name: "F+1".to_string(),
+        },
+    );
+
+    // G: push input, CALL F, CALL F, RET.
+    let g_code = vec![
+        Opcode::Store(0),
+        Opcode::Load(0),
+        Opcode::Call { form: f_hash, n: 1 },
+        Opcode::Call { form: f_hash, n: 1 },
+        Opcode::Ret,
+    ];
+    let mut state = ExecState::new(Hash::BOTTOM, g_code, 1, vec![Value::Nat(40)]);
+    let mut interp = Interpreter::new(&mut store).with_registry(&registry);
+    match interp.run(&mut state, 128) {
+        ExecVerdict::Returned(Value::Nat(42)) => {}
+        other => panic!("expected Returned(Nat(42)), got {:?}", other),
+    }
+}
+
 /// The scaffold parser rejects unknown mnemonics with a
 /// structured error.
 #[test]
@@ -164,4 +296,94 @@ fn parser_rejects_unknown_mnemonic() {
     let err = result.unwrap_err();
     assert_eq!(err.line_number, 1);
     assert_eq!(err.line, "FOOBAR 42");
+}
+
+// ── Capability / INVOKE tests ─────────────────────────────────────────────
+
+use ignis0::capability::{builtin_cap_id, CapabilityInvoker, CapabilityRegistry};
+
+/// A minimal capability invoker for testing: doubles its single Nat arg.
+struct DoubleCapability;
+impl CapabilityInvoker for DoubleCapability {
+    fn name(&self) -> &str {
+        "test/double"
+    }
+    fn invoke(
+        &self,
+        _cap_id: Hash,
+        args: Vec<Value>,
+        _store: &mut SubstanceStore,
+    ) -> Result<Value, ignis0::value::TrapKind> {
+        match args.as_slice() {
+            [Value::Nat(n)] => Ok(Value::Nat(n * 2)),
+            _ => Err(ignis0::value::TrapKind::EType(
+                "test/double: expected 1 Nat".into(),
+            )),
+        }
+    }
+}
+
+/// INVOKE dispatches through the CapabilityRegistry and returns the
+/// capability's result onto the caller's stack.
+#[test]
+fn invoke_dispatches_to_registered_capability() {
+    use std::sync::Arc;
+
+    let cap_id = builtin_cap_id(b"test/double/v1");
+    let mut reg = CapabilityRegistry::new();
+    reg.register(cap_id, Box::new(DoubleCapability));
+    let reg = Arc::new(reg);
+
+    let mut store = SubstanceStore::new();
+    let code = vec![
+        Opcode::Push(Value::Nat(21)),  // arg
+        Opcode::Push(Value::Hash(cap_id)), // cap_id on top
+        Opcode::Invoke { n: 1 },
+        Opcode::Ret,
+    ];
+    let mut state = ExecState::new(Hash::BOTTOM, code, 0, vec![]);
+    let mut interp = Interpreter::new(&mut store).with_cap_registry(reg);
+    match interp.run(&mut state, 32) {
+        ExecVerdict::Returned(Value::Nat(42)) => {}
+        other => panic!("expected Returned(Nat(42)), got {:?}", other),
+    }
+}
+
+/// INVOKE with no cap_registry traps ENotHeld.
+#[test]
+fn invoke_without_registry_traps_enotheld() {
+    let mut store = SubstanceStore::new();
+    let cap_id = builtin_cap_id(b"test/any");
+    let code = vec![
+        Opcode::Push(Value::Hash(cap_id)),
+        Opcode::Invoke { n: 0 },
+        Opcode::Ret,
+    ];
+    let mut state = ExecState::new(Hash::BOTTOM, code, 0, vec![]);
+    let mut interp = Interpreter::new(&mut store);
+    match interp.run(&mut state, 16) {
+        ExecVerdict::Trapped(ignis0::value::TrapKind::ENotHeld) => {}
+        other => panic!("expected Trapped(ENotHeld), got {:?}", other),
+    }
+}
+
+/// INVOKE on an unknown cap_id (not in the registry) traps ENotHeld.
+#[test]
+fn invoke_unknown_cap_traps_enotheld() {
+    use std::sync::Arc;
+
+    let reg = Arc::new(CapabilityRegistry::new()); // empty
+    let mut store = SubstanceStore::new();
+    let cap_id = builtin_cap_id(b"test/nonexistent");
+    let code = vec![
+        Opcode::Push(Value::Hash(cap_id)),
+        Opcode::Invoke { n: 0 },
+        Opcode::Ret,
+    ];
+    let mut state = ExecState::new(Hash::BOTTOM, code, 0, vec![]);
+    let mut interp = Interpreter::new(&mut store).with_cap_registry(reg);
+    match interp.run(&mut state, 16) {
+        ExecVerdict::Trapped(ignis0::value::TrapKind::ENotHeld) => {}
+        other => panic!("expected Trapped(ENotHeld), got {:?}", other),
+    }
 }

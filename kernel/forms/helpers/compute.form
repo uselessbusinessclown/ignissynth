@@ -1,0 +1,118 @@
+; compute.form — IL-level wrappers for the ignis0 built-in compute capabilities.
+;
+; These are thin Forms that marshal arguments, push the canonical CapId,
+; and call INVOKE. They are the intended call sites for IL code that wants
+; inference or GPU compute; the CapId constants are encapsulated here so
+; callers don't need to know the raw hash.
+;
+; Two Forms are defined:
+;
+;   Synthesis/infer    — calls the HTTP inference backend (feature = "infer")
+;   Compute/gpu        — dispatches a WGSL shader via wgpu (feature = "gpu")
+;
+; Both Forms follow the helper exemption rule (< 30 IL instructions each)
+; and therefore do not require a standalone proof artifact.
+;
+; Stack contracts are documented in capability.rs and reproduced in the
+; "IL usage" blocks printed by `ignis0 caps`.
+;
+; Slot bindings used:
+;
+;   ignis0/capability/Synthesis/infer/v1   — BLAKE3 of the descriptor string
+;   ignis0/capability/Compute/gpu/v1       — BLAKE3 of the descriptor string
+;
+; Both slots are populated by the substrate at boot time. Forms that call
+; these helpers do not need to know the raw CapIds.
+
+; ── Synthesis/infer ───────────────────────────────────────────────────────────
+;
+; (form
+;   :name    "Synthesis/infer"
+;   :arity   2              ; (prompt_hash, params_hash) → result_hash
+;   :locals  2
+;   :code    (...)
+; )
+;
+; Arguments (top-of-stack first):
+;   [TOS]   params_hash  — Hash of InferParams/v1 substance, or BOTTOM for defaults
+;   [TOS-1] prompt_hash  — Hash of Bytes/v1 substance (UTF-8 prompt text)
+;
+; Returns:
+;   result_hash — Hash of Bytes/v1 substance (UTF-8 completion text)
+;
+; Note: arguments arrive in reverse order (TOS is last-pushed).
+; We STORE them to locals to re-push in the order the capability expects.
+
+(form
+  :name "Synthesis/infer"
+  :locals-n 2
+  :code (
+
+    ; ── Store args from stack into locals ─────────────────────────────
+    STORE 0            ; local[0] = params_hash  (was TOS)
+    STORE 1            ; local[1] = prompt_hash  (was TOS-1)
+
+    ; ── Push args in capability protocol order ────────────────────────
+    ; Protocol: PUSH prompt_hash; PUSH params_hash; PUSH cap_id; INVOKE 2
+    LOAD 1             ; push prompt_hash
+    LOAD 0             ; push params_hash
+
+    ; ── Resolve the Synthesis/infer CapId from the slot binding ──────
+    ; The slot name is the descriptor string sealed as Hash/v1.
+    PUSH "ignis0/capability/Synthesis/infer/v1"
+    SEAL "Hash/v1"
+    READSLOT           ; → CapId hash from the substrate slot table
+
+    ; ── Invoke ───────────────────────────────────────────────────────
+    INVOKE 2           ; pops cap_id + 2 args; pushes result_hash
+
+    RET
+
+  )
+)
+
+; ── Compute/gpu ───────────────────────────────────────────────────────────────
+;
+; (form
+;   :name    "Compute/gpu"
+;   :arity   3              ; (shader_hash, input_hash, output_size) → output_hash
+;   :locals  3
+;   :code    (...)
+; )
+;
+; Arguments (top-of-stack first):
+;   [TOS]   output_size  — Nat: byte length of the expected output buffer
+;   [TOS-1] input_hash   — Hash of Bytes/v1 substance (raw input bytes)
+;   [TOS-2] shader_hash  — Hash of Bytes/v1 substance (WGSL source text)
+;
+; Returns:
+;   output_hash — Hash of Bytes/v1 substance (raw GPU output bytes)
+
+(form
+  :name "Compute/gpu"
+  :locals-n 3
+  :code (
+
+    ; ── Store args ────────────────────────────────────────────────────
+    STORE 0            ; local[0] = output_size  (was TOS)
+    STORE 1            ; local[1] = input_hash   (was TOS-1)
+    STORE 2            ; local[2] = shader_hash  (was TOS-2)
+
+    ; ── Push args in capability protocol order ────────────────────────
+    ; Protocol: PUSH shader_hash; PUSH input_hash; PUSH output_size; PUSH cap_id; INVOKE 3
+    LOAD 2             ; push shader_hash
+    LOAD 1             ; push input_hash
+    LOAD 0             ; push output_size
+
+    ; ── Resolve the Compute/gpu CapId ────────────────────────────────
+    PUSH "ignis0/capability/Compute/gpu/v1"
+    SEAL "Hash/v1"
+    READSLOT           ; → CapId hash
+
+    ; ── Invoke ───────────────────────────────────────────────────────
+    INVOKE 3           ; pops cap_id + 3 args; pushes output_hash
+
+    RET
+
+  )
+)

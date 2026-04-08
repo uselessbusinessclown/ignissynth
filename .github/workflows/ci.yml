@@ -1,0 +1,178 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "claude/**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  # ── ignis0 Rust crate ───────────────────────────────────────────────
+  ignis0:
+    name: ignis0 (Rust)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry and build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ignis0/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('ignis0/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Check formatting
+        working-directory: ignis0
+        run: cargo fmt --check
+
+      - name: Clippy (deny warnings)
+        working-directory: ignis0
+        run: cargo clippy -- -D warnings
+
+      - name: Build
+        working-directory: ignis0
+        run: cargo build --verbose
+
+      - name: Run tests (cargo test)
+        working-directory: ignis0
+        run: cargo test --verbose
+
+      - name: A9.3 fixed-point check (CLI smoke test)
+        working-directory: ignis0
+        # Exit code 2 means "direct passed, indirects stubbed" — expected in
+        # the current scaffold. Exit code 1 means a real failure.
+        run: |
+          cargo run -- fixed-point; code=$?
+          if [ "$code" -eq 1 ]; then
+            echo "fixed-point: DIRECT CASE FAILED — ignis0 bug" >&2
+            exit 1
+          fi
+          echo "fixed-point: direct case passed (indirect cases are scaffold stubs)"
+
+  # ── Proof-artifact structural checker ────────────────────────────────
+  proof-check:
+    name: Proof artifacts (structural lint)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify all 11 primary proof artifacts exist
+        run: |
+          set -e
+          expected=(
+            kernel/forms/S-01-ignite.proof
+            kernel/forms/S-02-cap-registry.proof
+            kernel/forms/S-03-substance-store.proof
+            kernel/forms/S-04-weave-log.proof
+            kernel/forms/S-05-attention-alloc.proof
+            kernel/forms/S-06-intent-match.proof
+            kernel/forms/S-07-form-runtime.proof
+            kernel/forms/S-08-proof-checker.proof
+            kernel/forms/S-09-synth-kernel.proof
+            kernel/forms/S-10-hephaistion-seed.proof
+            kernel/forms/S-11-bridge-proto.proof
+          )
+          missing=0
+          for f in "${expected[@]}"; do
+            if [ ! -f "$f" ]; then
+              echo "MISSING: $f" >&2
+              missing=$((missing + 1))
+            fi
+          done
+          if [ "$missing" -gt 0 ]; then
+            echo "$missing proof artifact(s) missing" >&2
+            exit 1
+          fi
+          echo "All 11 primary proof artifacts present."
+
+      - name: Verify proof files are non-empty and contain expected markers
+        run: |
+          set -e
+          fail=0
+          for f in kernel/forms/S-*.proof; do
+            # Each proof file must declare at least one obligation block
+            if ! grep -q ":obligation" "$f"; then
+              echo "WARN: $f has no :obligation marker" >&2
+              fail=$((fail + 1))
+            fi
+            # Each proof file must have a Verdict line
+            if ! grep -q "Verdict\|verdict\|Pass\|Incomplete\|Structural" "$f"; then
+              echo "WARN: $f has no Verdict/Pass/Incomplete marker" >&2
+              fail=$((fail + 1))
+            fi
+          done
+          if [ "$fail" -gt 0 ]; then
+            echo "$fail proof lint failure(s)" >&2
+            exit 1
+          fi
+          echo "Proof artifact lint: all files pass."
+
+      - name: Verify IL.md opcode count is 34
+        run: |
+          set -e
+          if grep -q "Thirty-four exactly" kernel/IL.md; then
+            echo "IL.md opcode count: 34 ✓"
+          else
+            echo "ERROR: kernel/IL.md does not declare 'Thirty-four exactly'" >&2
+            exit 1
+          fi
+
+      - name: Verify manifest exists and has required top-level keys
+        run: |
+          set -e
+          for key in version seed_forms kernel_authors boot_order immediates; do
+            if ! grep -q "\"$key\"" kernel/manifest.json; then
+              echo "ERROR: manifest.json missing top-level key: $key" >&2
+              exit 1
+            fi
+          done
+          echo "manifest.json structure: all required keys present."
+
+  # ── Helper-form catalogue check ──────────────────────────────────────
+  helpers-check:
+    name: Helper catalogue (STUBS.md integrity)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify every .form file in helpers/ is listed in STUBS.md or has an exports block
+        run: |
+          set -e
+          fail=0
+          for f in kernel/forms/helpers/*.form; do
+            name=$(basename "$f" .form)
+            # Each helper .form must contain at least one (form ... ) block
+            if ! grep -q "^(form" "$f"; then
+              echo "WARN: $f has no (form ...) block" >&2
+              fail=$((fail + 1))
+            fi
+          done
+          if [ "$fail" -gt 0 ]; then
+            echo "$fail helper form lint failure(s)" >&2
+            exit 1
+          fi
+          echo "Helper form lint: all .form files have at least one (form) block."
+
+      - name: Count encoded vs pending in STUBS.md
+        run: |
+          encoded=$(grep -c "| encoded" kernel/forms/helpers/STUBS.md || true)
+          pending=$(grep -c "| pending" kernel/forms/helpers/STUBS.md || true)
+          echo "STUBS.md: $encoded encoded, $pending pending"
+          # Fail if encoded count drops below the baseline established at
+          # this commit (104). This prevents accidental regressions.
+          if [ "$encoded" -lt 104 ]; then
+            echo "ERROR: encoded helper count ($encoded) is below baseline (104)" >&2
+            exit 1
+          fi

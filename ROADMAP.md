@@ -40,7 +40,7 @@ problem rather than an open design problem.
 | # | Artifact                                                              | Status     |
 |---|-----------------------------------------------------------------------|------------|
 | 1 | 11 worked breakdowns (S-01..S-11)                                     | ✓ done     |
-| 2 | 30-opcode IL specification (`kernel/IL.md`)                           | ✓ done     |
+| 2 | 34-opcode IL specification (`kernel/IL.md`)                           | ✓ done     |
 | 3 | 11 encoded primary Forms (`kernel/forms/S-01..S-11.form`)             | ✓ done     |
 | 4 | Seed manifest (`kernel/manifest.json`)                                | ✓ done     |
 | 5 | Proof term language (`kernel/PROOF.md`)                               | ✓ done     |
