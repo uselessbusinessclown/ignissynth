@@ -17,6 +17,7 @@ pub mod pretty;
 pub mod registry;
 pub mod store;
 pub mod value;
+pub mod wire;
 
 pub use capability::{
     builtin_cap_id, CapabilityInvoker, CapabilityRegistry, GpuComputeConfig, InferenceConfig,
@@ -30,3 +31,4 @@ pub use pretty::{opcode_to_line, pretty_print, pretty_print_with_header};
 pub use registry::{FormRegistry, LoadedForm};
 pub use store::SubstanceStore;
 pub use value::{Hash, TrapKind, Value};
+pub use wire::{decode_form, encode_form, Form, WireError};
