@@ -1,19 +1,55 @@
 [package]
 name = "ignis0"
-version = "0.2.0-ignition"
+version = "0.3.0-compute"
 edition = "2021"
 description = "Stage-0 interpreter for IgnisSynth — the ignition substrate named by axiom A9"
 license = "MIT"
+
+[features]
+# Feature flags are additive and optional. The crate always builds
+# without them (CI runs without GPU drivers).
+#
+#   gpu    — enables wgpu-backed GPU compute shader dispatch
+#             (WGSL, cross-platform: Vulkan / Metal / DX12 / WebGPU)
+#
+#   infer  — enables the HTTP inference backend that calls any
+#             OpenAI-compatible /v1/completions endpoint
+#             (ollama, llama.cpp server, vllm, LM Studio, etc.)
+#
+#   compute — shorthand for both gpu + infer
+#
+default = []
+gpu     = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
+infer   = ["dep:ureq"]
+compute = ["gpu", "infer"]
 
 [dependencies]
 blake3 = "1.5"
 thiserror = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-# nom is used by the line-oriented .form parser in src/parser.rs.
-# A canonical s-expression parser is a later milestone; the
-# line-oriented parser is sufficient for the scaffold.
 nom = "7.1"
+
+# ── GPU compute (feature = "gpu") ──────────────────────────────────
+# wgpu provides cross-platform GPU access (Vulkan / Metal / DX12 /
+# WebGPU). Shaders are written in WGSL; ignis0 accepts them as
+# substances sealed under "WgslShader/v1".
+wgpu = { version = "0.20", optional = true, default-features = false,
+         features = ["wgsl"] }
+
+# pollster provides a minimal block_on executor for the async wgpu
+# initialization path. Keeps ignis0 free of a full async runtime.
+pollster = { version = "0.3", optional = true }
+
+# bytemuck is used for safe byte-level casts when reading GPU output
+# buffers back as &[u8] / &[f32] / etc.
+bytemuck = { version = "1.14", optional = true }
+
+# ── Inference (feature = "infer") ─────────────────────────────────
+# ureq is a minimal synchronous HTTP client used to call an
+# OpenAI-compatible /v1/completions or /v1/chat/completions endpoint.
+# Blocking (not async) keeps the capability dispatch path simple.
+ureq = { version = "2.9", optional = true, features = ["json"] }
 
 [[bin]]
 name = "ignis0"

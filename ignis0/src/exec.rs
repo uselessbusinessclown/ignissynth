@@ -26,6 +26,9 @@
 //!   invert the semantics of every Form that uses structured
 //!   early-exit.
 
+use std::sync::Arc;
+
+use crate::capability::CapabilityRegistry;
 use crate::opcode::Opcode;
 use crate::registry::FormRegistry;
 use crate::store::SubstanceStore;
@@ -114,12 +117,13 @@ pub enum ExecVerdict {
 }
 
 /// The interpreter. Holds a mutable reference to a store so
-/// opcodes like SEAL and READ can reach it. In this scaffold
-/// the interpreter does not hold a weave or a cap registry;
-/// opcodes that need them return `NotImplemented`.
+/// opcodes like SEAL and READ can reach it.
 pub struct Interpreter<'a> {
     pub store: &'a mut SubstanceStore,
     pub registry: Option<&'a FormRegistry>,
+    /// Capability registry for INVOKE dispatch. `None` means every
+    /// INVOKE traps `ENotHeld`.
+    pub cap_registry: Option<Arc<CapabilityRegistry>>,
     /// Maximum call depth. A trap fires when CALL would exceed
     /// this. Keeps runaway recursion bounded in the scaffold.
     pub max_call_depth: usize,
@@ -130,6 +134,7 @@ impl<'a> Interpreter<'a> {
         Self {
             store,
             registry: None,
+            cap_registry: None,
             max_call_depth: 256,
         }
     }
@@ -137,6 +142,12 @@ impl<'a> Interpreter<'a> {
     /// Attach a form registry so CALL can resolve callees.
     pub fn with_registry(mut self, registry: &'a FormRegistry) -> Self {
         self.registry = Some(registry);
+        self
+    }
+
+    /// Attach a capability registry so INVOKE can dispatch to Rust backends.
+    pub fn with_cap_registry(mut self, reg: Arc<CapabilityRegistry>) -> Self {
+        self.cap_registry = Some(reg);
         self
     }
 
@@ -169,14 +180,19 @@ impl<'a> Interpreter<'a> {
             op
         };
 
-        // CALL and RET mutate state.frames; handle them before
-        // reborrowing the top frame.
+        // CALL, RET, and INVOKE are handled before the top-frame
+        // reborrow so they can freely use self.store / self.cap_registry
+        // and mutate state.frames (CALL/RET) or drop the frame borrow
+        // before calling into capability code (INVOKE).
         match &op {
             Opcode::Call { form, n } => {
                 return self.do_call(state, *form, *n);
             }
             Opcode::Ret => {
                 return self.do_ret(state);
+            }
+            Opcode::Invoke { n } => {
+                return self.do_invoke(state, *n);
             }
             _ => {}
         }
@@ -272,10 +288,9 @@ impl<'a> Interpreter<'a> {
                 }
                 StepResult::Step
             }
-            // CALL and RET are handled above the match, before
-            // the top-frame borrow is re-acquired.
-            Opcode::Call { .. } | Opcode::Ret => {
-                unreachable!("CALL/RET handled above the match in step()")
+            // CALL, RET, and INVOKE are handled above the match.
+            Opcode::Call { .. } | Opcode::Ret | Opcode::Invoke { .. } => {
+                unreachable!("CALL/RET/INVOKE handled above the match in step()")
             }
 
             // ---- Structure ----
@@ -368,10 +383,10 @@ impl<'a> Interpreter<'a> {
                 }
             }
 
-            // ---- Capability (stubbed) ----
+            // ---- Capability ----
+            // INVOKE is handled above the match (do_invoke). The others remain stubbed.
             Opcode::CapHeld => StepResult::Trapped(TrapKind::NotImplemented("CAPHELD".into())),
             Opcode::Attenuate => StepResult::Trapped(TrapKind::NotImplemented("ATTENUATE".into())),
-            Opcode::Invoke => StepResult::Trapped(TrapKind::NotImplemented("INVOKE".into())),
             Opcode::Revoke => StepResult::Trapped(TrapKind::NotImplemented("REVOKE".into())),
 
             // ---- Weave (stubbed) ----
@@ -455,6 +470,59 @@ impl<'a> Interpreter<'a> {
             code: loaded.code,
         });
         StepResult::Step
+    }
+
+    /// Dispatch `INVOKE n`: pop the CapId from the top of the stack,
+    /// pop `n` args, call the capability registry, push the result.
+    ///
+    /// Popping and pushing happen in scoped borrows of `state` so
+    /// the mutable borrow is released before calling into the
+    /// capability backend (which itself needs `&mut self.store`).
+    fn do_invoke(&mut self, state: &mut ExecState, n: u32) -> StepResult {
+        // ── Pop cap_id + args in one scoped borrow ────────────────────
+        let (cap_id, args) = {
+            let s = state.top_mut();
+            // The CapId sits on top; args are below it (pushed first).
+            let cap_id = match s.stack.pop() {
+                Some(v) => match v.as_hash() {
+                    Ok(h) => h,
+                    Err(k) => return StepResult::Trapped(k),
+                },
+                None => {
+                    return StepResult::Trapped(TrapKind::type_mismatch(
+                        "INVOKE: stack empty (cap_id missing)",
+                    ))
+                }
+            };
+            let n = n as usize;
+            if s.stack.len() < n {
+                return StepResult::Trapped(TrapKind::type_mismatch(
+                    "INVOKE: not enough args on stack",
+                ));
+            }
+            // split_off preserves push order: args[0] was pushed first.
+            let split_at = s.stack.len() - n;
+            let args = s.stack.split_off(split_at);
+            (cap_id, args)
+        }; // ← mutable borrow of `state` released here
+
+        // ── Dispatch through capability registry ──────────────────────
+        // Clone the Arc (cheap ref-count bump) so we can use self.store
+        // mutably in the same expression without lifetime conflicts.
+        let result = match self.cap_registry.as_ref().map(Arc::clone) {
+            Some(reg) => reg.invoke(cap_id, args, self.store),
+            None => Err(TrapKind::ENotHeld),
+        };
+
+        // ── Push result or propagate trap ─────────────────────────────
+        let s = state.top_mut();
+        match result {
+            Ok(v) => {
+                s.stack.push(v);
+                StepResult::Step
+            }
+            Err(k) => StepResult::Trapped(k),
+        }
     }
 
     /// Pop the top frame, take its return value, and either

@@ -94,7 +94,7 @@ pub fn opcode_to_line(op: &Opcode) -> String {
         // ── Capability ────────────────────────────────────────────────
         Opcode::CapHeld => "CAPHELD".to_string(),
         Opcode::Attenuate => "ATTENUATE".to_string(),
-        Opcode::Invoke => "INVOKE".to_string(),
+        Opcode::Invoke { n } => format!("INVOKE {}", n),
         Opcode::Revoke => "REVOKE".to_string(),
 
         // ── Weave ─────────────────────────────────────────────────────
@@ -232,7 +232,7 @@ mod tests {
             (Opcode::Unpin, "UNPIN"),
             (Opcode::CapHeld, "CAPHELD"),
             (Opcode::Attenuate, "ATTENUATE"),
-            (Opcode::Invoke, "INVOKE"),
+            (Opcode::Invoke { n: 0 }, "INVOKE"),
             (Opcode::Revoke, "REVOKE"),
             (Opcode::Append, "APPEND"),
             (Opcode::Why, "WHY"),
