@@ -179,24 +179,24 @@ type system rather than the parser. To be encoded in a future
 
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
-| `Bytes/len`                     | `(Bytes) → Nat`                            | pending  |
-| `Bytes/slice`                   | `(Bytes, Nat, Nat) → Bytes`                | pending  |
-| `Bytes/to_nat_be`               | `(Bytes) → Nat`                            | pending  |
-| `Bytes/prepend`                 | `(Byte, Bytes) → Bytes`                    | pending  |
-| `Nat/mul`                       | `(Nat, Nat) → Nat`                         | pending  |
-| `Vec/len`                       | `(Vec) → Nat`                              | pending  |
-| `Vec/index`                     | `(Vec, Nat) → T`                           | pending  |
-| `Vec/tail`                      | `(Vec) → Vec`                              | pending  |
-| `Vec/from_bytes_offset`         | `(Bytes, Nat) → Vec`                       | pending  |
-| `Vec/append_persistent`         | `(Vec, T) → Vec`                           | pending  |
-| `Parser/cursor_byte`            | `(Cursor) → Byte`                          | pending  |
-| `Parser/scan_class_run_rec`     | `(Cursor, ClassTag) → Pair{Cursor, Bytes}` | pending  |
-| `Parser/fold_digits_acc`        | `(Bytes, Nat) → Nat`                       | pending  |
-| `Parser/resolve_sentinel`       | `(Bytes) → Hash`                           | pending  |
-| `Parser/hex_to_hash`            | `(Bytes) → Hash`                           | pending  |
-| `Parser/table_lookup`           | `(Hash, Bytes) → T`                        | pending  |
-| `Parser/trapkind_enumeration`   | `(Bytes) → TrapKind`                       | pending  |
-| `OpcodeSpec/schema_offset`      | `(Bytes) → Bytes`                          | pending  |
+| `Bytes/len`                     | `(Bytes) → Nat`                            | encoded (intrinsics.form) |
+| `Bytes/slice`                   | `(Bytes, Nat, Nat) → Bytes`                | encoded (intrinsics.form) |
+| `Bytes/to_nat_be`               | `(Bytes) → Nat`                            | encoded (intrinsics.form) |
+| `Bytes/prepend`                 | `(Byte, Bytes) → Bytes`                    | encoded (intrinsics.form) |
+| `Nat/mul`                       | `(Nat, Nat) → Nat`                         | encoded (intrinsics.form) |
+| `Vec/len`                       | `(Vec) → Nat`                              | encoded (intrinsics.form) |
+| `Vec/index`                     | `(Vec, Nat) → T`                           | encoded (intrinsics.form) |
+| `Vec/tail`                      | `(Vec) → Vec`                              | encoded (intrinsics.form) |
+| `Vec/from_bytes_offset`         | `(Bytes, Nat) → Vec`                       | encoded (intrinsics.form) |
+| `Vec/append_persistent`         | `(Vec, T) → Vec`                           | encoded (intrinsics.form) |
+| `Parser/cursor_byte`            | `(Cursor) → Byte`                          | encoded (intrinsics.form) |
+| `Parser/scan_class_run_rec`     | `(Cursor, ClassTag) → Pair{Cursor, Bytes}` | encoded (intrinsics.form) |
+| `Parser/fold_digits_acc`        | `(Bytes, Nat) → Nat`                       | encoded (intrinsics.form) |
+| `Parser/resolve_sentinel`       | `(Bytes) → Hash`                           | encoded (intrinsics.form) |
+| `Parser/hex_to_hash`            | `(Bytes) → Hash`                           | encoded (intrinsics.form) |
+| `Parser/table_lookup`           | `(Hash, Bytes) → T`                        | encoded (intrinsics.form) |
+| `Parser/trapkind_enumeration`   | `(Bytes) → TrapKind`                       | encoded (intrinsics.form) |
+| `OpcodeSpec/schema_offset`      | `(Bytes) → Bytes`                          | encoded (intrinsics.form) |
 
 ## Non-exempt helpers requiring proof artifacts
 
@@ -425,13 +425,13 @@ operational form of the IL specification.
 
 | Category              | Count    |
 |-----------------------|----------|
-| Encoded helpers       | 86       |
+| Encoded helpers       | 104      |
 | Stub-only helpers     | ~56      |
 | Schema/* primitives   | 7 (encoded) |
 | Parser/* primitives   | 13 (encoded) |
 | Parser/* byte-arithmetic leaves | 20 (encoded) |
 | Parser/* second-generation leaves | 10 (encoded) |
-| Third-generation intrinsics | 18 (catalogued, pending) |
+| Third-generation intrinsics | 18 (encoded — intrinsics.form) |
 | Non-exempt helpers requiring proofs | 3+ |
 | Parser stubs          | 4 (one per Form that does parsing) |
 | Trie/forest ops       | 14       |

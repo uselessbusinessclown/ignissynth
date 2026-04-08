@@ -299,7 +299,7 @@ a clear scope for the inspection-record review.
 5. ~~**Encode Parser/* primitives**~~ ✓ done (`parser-primitives.form` ships 13 sub-Forms)
 6. ~~**Encode Parser/* byte-arithmetic leaves**~~ ✓ done (`parser-bytes.form` ships 20 sub-Forms; 10 second-generation leaves catalogued)
 7. ~~**Encode Parser/* second-generation leaves + Schema/* primitives**~~ ✓ done (`primitives.form` ships 17 sub-Forms; 18 third-generation intrinsics catalogued)
-8. **Encode third-generation intrinsics** (`intrinsics.form` — kernel-level Bytes/Nat/Vec ops and the parser's deepest primitives)
+8. ~~**Encode third-generation intrinsics**~~ ✓ done (`intrinsics.form` ships 18 sub-Forms: Bytes/*, Nat/*, Vec/*, Parser/* deepest recursion helpers; parser chain is now fully encoded end-to-end)
 7. **Write `kernel/types/Trie.md`, `Treap.md`, `Forest.md`** (alongside their helper batches)
 8. **Write `kernel/forms/helpers/parser.proof`** (non-exempt helper)
 9. **Write `kernel/LOADER.md`** (no later than v0.5.0 start)
