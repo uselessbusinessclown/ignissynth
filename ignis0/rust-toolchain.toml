@@ -1,0 +1,8 @@
+[toolchain]
+# Pin to stable for reproducible CI builds. MSRV is declared via
+# `rust-version` in Cargo.toml (1.75). This file pins the *resolved*
+# toolchain used by `rustup` when entering the ignis0 directory so
+# local developer builds match CI.
+channel = "stable"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

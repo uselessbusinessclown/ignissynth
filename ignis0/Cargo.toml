@@ -4,6 +4,26 @@ version = "0.3.0-compute"
 edition = "2021"
 description = "Stage-0 interpreter for IgnisSynth — the ignition substrate named by axiom A9"
 license = "MIT"
+rust-version = "1.75"
+repository = "https://github.com/uselessbusinessclown/ignissynth"
+homepage = "https://github.com/uselessbusinessclown/ignissynth"
+readme = "README.md"
+keywords = ["ignissynth", "interpreter", "bootstrap", "ignition", "stage-0"]
+categories = ["compilers", "no-std::no-alloc"]
+
+# Reproducibility: pinned codegen settings so release artifacts are
+# byte-stable across identical toolchains. ignis0 is the substrate
+# under A9 — build determinism matters for attested ignition.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+debug = false
+panic = "abort"
+incremental = false
+
+[profile.dev]
+incremental = true
 
 [features]
 # Feature flags are additive and optional. The crate always builds

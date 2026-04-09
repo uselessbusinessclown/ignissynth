@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: ["main"]
 
+# Cancel superseded runs on the same ref to keep CI reproducible
+# and avoid wasted minutes on rapid-fire pushes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ── ignis0 Rust crate ───────────────────────────────────────────────
   ignis0:
@@ -27,37 +33,55 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ignis0/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('ignis0/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('ignis0/Cargo.toml', 'ignis0/Cargo.lock', 'ignis0/rust-toolchain.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
       - name: Check formatting
         working-directory: ignis0
-        run: cargo fmt --check
+        run: cargo fmt --all --check
 
-      - name: Clippy (deny warnings)
+      - name: Generate lockfile (if missing)
         working-directory: ignis0
-        run: cargo clippy -- -D warnings
+        # Cargo.lock is intentionally not committed yet (tracked as a
+        # follow-up under the Build Integrity milestone). Generate it
+        # once at the start of the job so subsequent steps run against
+        # a stable resolution for this run.
+        run: |
+          if [ ! -f Cargo.lock ]; then
+            cargo generate-lockfile
+          fi
+
+      - name: Clippy (deny warnings, all targets, all features)
+        working-directory: ignis0
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Build
         working-directory: ignis0
         run: cargo build --verbose
 
-      - name: Run tests (cargo test)
+      - name: Run tests
         working-directory: ignis0
         run: cargo test --verbose
 
       - name: A9.3 fixed-point check (CLI smoke test)
         working-directory: ignis0
-        # Exit code 2 means "direct passed, indirects stubbed" — expected in
-        # the current scaffold. Exit code 1 means a real failure.
+        # After v0.2.3-ignis0-fp all three A9.3 levels are live.
+        # The command must exit 0 and print a Pass verdict. Any non-zero
+        # exit — or a verdict that is not Pass — is a real regression.
         run: |
-          cargo run -- fixed-point; code=$?
-          if [ "$code" -eq 1 ]; then
-            echo "fixed-point: DIRECT CASE FAILED — ignis0 bug" >&2
+          set -e
+          output=$(cargo run --quiet -- fixed-point)
+          echo "$output"
+          if ! echo "$output" | grep -qi "fixed-point: PASS"; then
+            echo "fixed-point: expected PASS verdict, got something else" >&2
             exit 1
           fi
-          echo "fixed-point: direct case passed (indirect cases are scaffold stubs)"
+          if ! echo "$output" | grep -q "Nat(43)"; then
+            echo "fixed-point: expected Nat(43) in output" >&2
+            exit 1
+          fi
+          echo "fixed-point: all three A9.3 levels passed with Nat(43)."
 
   # ── Proof-artifact structural checker ────────────────────────────────
   proof-check:
