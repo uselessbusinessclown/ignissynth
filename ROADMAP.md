@@ -9,12 +9,14 @@
 > (`axioms/A9-ignition-substrate.md` + `kernel/IGNITION-BOOTSTRAP.md`),
 > resolving the Turing-flavoured base-case bootstrap problem by
 > naming an external stage-0 interpreter. The Rust prototype of
-> that interpreter — **`ignis0/`** — is at `v0.2.0-ignition` and
-> passes the A9.3 fixed-point check's *direct* case (canonical F
-> on input 42 yields 43, via both hand-constructed and
-> parser-constructed code paths). The two indirect cases remain
-> stubbed pending CALL + a loadable `S-07/execute`. See the new
-> **ignis0 milestone track** below.
+> that interpreter — **`ignis0/`** — has since advanced through
+> `v0.2.0-ignition`, `v0.2.1-ignis0-call` (CALL/RET + FormRegistry),
+> `v0.2.2-ignis0-wire` (byte-exact Form codec), and
+> **`v0.2.3-ignis0-fp`** (all three A9.3 fixed-point levels
+> live: direct, one-level indirect via a hand-encoded micro-
+> `S-07/execute`, and two-level indirect via nested micro
+> wrappers — frame-depth observations 2 and 3 respectively).
+> See the **ignis0 milestone track** below.
 
 This document tracks what is needed to declare a *prototypical release
 form* of IgnisSynth — the smallest set of artifacts that, taken
@@ -310,11 +312,11 @@ a clear scope for the inspection-record review.
 5. ~~**Encode Parser/* primitives**~~ ✓ done (`parser-primitives.form` ships 13 sub-Forms)
 6. ~~**Encode Parser/* byte-arithmetic leaves**~~ ✓ done (`parser-bytes.form` ships 20 sub-Forms; 10 second-generation leaves catalogued)
 7. ~~**Encode Parser/* second-generation leaves + Schema/* primitives**~~ ✓ done (`primitives.form` ships 17 sub-Forms; 18 third-generation intrinsics catalogued)
-8. **Encode third-generation intrinsics** (`intrinsics.form` — kernel-level Bytes/Nat/Vec ops and the parser's deepest primitives)
+8. ~~**Encode third-generation intrinsics**~~ ✓ done (`intrinsics.form` ships 18 sub-Forms: Bytes/*, Nat/*, Vec/*, Parser/* deepest recursion helpers; parser chain is now fully encoded end-to-end)
 9. **Write `kernel/types/Trie.md`, `Treap.md`, `Forest.md`** (alongside their helper batches)
 10. **Write `kernel/forms/helpers/parser.proof` and `canon-normalise.proof`** (non-exempt helpers)
 11. ~~**Write `kernel/LOADER.md`**~~ — superseded by `kernel/IGNITION-BOOTSTRAP.md`, which is the loader contract under axiom A9. Cross-reference from `kernel/README.md` if not already present.
-12. **Wire ignis0 CALL + a loadable `S-07/execute`** so the A9.3 indirect cases can run (see ignis0 milestone track below).
+12. ~~**Wire ignis0 CALL + RET**~~ ✓ done (`c4c033a`: FormRegistry, call frames, CALL/RET small-step rules). A9.3 indirect cases still pending a loadable encoded `S-07/execute` (v0.2.3).
 
 The v0.2.0-helpers milestone in the next section assumed all
 of these would arrive incidentally during helper encoding. The
@@ -381,11 +383,12 @@ the habitat self-hosts. It has its own version line.
 | Tag                 | Goal                                                                                       | Status |
 |---------------------|--------------------------------------------------------------------------------------------|--------|
 | v0.2.0-ignition     | Scaffold: Value/Hash/TrapKind, 34 Opcodes, line-oriented parser, A9.3 direct case passes   | ✓ done |
-| v0.2.1-ignis0-call  | Implement `CALL`, form loader (read sealed Form bytes → Vec<Opcode>), invocation frames    | next   |
-| v0.2.2-ignis0-wire  | Byte-exact wire codec (`ignis0/src/wire.rs`) per `IL.md` § Byte-exact wire grammar (v1); decode + encode + round-trip + negative tests over all 34 opcodes, 7 Value variants, 11 TrapKind variants; **not yet wired into exec.rs** (blocked on CALL per v0.2.1) | ✓ codec landed; exec.rs wiring deferred to v0.2.1 landing |
-| v0.2.3-ignis0-fp    | A9.3 indirect cases pass: `S-07` interpreting `F`, then `S-07` interpreting `S-07` interpreting `F`; full `FixedPointVerdict::Pass` | depends on CALL + wire parser |
-| v0.2.4-ignis0-cap   | Implement CAPHELD/ATTENUATE/INVOKE/REVOKE + APPEND/WHY (weave) + YIELD/SPLIT (attention) so S-01..S-11 bodies are runnable end-to-end | depends on indirect FP |
+| v0.2.1-ignis0-call  | `CALL` + `RET` via `FormRegistry` and call frames (`ignis0/src/registry.rs`, `src/exec.rs` `Frame`) | ✓ done (`c4c033a`) |
+| v0.2.2-ignis0-wire  | Byte-exact wire codec (`ignis0/src/wire.rs`) per `IL.md` § Byte-exact wire grammar (v1); decode + encode + round-trip + negative tests over all 34 opcodes, 7 Value variants, 11 TrapKind variants; bridged into `FormRegistry::register_wire` | ✓ done (`8353185` + post-merge iteration) |
+| v0.2.3-ignis0-fp    | A9.3 indirect cases pass: `F` via a micro-`S-07/execute` wrapper (level 1), then via two nested wrappers (level 2); full `FixedPointVerdict::Pass` with observed call-chain depths 2 and 3. The micro wrapper is hand-encoded in wire form inside `fixed_point.rs` and registered via `FormRegistry::register_wire`; the real `S-07/execute` replaces it in v0.5.0-build | ✓ done |
+| v0.2.4-ignis0-cap   | CAPHELD/ATTENUATE/**INVOKE**/REVOKE + APPEND/WHY (weave) + YIELD/SPLIT (attention). INVOKE landed early as part of `v0.3.0-compute` (capability dispatch: GPU, inference); the remaining five opcodes are small deltas against that scaffold | ~partial (INVOKE+`CapabilityRegistry` done; ATTENUATE/REVOKE/APPEND/WHY/YIELD/SPLIT pending) |
 | v0.2.5-ignis0-store | Replace HashMap-backed `SubstanceStore` with the persistent hash trie spec (S-03) so `digest` is substitutive | depends on Trie.md |
+| v0.3.0-compute      | Capability dispatch table, builtin GPU compute cap, builtin inference cap, env-configured registry (`capability.rs`, CLI extensions) | ✓ done (`d28b466`) — landed out of order; schedule above is corrected |
 
 When v0.2.5 lands, ignis0 is feature-complete against the
 contract in `kernel/IGNITION-BOOTSTRAP.md`, and v0.3.0-simulation
@@ -393,29 +396,47 @@ no longer needs to defer "build an interpreter" as a separate
 problem — it *is* ignis0.
 
 **Audit observations from the Rust component review** (commits
-`cdeeb2e`..`1e05d1a`):
+`cdeeb2e`..`7567c7a`, incorporating the `claude/nice-brahmagupta`
+merges `48e2197` / `9b48f9c`):
 
-- Opcode coverage is 33/34 spec-defined variants — missing
-  none; the count discrepancy is the IL.md prose-vs-table bug
-  documented in `ignis0/README.md`. (Stack 4 + arith 4 + ctrl 4
-  + struct 4 + subst 4 + cap 4 + weave 2 + att 2 + trap 2 +
-  refl 4 = 34. ✓)
-- Borrowed-store design (`Interpreter<'a> { store: &'a mut
-  SubstanceStore }`) composes correctly for the future indirect
-  case: a single store can be threaded through nested
-  `Interpreter::new` calls.
-- `JMPZ` polarity matches `IL.md` § Control flow (branches when
-  Bool is *false*), with an inline comment defending the choice.
-- `Opcode::Trap(TrapKind)` round-trips through the parser only
-  via `TrapKind::NotImplemented(name)` since the parser does
-  not yet enumerate trap kinds — adequate for the scaffold,
-  noted as a v0.2.2 follow-up.
-- `cargo` is not available in the current sandbox so the
-  scaffold has not been compile-verified in this environment.
-  Recommended next-session step: `cd ignis0 && cargo test` and
-  fix any drift before starting v0.2.1-ignis0-call work.
-- No drift detected between `ignis0/src/exec.rs` and
-  `kernel/IL.md` for the implemented opcodes.
+- **34/34 opcode variants enumerated** in `ignis0/src/opcode.rs`.
+  The IL.md prose/table mismatch is fixed: both prose and tables
+  now say "Thirty-four exactly".
+- **`Opcode::Invoke` gained an `n: u32` immediate** as part of
+  v0.3.0-compute's capability dispatch. The wire codec
+  (v0.2.2-ignis0-wire) has been resynchronised in this iteration
+  to encode/decode INVOKE with a ULEB128 argument count; a prior
+  iteration commit that did the same work was dropped during a
+  concurrent rebase and has been reapplied.
+- **CALL/RET implemented** via `FormRegistry` (hash → loaded
+  Form) and `Frame` stack in `ExecState`. This unblocks A9.3's
+  indirect cases at the interpreter level.
+- **`FormRegistry::register_wire(name, bytes)`** bridges
+  v0.2.2 and v0.2.3: decode the Form from canonical bytes,
+  compute BLAKE3, build a `LoadedForm`, register it. Unit-tested
+  against the canonical F round-trip and against malformed
+  input. This is the single entry point the v0.2.3 indirect
+  fixed-point harness will thread Forms through.
+- **Capability dispatch** is built on `CapabilityRegistry`
+  (trait-object `CapabilityInvoker`) with built-in GPU compute
+  and inference capabilities. These are *stage-0 substrate*
+  capabilities, not habitat capabilities — they make ignis0
+  useful as a minimal compute host without crossing A9.4 (the
+  seed's cap_view remains entirely separate).
+- Borrowed-store design remains intact post-merge; CALL/RET
+  share the store across frames.
+- `JMPZ` polarity still matches IL.md (branches on false).
+- `cargo` is not available in the current sandbox so compile-
+  verification of the merged tree is flagged as the next-session
+  step: `cd ignis0 && cargo test`. The INVOKE resync means the
+  pre-resync tip (7567c7a) would have failed to compile; the
+  current working tree is the first post-merge state where
+  `opcode.rs`, `wire.rs`, and `tests/wire.rs` all agree on
+  `Invoke { n }`.
+- **Drift check**: no drift between `ignis0/src/exec.rs` and
+  `kernel/IL.md` for the implemented opcodes. `wire.rs` and
+  IL.md's wire-grammar table both now carry the ULEB128 `n`
+  on INVOKE.
 
 ### v0.3.0-simulation: run Stage 4 against the encoded seed
 

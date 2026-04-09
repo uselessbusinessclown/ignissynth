@@ -15,6 +15,7 @@ use std::collections::HashMap;
 
 use crate::opcode::Opcode;
 use crate::value::Hash;
+use crate::wire::{decode_form, Form, WireError};
 
 /// A loaded Form ready for execution.
 #[derive(Clone, Debug)]
@@ -63,5 +64,76 @@ impl FormRegistry {
 
     pub fn is_empty(&self) -> bool {
         self.forms.is_empty()
+    }
+
+    /// Load a Form directly from its canonical wire bytes
+    /// (`kernel/IL.md` § "Byte-exact wire grammar (v1)"), compute
+    /// its content hash, and register it under that hash. Returns
+    /// the hash assigned.
+    ///
+    /// This is the bridge between `wire::decode_form` and the
+    /// CALL-resolution path: once `PARSEFORM` is wired to S-03,
+    /// this becomes the end-to-end load path. Until then it gives
+    /// the v0.2.3-ignis0-fp indirect-case harness a single entry
+    /// point for registering Forms from their canonical bytes.
+    ///
+    /// Naming: the content hash is BLAKE3 over the *entire* wire
+    /// byte sequence, including the trailing 32-byte self-hash.
+    /// This is the hash any reasonable sealer would assign, and
+    /// it matches what CALL expects at dispatch time.
+    pub fn register_wire(&mut self, name: &str, bytes: &[u8]) -> Result<Hash, WireError> {
+        let form: Form = decode_form(bytes)?;
+        let hash = Hash(*blake3::hash(bytes).as_bytes());
+        let loaded = LoadedForm {
+            code: form.code,
+            locals_n: form.locals_n as usize,
+            name: name.to_string(),
+        };
+        self.register(hash, loaded);
+        Ok(hash)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::value::{TrapKind, Value};
+    use crate::wire::{encode_form, Form};
+
+    #[test]
+    fn register_wire_round_trip_through_registry() {
+        // The A9.3 canonical F, encoded to wire bytes, decoded,
+        // and registered. A subsequent lookup by the returned
+        // hash must produce a LoadedForm whose code matches.
+        let form = Form {
+            type_tag: "Form/v1".to_string(),
+            arity: 1,
+            locals_n: 1,
+            declared_caps: vec![],
+            declared_traps: vec![TrapKind::EType("Nat".into())],
+            code: vec![
+                Opcode::Store(0),
+                Opcode::Load(0),
+                Opcode::Push(Value::Nat(1)),
+                Opcode::Add,
+                Opcode::Ret,
+            ],
+        };
+        let bytes = encode_form(&form).unwrap();
+        let mut reg = FormRegistry::new();
+        let h = reg.register_wire("canonical_F", &bytes).unwrap();
+        let loaded = reg.get(&h).expect("form must be registered");
+        assert_eq!(loaded.name, "canonical_F");
+        assert_eq!(loaded.locals_n, 1);
+        assert_eq!(loaded.code, form.code);
+        assert!(reg.get_by_name("canonical_F").is_some());
+    }
+
+    #[test]
+    fn register_wire_rejects_bad_bytes() {
+        let mut reg = FormRegistry::new();
+        let err = reg.register_wire("garbage", &[0u8; 4]).unwrap_err();
+        assert!(matches!(err, WireError::Truncated));
+        assert!(reg.is_empty());
     }
 }

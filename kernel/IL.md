@@ -287,7 +287,7 @@ bump of `magic`.
 | 0x13 | UNPIN      | —                                                         |
 | 0x14 | CAPHELD    | —                                                         |
 | 0x15 | ATTENUATE  | —                                                         |
-| 0x16 | INVOKE     | —                                                         |
+| 0x16 | INVOKE     | ULEB128 u32 `n` (argument count)                          |
 | 0x17 | REVOKE     | —                                                         |
 | 0x18 | APPEND     | —                                                         |
 | 0x19 | WHY        | —                                                         |

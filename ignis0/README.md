@@ -12,12 +12,13 @@ A compilable, testable Rust scaffold that:
 2. Implements the direct-execution interpreter for the opcodes
    needed to run the canonical fixed-point Form `F` (`STORE`,
    `LOAD`, `PUSH`, `ADD`, `RET`).
-3. Wires up the A9.3 fixed-point check harness for the direct
-   case.
-4. Stubs the indirect cases (one-level and two-level S-07
-   interpretation) honestly — they compile, return an
-   explicit `NotImplemented` verdict, and cite the specific
-   pending work items.
+3. Wires up the A9.3 fixed-point check harness for **all three
+   levels**: direct (F on 42 → 43), one-level indirect via a
+   hand-encoded micro-`S-07/execute` wrapper that `CALL`s F,
+   and two-level indirect via a second wrapper that `CALL`s
+   the first. Each indirect level is registered through
+   `FormRegistry::register_wire` and produces a call chain
+   whose observed frame depth matches the expected 2 / 3.
 5. Uses BLAKE3 for substance hashing (matching S-03's
    content-addressing contract).
 6. Provides an in-memory substance store that satisfies the
@@ -27,13 +28,13 @@ A compilable, testable Rust scaffold that:
 
 - A complete stage-0 implementation. Most opcodes are stubbed
   with `Trap::NotImplemented`.
-- Wired up to the wire parser yet. A byte-exact codec for
-  Form wire bytes lives in `src/wire.rs` and is exercised by
-  `tests/wire.rs` (round-trip property tests over randomly
-  generated Forms), but the interpreter still runs against
-  hand-constructed or line-parsed `Vec<Opcode>` because CALL
-  and a form loader are prerequisites — see v0.2.1-ignis0-call
-  in `../ROADMAP.md`.
+- A full canonical-parser load path from sealed substances.
+  The wire codec in `src/wire.rs` is used by the v0.2.3 fixed-
+  point harness via `FormRegistry::register_wire`, but the
+  "`PARSEFORM` → `S-03.read` → decode" chain that a real
+  ignition would use is still stubbed. The micro-S-07 wrapper
+  in `fixed_point.rs` is a stage-0 stand-in for the real
+  `S-07/execute`, not a replacement for it.
 - A proof checker. Step 4 of the ignition sequence
   (`IGNITION-BOOTSTRAP.md` § Step 4) is not yet implemented.
 - A ten-step ignition sequence. Only Step 2 (the fixed-point
