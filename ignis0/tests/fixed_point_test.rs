@@ -1,9 +1,11 @@
 //! Integration test for the A9.3 fixed-point check.
 //!
-//! Exercises the direct case of the canonical Form F from
-//! `../../kernel/IGNITION-BOOTSTRAP.md` § Step 2. The indirect
-//! cases are stubbed in this scaffold and will gain their own
-//! tests once the canonical parser and CALL opcode are wired up.
+//! Exercises all three levels of the check (direct + two
+//! indirection levels) using the v0.2.3-ignis0-fp machinery:
+//! the canonical F from `../../kernel/IGNITION-BOOTSTRAP.md`
+//! § Step 2 is registered via the wire codec and invoked
+//! through hand-encoded micro-`S-07/execute` wrappers that
+//! use `CALL` to reach it.
 
 use ignis0::exec::{ExecState, ExecVerdict, Interpreter};
 use ignis0::fixed_point::{FixedPointCheck, FixedPointVerdict};
@@ -83,16 +85,84 @@ fn canonical_f_on_non_nat_traps_etype() {
     }
 }
 
-/// Full harness: direct passes, indirects stubbed.
+/// v0.2.3-ignis0-fp: full harness, all three levels live.
+/// Direct, one-level indirect, and two-level indirect all
+/// produce Nat(43); the frame-depth observations match the
+/// expected call chain (2 for level 1, 3 for level 2).
 #[test]
-fn fixed_point_harness_is_incomplete_scaffold() {
+fn fixed_point_harness_passes_all_three_levels() {
     let mut check = FixedPointCheck::new();
     match check.run() {
-        FixedPointVerdict::Incomplete { direct, .. } => {
+        FixedPointVerdict::Pass {
+            direct,
+            indirect_1,
+            indirect_2,
+            indirect_1_max_depth,
+            indirect_2_max_depth,
+        } => {
             assert_eq!(direct, Value::Nat(43));
+            assert_eq!(indirect_1, Value::Nat(43));
+            assert_eq!(indirect_2, Value::Nat(43));
+            assert_eq!(
+                indirect_1_max_depth, 2,
+                "indirect_1 chain should be micro_s07 → F"
+            );
+            assert_eq!(
+                indirect_2_max_depth, 3,
+                "indirect_2 chain should be micro_s07² → micro_s07 → F"
+            );
         }
-        other => panic!("expected Incomplete, got {:?}", other),
+        other => panic!("expected Pass, got {:?}", other),
     }
+}
+
+/// Indirect level 1 in isolation: micro-S-07(F)(42) = 43.
+#[test]
+fn eval_indirect_1_yields_43_via_call() {
+    let mut check = FixedPointCheck::new();
+    match check.eval_indirect_1(42) {
+        ignis0::fixed_point::EvalVerdict::ProducedTraced(v, d) => {
+            assert_eq!(v, Value::Nat(43));
+            assert_eq!(d, 2, "call chain: micro_s07 frame over F frame");
+        }
+        other => panic!("expected ProducedTraced, got {:?}", other),
+    }
+}
+
+/// Indirect level 2 in isolation: micro-S-07²(F)(42) = 43
+/// and the call chain reaches depth 3 (S-07² → S-07 → F).
+#[test]
+fn eval_indirect_2_yields_43_via_double_call() {
+    let mut check = FixedPointCheck::new();
+    match check.eval_indirect_2(42) {
+        ignis0::fixed_point::EvalVerdict::ProducedTraced(v, d) => {
+            assert_eq!(v, Value::Nat(43));
+            assert_eq!(d, 3, "call chain: s07² → s07 → F");
+        }
+        other => panic!("expected ProducedTraced, got {:?}", other),
+    }
+}
+
+/// The three paths must agree on the value, per A9.3.
+#[test]
+fn three_paths_agree_on_canonical_input() {
+    let mut check = FixedPointCheck::new();
+    let direct = check.eval_direct(42).as_nat();
+    let i1 = check.eval_indirect_1(42).as_nat();
+    let i2 = check.eval_indirect_2(42).as_nat();
+    assert_eq!(direct, Some(43));
+    assert_eq!(i1, Some(43));
+    assert_eq!(i2, Some(43));
+}
+
+/// Sanity: the indirect path also works on input 0, which
+/// stresses a different ADD boundary. Both levels should
+/// produce Nat(1).
+#[test]
+fn indirect_paths_agree_on_zero_input() {
+    let mut check = FixedPointCheck::new();
+    assert_eq!(check.eval_indirect_1(0).as_nat(), Some(1));
+    assert_eq!(check.eval_indirect_2(0).as_nat(), Some(1));
 }
 
 /// Store seal/seal/seal idempotency.

@@ -9,12 +9,14 @@
 > (`axioms/A9-ignition-substrate.md` + `kernel/IGNITION-BOOTSTRAP.md`),
 > resolving the Turing-flavoured base-case bootstrap problem by
 > naming an external stage-0 interpreter. The Rust prototype of
-> that interpreter — **`ignis0/`** — is at `v0.2.0-ignition` and
-> passes the A9.3 fixed-point check's *direct* case (canonical F
-> on input 42 yields 43, via both hand-constructed and
-> parser-constructed code paths). The two indirect cases remain
-> stubbed pending CALL + a loadable `S-07/execute`. See the new
-> **ignis0 milestone track** below.
+> that interpreter — **`ignis0/`** — has since advanced through
+> `v0.2.0-ignition`, `v0.2.1-ignis0-call` (CALL/RET + FormRegistry),
+> `v0.2.2-ignis0-wire` (byte-exact Form codec), and
+> **`v0.2.3-ignis0-fp`** (all three A9.3 fixed-point levels
+> live: direct, one-level indirect via a hand-encoded micro-
+> `S-07/execute`, and two-level indirect via nested micro
+> wrappers — frame-depth observations 2 and 3 respectively).
+> See the **ignis0 milestone track** below.
 
 This document tracks what is needed to declare a *prototypical release
 form* of IgnisSynth — the smallest set of artifacts that, taken
@@ -383,7 +385,7 @@ the habitat self-hosts. It has its own version line.
 | v0.2.0-ignition     | Scaffold: Value/Hash/TrapKind, 34 Opcodes, line-oriented parser, A9.3 direct case passes   | ✓ done |
 | v0.2.1-ignis0-call  | `CALL` + `RET` via `FormRegistry` and call frames (`ignis0/src/registry.rs`, `src/exec.rs` `Frame`) | ✓ done (`c4c033a`) |
 | v0.2.2-ignis0-wire  | Byte-exact wire codec (`ignis0/src/wire.rs`) per `IL.md` § Byte-exact wire grammar (v1); decode + encode + round-trip + negative tests over all 34 opcodes, 7 Value variants, 11 TrapKind variants; bridged into `FormRegistry::register_wire` | ✓ done (`8353185` + post-merge iteration) |
-| v0.2.3-ignis0-fp    | A9.3 indirect cases pass: `S-07` interpreting `F`, then `S-07` interpreting `S-07` interpreting `F`; full `FixedPointVerdict::Pass`. Requires a *loadable* encoded `S-07/execute` — either a minimal hand-encoded micro-S-07 in wire form, or the real one once v0.5.0-build resolves placeholders | **next** — unblocked by v0.2.1 + v0.2.2 |
+| v0.2.3-ignis0-fp    | A9.3 indirect cases pass: `F` via a micro-`S-07/execute` wrapper (level 1), then via two nested wrappers (level 2); full `FixedPointVerdict::Pass` with observed call-chain depths 2 and 3. The micro wrapper is hand-encoded in wire form inside `fixed_point.rs` and registered via `FormRegistry::register_wire`; the real `S-07/execute` replaces it in v0.5.0-build | ✓ done |
 | v0.2.4-ignis0-cap   | CAPHELD/ATTENUATE/**INVOKE**/REVOKE + APPEND/WHY (weave) + YIELD/SPLIT (attention). INVOKE landed early as part of `v0.3.0-compute` (capability dispatch: GPU, inference); the remaining five opcodes are small deltas against that scaffold | ~partial (INVOKE+`CapabilityRegistry` done; ATTENUATE/REVOKE/APPEND/WHY/YIELD/SPLIT pending) |
 | v0.2.5-ignis0-store | Replace HashMap-backed `SubstanceStore` with the persistent hash trie spec (S-03) so `digest` is substitutive | depends on Trie.md |
 | v0.3.0-compute      | Capability dispatch table, builtin GPU compute cap, builtin inference cap, env-configured registry (`capability.rs`, CLI extensions) | ✓ done (`d28b466`) — landed out of order; schedule above is corrected |
