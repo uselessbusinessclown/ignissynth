@@ -126,13 +126,19 @@ fn run_fixed_point() {
     let verdict = check.run();
 
     match verdict {
-        FixedPointVerdict::Pass { direct, indirect_1, indirect_2 } => {
+        FixedPointVerdict::Pass {
+            direct,
+            indirect_1,
+            indirect_2,
+            indirect_1_max_depth,
+            indirect_2_max_depth,
+        } => {
             println!("fixed-point: PASS");
             println!("  direct     = {:?}", direct);
-            println!("  indirect_1 = {:?}", indirect_1);
-            println!("  indirect_2 = {:?}", indirect_2);
+            println!("  indirect_1 = {:?} (max frame depth {})", indirect_1, indirect_1_max_depth);
+            println!("  indirect_2 = {:?} (max frame depth {})", indirect_2, indirect_2_max_depth);
             println!("\nA9.3 necessary condition holds. ignis0 is faithful to");
-            println!("the IL on the canonical case.");
+            println!("the IL on the canonical case across all three levels.");
         }
         FixedPointVerdict::Incomplete {
             direct,
