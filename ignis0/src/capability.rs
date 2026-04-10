@@ -116,6 +116,13 @@ impl CapabilityRegistry {
     pub fn is_empty(&self) -> bool {
         self.invokers.is_empty()
     }
+
+    /// Check whether a capability is registered under `cap_id`.
+    /// This is the stage-0 implementation of `cap_view.contains(c)`
+    /// from IL.md § Capability.
+    pub fn contains(&self, cap_id: &Hash) -> bool {
+        self.invokers.contains_key(cap_id)
+    }
 }
 
 // ── Well-known capability IDs ─────────────────────────────────────────

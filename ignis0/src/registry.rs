@@ -32,6 +32,11 @@ pub struct LoadedForm {
 pub struct FormRegistry {
     forms: HashMap<Hash, LoadedForm>,
     by_name: HashMap<String, Hash>,
+    /// Slot bindings: name_hash → form_hash. Backing store for the
+    /// IL's READSLOT and BINDSLOT opcodes. At stage-0 these are plain
+    /// HashMap entries rather than the persistent trie S-07 uses in the
+    /// habitat (that path requires v0.2.5-ignis0-store).
+    slots: HashMap<Hash, Hash>,
 }
 
 impl FormRegistry {
@@ -64,6 +69,24 @@ impl FormRegistry {
 
     pub fn is_empty(&self) -> bool {
         self.forms.is_empty()
+    }
+
+    /// Bind a name slot to a Form hash. Overwrites any previous binding.
+    ///
+    /// This is the stage-0 backing store for `BINDSLOT`. At stage-0
+    /// callers here must hold the kernel mutation capability out-of-band
+    /// (the opcode itself guards via `EUnauthorised`); this method does
+    /// not enforce that constraint because it is called by trusted Rust
+    /// harness code, not by IL forms.
+    pub fn bind_slot(&mut self, name_hash: Hash, form_hash: Hash) {
+        self.slots.insert(name_hash, form_hash);
+    }
+
+    /// Look up the Form hash currently bound to `name_hash`.
+    /// Returns `None` if the slot is unbound.
+    /// This is the stage-0 backing store for `READSLOT`.
+    pub fn read_slot(&self, name_hash: &Hash) -> Option<Hash> {
+        self.slots.get(name_hash).copied()
     }
 
     /// Load a Form directly from its canonical wire bytes

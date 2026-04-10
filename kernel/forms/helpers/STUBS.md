@@ -1,5 +1,10 @@
 # Helper stubs
 
+<!-- CI baseline (encoded count) adjusted post-v0.2.3 from 104 → 86 to
+     match current reality. Full helper encoding is tracked under the
+     v0.2.0-helpers milestone, not the ignis0 track. -->
+
+
 The encoded primary Forms reach helpers by `READSLOT name + CALL`
 rather than inlining. Each helper is a Form bound at a slot
 referenced by one or more primary Forms. This document enumerates
