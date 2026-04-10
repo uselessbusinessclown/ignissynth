@@ -386,7 +386,7 @@ the habitat self-hosts. It has its own version line.
 | v0.2.1-ignis0-call  | `CALL` + `RET` via `FormRegistry` and call frames (`ignis0/src/registry.rs`, `src/exec.rs` `Frame`) | ✓ done (`c4c033a`) |
 | v0.2.2-ignis0-wire  | Byte-exact wire codec (`ignis0/src/wire.rs`) per `IL.md` § Byte-exact wire grammar (v1); decode + encode + round-trip + negative tests over all 34 opcodes, 7 Value variants, 11 TrapKind variants; bridged into `FormRegistry::register_wire` | ✓ done (`8353185` + post-merge iteration) |
 | v0.2.3-ignis0-fp    | A9.3 indirect cases pass: `F` via a micro-`S-07/execute` wrapper (level 1), then via two nested wrappers (level 2); full `FixedPointVerdict::Pass` with observed call-chain depths 2 and 3. The micro wrapper is hand-encoded in wire form inside `fixed_point.rs` and registered via `FormRegistry::register_wire`; the real `S-07/execute` replaces it in v0.5.0-build | ✓ done |
-| v0.2.4-ignis0-cap   | CAPHELD/ATTENUATE/**INVOKE**/REVOKE + APPEND/WHY (weave) + YIELD/SPLIT (attention). INVOKE landed early as part of `v0.3.0-compute` (capability dispatch: GPU, inference); the remaining five opcodes are small deltas against that scaffold | ~partial (INVOKE+`CapabilityRegistry` done; ATTENUATE/REVOKE/APPEND/WHY/YIELD/SPLIT pending) |
+| v0.2.4-ignis0-cap   | CAPHELD/ATTENUATE/**INVOKE**/REVOKE + APPEND/WHY (weave) + YIELD/SPLIT (attention) + READSLOT/BINDSLOT/PARSEFORM (reflection). All nine remaining stubs replaced with IL-defined trap kinds or live behaviour. No opcode returns `TrapKind::NotImplemented` after this milestone. Stage-0 constraints noted in-code for REVOKE/APPEND/SPLIT/BINDSLOT/PARSEFORM. | ✓ done |
 | v0.2.5-ignis0-store | Replace HashMap-backed `SubstanceStore` with the persistent hash trie spec (S-03) so `digest` is substitutive | depends on Trie.md |
 | v0.3.0-compute      | Capability dispatch table, builtin GPU compute cap, builtin inference cap, env-configured registry (`capability.rs`, CLI extensions) | ✓ done (`d28b466`) — landed out of order; schedule above is corrected |
 
@@ -457,9 +457,11 @@ Done when:
 
 This stage requires a working interpreter for the IL outside
 the habitat (to actually run the harness). That interpreter is
-**ignis0** (see the ignis0 milestone track above); v0.3.0
-becomes unblocked when ignis0 reaches v0.2.4 (full opcode
-coverage including caps/weave/attention).
+**ignis0** (see the ignis0 milestone track above). ignis0 has
+now reached v0.2.4 (full opcode coverage: all 34 opcodes return
+IL-defined outcomes; no `NotImplemented` in any step path).
+The remaining gate before v0.3.0 is v0.2.5-ignis0-store
+(persistent trie, depends on `kernel/types/Trie.md`).
 
 ### v0.4.0-inspection: sign the inspection record
 

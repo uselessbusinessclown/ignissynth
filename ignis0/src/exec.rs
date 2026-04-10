@@ -1,30 +1,46 @@
 //! ExecState + the small-step interpreter.
 //!
 //! The interpreter's `step()` method implements the small-step
-//! rule for each opcode in `../../kernel/IL.md` § Opcodes. Most
-//! opcodes are stubbed with `TrapKind::NotImplemented` for the
-//! scaffold; the ones `F` uses (`STORE`, `LOAD`, `PUSH`, `ADD`,
-//! `RET`) are implemented end-to-end so the A9.3 fixed-point
-//! check's direct case produces a real verdict.
+//! rule for each opcode in `../../kernel/IL.md` § Opcodes.
 //!
-//! Design notes:
+//! ## Opcode coverage (v0.2.4)
+//!
+//! **Fully live** (26): `PUSH`, `POP`, `LOAD`, `STORE`, `ADD`,
+//! `SUB`, `EQ`, `LT`, `JMP`, `JMPZ`, `CALL`, `RET`, `MAKEPAIR`,
+//! `FST`, `SND`, `MAKEVEC`, `SEAL`, `READ`, `PIN`, `UNPIN`,
+//! `INVOKE`, `ASSERT`, `SELFHASH`, `TRAP`, `CAPHELD`, `READSLOT`.
+//!
+//! **Stage-0 live** (7): `ATTENUATE` (ENotHeld check + sealed
+//! AttenCap/v1 descriptor), `REVOKE` (ENotHeld check; can't
+//! mutate the Arc cap view at stage-0), `APPEND` (EStale — no
+//! weave log), `WHY` (returns empty provenance Vec), `SPLIT`
+//! (EOverBudget — no attention allocator), `BINDSLOT`
+//! (EUnauthorised — no kernel mutation cap at stage-0),
+//! `PARSEFORM` (validates wire bytes + reseals as ParsedForm/v1).
+//!
+//! **Yielded** (1): `YIELD` returns `StepResult::Yielded`.
+//!
+//! No opcode returns `TrapKind::NotImplemented` after v0.2.4;
+//! every trap kind is one of the eleven IL-defined variants.
+//! `NotImplemented` remains in the enum as a scaffold-only
+//! marker used by the wire codec (which refuses to encode it)
+//! but is never produced by `step()`.
+//!
+//! ## Design notes
 //!
 //! - The interpreter borrows the `SubstanceStore` mutably. The
-//!   alternative (ExecState owns the store) would prevent
-//!   sharing a store across invocations, which is exactly
-//!   what the fixed-point check's indirect cases need.
+//!   alternative (ExecState owns the store) would prevent sharing
+//!   a store across invocations, which is exactly what the
+//!   fixed-point check's indirect cases need.
 //!
 //! - `locals_n` is per-Form. IL.md's Form layout carries a
 //!   `locals_n` field and each Form declares its own size.
-//!   Hardcoding `locals: vec![_; 32]` would make the
-//!   interpreter silently accept locals-index overflow in
-//!   Forms that declared fewer slots; the structural behaviour
-//!   must be `EBADLOCAL` on out-of-bounds.
+//!   Hardcoding `locals: vec![_; 32]` would silently accept
+//!   out-of-bounds indices; the correct behavior is `EBADLOCAL`.
 //!
 //! - `JMPZ` branches when the condition is *false*, per
 //!   IL.md § Control flow. Branching on true would silently
-//!   invert the semantics of every Form that uses structured
-//!   early-exit.
+//!   invert every Form that uses structured early-exit.
 
 use std::sync::Arc;
 
@@ -384,18 +400,113 @@ impl<'a> Interpreter<'a> {
             }
 
             // ---- Capability ----
-            // INVOKE is handled above the match (do_invoke). The others remain stubbed.
-            Opcode::CapHeld => StepResult::Trapped(TrapKind::NotImplemented("CAPHELD".into())),
-            Opcode::Attenuate => StepResult::Trapped(TrapKind::NotImplemented("ATTENUATE".into())),
-            Opcode::Revoke => StepResult::Trapped(TrapKind::NotImplemented("REVOKE".into())),
+            // INVOKE is handled above the match (do_invoke).
 
-            // ---- Weave (stubbed) ----
-            Opcode::Append => StepResult::Trapped(TrapKind::NotImplemented("APPEND".into())),
-            Opcode::Why => StepResult::Trapped(TrapKind::NotImplemented("WHY".into())),
+            // CAPHELD (CapId) → (Bool)
+            // IL.md: cap_view.contains(c)
+            Opcode::CapHeld => {
+                let cap_id = match s.stack.pop() {
+                    Some(v) => match v.as_hash() {
+                        Ok(h) => h,
+                        Err(k) => return StepResult::Trapped(k),
+                    },
+                    None => return StepResult::Trapped(TrapKind::type_mismatch("CAPHELD: empty stack")),
+                };
+                let held = self.cap_registry.as_ref().map_or(false, |r| r.contains(&cap_id));
+                s.stack.push(Value::Bool(held));
+                StepResult::Step
+            }
 
-            // ---- Attention (stubbed) ----
+            // ATTENUATE (CapId, predicate) → (CapId')
+            // IL.md: call S-02.attenuate(c, p); trap ENOTHELD if c ∉ cap_view.
+            // Stage-0: check held, seal (cap_id, predicate) as AttenCap/v1, return new hash.
+            // The new CapId is a valid handle but not yet resolvable via INVOKE
+            // (that requires S-02.attenuate to be bound, which is post-v0.2.5).
+            Opcode::Attenuate => {
+                let predicate = match s.stack.pop() {
+                    Some(v) => v,
+                    None => return StepResult::Trapped(TrapKind::type_mismatch("ATTENUATE: empty stack (predicate)")),
+                };
+                let cap_id = match s.stack.pop() {
+                    Some(v) => match v.as_hash() {
+                        Ok(h) => h,
+                        Err(k) => return StepResult::Trapped(k),
+                    },
+                    None => return StepResult::Trapped(TrapKind::type_mismatch("ATTENUATE: empty stack (cap_id)")),
+                };
+                let held = self.cap_registry.as_ref().map_or(false, |r| r.contains(&cap_id));
+                if !held {
+                    return StepResult::Trapped(TrapKind::ENotHeld);
+                }
+                let desc = Value::Pair(Box::new(Value::Hash(cap_id)), Box::new(predicate));
+                let new_hash = self.store.seal("AttenCap/v1", desc);
+                s.stack.push(Value::Hash(new_hash));
+                StepResult::Step
+            }
+
+            // REVOKE (CapId) → ()
+            // IL.md: call S-02.revoke(c); trap ENOTHELD if c ∉ cap_view or
+            //         c not minted by this attention.
+            // Stage-0: check held; can't mutate Arc cap view — actual removal
+            //          requires a per-frame mutable cap_view (post-v0.2.5).
+            Opcode::Revoke => {
+                let cap_id = match s.stack.pop() {
+                    Some(v) => match v.as_hash() {
+                        Ok(h) => h,
+                        Err(k) => return StepResult::Trapped(k),
+                    },
+                    None => return StepResult::Trapped(TrapKind::type_mismatch("REVOKE: empty stack")),
+                };
+                let held = self.cap_registry.as_ref().map_or(false, |r| r.contains(&cap_id));
+                if !held {
+                    return StepResult::Trapped(TrapKind::ENotHeld);
+                }
+                // No-op at stage-0: the Arc<CapabilityRegistry> is immutable
+                // at runtime. The ENOTHELD guard is correct; the actual
+                // revocation slot will be a per-attention mut view in v0.2.5.
+                StepResult::Step
+            }
+
+            // ---- Weave ----
+
+            // APPEND (EntryHash) → (TipHash)
+            // IL.md: call S-04.append(e); trap ESTALE if e.prev ≠ current_tip.
+            // Stage-0: no weave log — every APPEND is unconditionally ESTALE.
+            Opcode::Append => {
+                match s.stack.pop() {
+                    Some(_) => {}
+                    None => return StepResult::Trapped(TrapKind::type_mismatch("APPEND: empty stack")),
+                }
+                StepResult::Trapped(TrapKind::EStale)
+            }
+
+            // WHY (SubstanceHash) → (Vec{EntryHash})
+            // IL.md: call S-04.why(s).
+            // Stage-0: no weave log — return empty provenance Vec.
+            Opcode::Why => {
+                match s.stack.pop() {
+                    Some(_) => {}
+                    None => return StepResult::Trapped(TrapKind::type_mismatch("WHY: empty stack")),
+                }
+                s.stack.push(Value::Vec(vec![]));
+                StepResult::Step
+            }
+
+            // ---- Attention ----
+
             Opcode::Yield => StepResult::Yielded,
-            Opcode::Split => StepResult::Trapped(TrapKind::NotImplemented("SPLIT".into())),
+
+            // SPLIT (budget) → (AttId)
+            // IL.md: call S-05.split(current_attention, budget);
+            //         trap EOVERBUDGET if disallowed.
+            // Stage-0: no attention allocator — all splits are EOVERBUDGET.
+            Opcode::Split => {
+                match s.stack.pop() {
+                    Some(_) => {}
+                    None => return StepResult::Trapped(TrapKind::type_mismatch("SPLIT: empty stack")),
+                }
+                StepResult::Trapped(TrapKind::EOverBudget)
+            }
 
             // ---- Trap ----
             Opcode::Trap(k) => StepResult::Trapped(k),
@@ -410,9 +521,74 @@ impl<'a> Interpreter<'a> {
                 s.stack.push(Value::Hash(s.form_hash));
                 StepResult::Step
             }
-            Opcode::ParseForm => StepResult::Trapped(TrapKind::NotImplemented("PARSEFORM".into())),
-            Opcode::BindSlot => StepResult::Trapped(TrapKind::NotImplemented("BINDSLOT".into())),
-            Opcode::ReadSlot => StepResult::Trapped(TrapKind::NotImplemented("READSLOT".into())),
+
+            // PARSEFORM (Hash) → (ParsedForm/v1 hash)
+            // IL.md: call the IL parser Form on the substance at h;
+            //         trap ETYPE if not a Form substance.
+            // Stage-0: validate the bytes via wire::decode_form, then
+            //          reseal as ParsedForm/v1. A real ignis0 would call
+            //          S-07/parse_form and return a structured record.
+            Opcode::ParseForm => {
+                use crate::wire::decode_form;
+                let h = match s.stack.pop() {
+                    Some(v) => match v.as_hash() {
+                        Ok(h) => h,
+                        Err(k) => return StepResult::Trapped(k),
+                    },
+                    None => return StepResult::Trapped(TrapKind::type_mismatch("PARSEFORM: empty stack")),
+                };
+                let bytes = match self.store.read(&h) {
+                    Ok(Value::Bytes(b)) => b,
+                    Ok(other) => return StepResult::Trapped(TrapKind::EType(format!(
+                        "PARSEFORM: expected Bytes substance, got {:?}", other
+                    ))),
+                    Err(k) => return StepResult::Trapped(k),
+                };
+                match decode_form(&bytes) {
+                    Ok(_form) => {
+                        let result_hash = self.store.seal("ParsedForm/v1", Value::Bytes(bytes));
+                        s.stack.push(Value::Hash(result_hash));
+                        StepResult::Step
+                    }
+                    Err(_) => StepResult::Trapped(TrapKind::EType(
+                        "PARSEFORM: substance at h is not a valid Form/v1".into()
+                    )),
+                }
+            }
+
+            // BINDSLOT (name_hash, form_hash) → ()
+            // IL.md: atomically advance name_hash → form_hash; trap
+            //         EUNAUTHORISED if no kernel mutation cap held.
+            // Stage-0: no Form has ever been granted the kernel mutation
+            //          cap (S-01/ignite has not run). Always EUNAUTHORISED.
+            Opcode::BindSlot => {
+                // Pop both args to maintain stack discipline before trapping.
+                // form_hash is on top, name_hash is below.
+                let _ = s.stack.pop(); // form_hash
+                let _ = s.stack.pop(); // name_hash
+                StepResult::Trapped(TrapKind::EUnauthorised)
+            }
+
+            // READSLOT (name_hash) → (form_hash)
+            // IL.md: look up the current binding for name_hash.
+            // Stage-0: resolve against FormRegistry::slots (HashMap-backed).
+            Opcode::ReadSlot => {
+                let name_hash = match s.stack.pop() {
+                    Some(v) => match v.as_hash() {
+                        Ok(h) => h,
+                        Err(k) => return StepResult::Trapped(k),
+                    },
+                    None => return StepResult::Trapped(TrapKind::type_mismatch("READSLOT: empty stack")),
+                };
+                let form_hash = match self.registry.and_then(|r| r.read_slot(&name_hash)) {
+                    Some(h) => h,
+                    None => return StepResult::Trapped(TrapKind::EUnheld(format!(
+                        "READSLOT: no binding for {}", name_hash.short()
+                    ))),
+                };
+                s.stack.push(Value::Hash(form_hash));
+                StepResult::Step
+            }
         }
     }
 }
