@@ -11,12 +11,19 @@
 > naming an external stage-0 interpreter. The Rust prototype of
 > that interpreter — **`ignis0/`** — has since advanced through
 > `v0.2.0-ignition`, `v0.2.1-ignis0-call` (CALL/RET + FormRegistry),
-> `v0.2.2-ignis0-wire` (byte-exact Form codec), and
-> **`v0.2.3-ignis0-fp`** (all three A9.3 fixed-point levels
-> live: direct, one-level indirect via a hand-encoded micro-
+> `v0.2.2-ignis0-wire` (byte-exact Form codec),
+> `v0.2.3-ignis0-fp` (all three A9.3 fixed-point levels live:
+> direct, one-level indirect via a hand-encoded micro-
 > `S-07/execute`, and two-level indirect via nested micro
-> wrappers — frame-depth observations 2 and 3 respectively).
-> See the **ignis0 milestone track** below.
+> wrappers — frame-depth observations 2 and 3 respectively),
+> and **`v0.2.4-ignis0-cap`** (all 34 opcodes now return
+> IL-defined outcomes — CAPHELD/ATTENUATE/REVOKE, APPEND/WHY,
+> SPLIT, READSLOT/BINDSLOT/PARSEFORM — with stage-0 constraints
+> noted in-code where the habitat substance for a behaviour
+> does not yet exist). Milestone 1 (Build Integrity) also
+> hardened `ignis0/Cargo.toml` with reproducibility settings,
+> pinned the toolchain, and tightened CI. See the **ignis0
+> milestone track** below.
 
 This document tracks what is needed to declare a *prototypical release
 form* of IgnisSynth — the smallest set of artifacts that, taken
