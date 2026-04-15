@@ -348,10 +348,9 @@ impl CapabilityInvoker for InferenceCapability {
                 )))
             }
         };
-        let prompt =
-            std::str::from_utf8(&prompt_bytes).map_err(|e| {
-                TrapKind::EType(format!("Synthesis/infer: prompt not valid UTF-8: {}", e))
-            })?;
+        let prompt = std::str::from_utf8(&prompt_bytes).map_err(|e| {
+            TrapKind::EType(format!("Synthesis/infer: prompt not valid UTF-8: {}", e))
+        })?;
 
         // Read optional params.
         let (max_tokens, temperature) = if args.len() >= 2 {
@@ -379,8 +378,7 @@ impl CapabilityInvoker for InferenceCapability {
             .map_err(|e| TrapKind::EType(format!("Synthesis/infer: HTTP error: {}", e)))?;
 
         // Seal the completion as a Bytes/v1 substance and return its hash.
-        let result_hash =
-            store.seal("Bytes/v1", Value::Bytes(completion.into_bytes()));
+        let result_hash = store.seal("Bytes/v1", Value::Bytes(completion.into_bytes()));
         Ok(Value::Hash(result_hash))
     }
 }

@@ -40,7 +40,7 @@ pub use pretty::{opcode_to_line, pretty_print, pretty_print_with_header};
 pub use registry::{FormRegistry, LoadedForm};
 pub use runner::{run_envelope, run_envelope_with_mode, EnvelopeMode, EnvelopeRunResult, OpDecision};
 pub use store::SubstanceStore;
-pub use value::{Hash, TrapKind, Value};
+pub use value::{Hash, SubstanceHash, TrapKind, Value};
 // Note: the `verify` function lives at `ignis0::verify::verify`. We do
 // not re-export it at the crate root because the identifier would
 // collide with the module name. Other items from the module are safe

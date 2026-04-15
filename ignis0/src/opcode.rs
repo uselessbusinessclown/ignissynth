@@ -13,7 +13,7 @@
 use crate::value::{Hash, TrapKind, Value};
 
 /// One instruction in a Form's code vec.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Opcode {
     // --- Stack and locals (4) ---
     /// PUSH imm — push an immediate value onto the stack.

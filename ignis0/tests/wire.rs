@@ -15,7 +15,7 @@
 //! crosses into the habitat.
 
 use ignis0::wire::{decode_form, encode_form, Form, WireError, MAGIC, VERSION};
-use ignis0::{Hash, Opcode, TrapKind, Value};
+use ignis0::{Hash, Opcode, SubstanceHash, TrapKind, Value};
 
 // ---------- splitmix64 PRNG ----------
 
@@ -51,7 +51,7 @@ impl Rng {
             let w = self.next_u64().to_le_bytes();
             chunk.copy_from_slice(&w);
         }
-        Hash(out)
+        SubstanceHash(out)
     }
     fn gen_string(&mut self, max_len: u32) -> String {
         let n = self.gen_u32(max_len);
@@ -205,7 +205,7 @@ fn canonical_bytes_are_deterministic() {
         type_tag: "Form/v1".into(),
         arity: 1,
         locals_n: 1,
-        declared_caps: vec![Hash([7u8; 32])],
+        declared_caps: vec![SubstanceHash([7u8; 32])],
         declared_traps: vec![TrapKind::EType("Nat".into())],
         code: vec![
             Opcode::Store(0),
@@ -337,10 +337,10 @@ fn every_opcode_tag_roundtrips_individually() {
         Opcode::Push(Value::Bool(false)),
         Opcode::Push(Value::Nat(0)),
         Opcode::Push(Value::Nat(u128::MAX)),
-        Opcode::Push(Value::Hash(Hash([3u8; 32]))),
+        Opcode::Push(Value::Hash(SubstanceHash([3u8; 32]))),
         Opcode::Push(Value::Bytes(vec![1, 2, 3, 4, 5])),
-        Opcode::Push(Value::Cell(Hash([4u8; 32]))),
-        Opcode::Push(Value::Cont(Hash([5u8; 32]))),
+        Opcode::Push(Value::Cell(SubstanceHash([4u8; 32]))),
+        Opcode::Push(Value::Cont(SubstanceHash([5u8; 32]))),
         Opcode::Pop,
         Opcode::Load(0),
         Opcode::Load(u32::MAX),
@@ -355,11 +355,11 @@ fn every_opcode_tag_roundtrips_individually() {
         Opcode::Jmp(i32::MIN),
         Opcode::Jmpz(-1),
         Opcode::Call {
-            form: Hash([9u8; 32]),
+            form: SubstanceHash([9u8; 32]),
             n: 0,
         },
         Opcode::Call {
-            form: Hash([9u8; 32]),
+            form: SubstanceHash([9u8; 32]),
             n: 42,
         },
         Opcode::CallI { n: 0 },
