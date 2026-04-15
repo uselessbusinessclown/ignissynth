@@ -1,0 +1,5 @@
+# cargo-fuzz build outputs
+target/
+corpus/
+artifacts/
+coverage/

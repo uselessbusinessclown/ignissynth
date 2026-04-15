@@ -119,6 +119,10 @@ ignis0/
     fixed_point_test.rs # A9.3 direct + indirect integration tests
     wire.rs             # wire codec round-trip + negative tests
     opcode_tests.rs     # per-opcode IL-outcome integration tests
+  fuzz/
+    Cargo.toml          # cargo-fuzz harness (separate crate)
+    fuzz_targets/       # decode_form, parse_form_lines
+    README.md           # how to run locally
 ```
 
 ## Relationship to IgnisSynth
