@@ -42,7 +42,7 @@ What is in the repository as of this commit:
 | IL specification    | `kernel/IL.md`                                                       | 34 opcodes, total small-step                |
 | Encoded Forms       | `kernel/forms/S-01..S-11.form`                                       | 11 of 11, written against the IL            |
 | Seed manifest       | `kernel/manifest.json`                                               | binds sources/proofs/immediates             |
-| Helper stubs        | `kernel/forms/helpers/STUBS.md`                                      | ~110 stubs catalogued; 1 helper encoded     |
+| Helper stubs        | `kernel/forms/helpers/STUBS.md`                                      | 86 helpers encoded across 10 files; remaining slots catalogued |
 | Proof term language | `kernel/PROOF.md`                                                    | 12 sorts, 17 constructors, 30-rule table    |
 | Proof artifacts     | `kernel/forms/S-XX-*.proof`                                          | **11 of 11** (10 end-to-end, S-08 structural) |
 | Inspection record   | `kernel/forms/S-08-*.inspection-record.md`                           | drafted; placeholder signatures             |
@@ -222,11 +222,16 @@ Two declarations carry most of the proof load:
 
 ## What is *not* in this repository
 
-- **A working interpreter for the IL.** `kernel/IL.md` is a specification;
-  `kernel/forms/S-07-form-runtime.form` is a Form that, *when interpreted*,
-  is the interpreter. The bootstrap problem is exactly the one
-  `synthesis/SEED.md` describes: an external synthesis event must
-  produce the first interpretable form of the seed.
+- **A habitat-side interpreter for the IL.** `kernel/IL.md` is a
+  specification; `kernel/forms/S-07-form-runtime.form` is a Form
+  that, *when interpreted*, is the interpreter. The bootstrap
+  problem is exactly the one `synthesis/SEED.md` describes: an
+  external synthesis event must produce the first interpretable
+  form of the seed. That external event is supplied by `ignis0/`
+  (axiom A9), which is a working stage-0 IL interpreter — all 34
+  opcodes return IL-defined outcomes as of v0.2.4-ignis0-cap —
+  but `ignis0` is explicitly *not* part of IgnisSynth and does
+  not run inside the habitat.
 - **A working proof checker.** `kernel/forms/S-08-proof-checker.form`
   encodes the natural-deduction kernel; the rule table substance, the
   abstract-model lemma library substance, and the hand-inspection record

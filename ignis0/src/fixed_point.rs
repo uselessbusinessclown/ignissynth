@@ -16,11 +16,18 @@
 //! concretely: add 1 to the input Nat, canonical input 42,
 //! expected output 43.
 //!
-//! This scaffold implements the direct case end-to-end and
-//! stubs the indirect cases honestly. Once `S-07/execute` is
-//! loadable by this interpreter (which requires the canonical
-//! parser from `../../kernel/forms/helpers/parser.form` and a
-//! working CALL opcode), the indirect cases can be enabled.
+//! As of v0.2.3-ignis0-fp this module implements all three
+//! levels end-to-end:
+//!   - direct: F on 42 → 43 against `ExecState`.
+//!   - indirect_1: a hand-encoded micro-`S-07/execute` wrapper
+//!     is registered via `FormRegistry::register_wire` and
+//!     `CALL`s F. Observed max call-frame depth: 2.
+//!   - indirect_2: a second wrapper `CALL`s the first. Observed
+//!     max call-frame depth: 3.
+//!
+//! The real `S-07/execute` Form replaces the micro wrapper at
+//! v0.5.0-build; until then the hand-encoded wrapper is the
+//! stage-0 stand-in per `IGNITION-BOOTSTRAP.md` § Step 2.
 
 use crate::exec::{ExecState, ExecVerdict, Interpreter, StepResult};
 use crate::opcode::Opcode;

@@ -149,10 +149,10 @@ fn run_fixed_point() {
             println!("  direct            = {:?}", direct);
             println!("  indirect_1 status = {}", indirect_1_status);
             println!("  indirect_2 status = {}", indirect_2_status);
-            println!("\nThe direct case passed. The indirect cases are stubbed in this");
-            println!("scaffold and will be exercised once the IL parser and CALL opcode");
-            println!("are wired up. A9.3 requires all three levels to agree before");
-            println!("ignition may proceed; this scaffold is not yet ignition-ready.");
+            println!("\nThe direct case passed but one or both indirect levels did not");
+            println!("produce a comparable result. Post-v0.2.3 this path should not fire;");
+            println!("if it does, treat it as an ignis0 bug. A9.3 requires all three");
+            println!("levels to agree before ignition may proceed.");
             std::process::exit(2);
         }
         FixedPointVerdict::DirectFailed(msg) => {
