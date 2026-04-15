@@ -36,6 +36,23 @@
 //! pulling in the full IL stack.
 
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+// ── Well-known capability names ──────────────────────────────────────
+//
+// The envelope-level capabilities are strings the payload's ops require
+// and the envelope declares. Keeping them as constants lets callers
+// (tests, CLI, derived forms) reference the same spelling, and removes
+// the stringly-typed foot-gun of a silent cap-name typo passing verify.
+
+/// Capability required by `Op::Write`. A declared `io.fs` is the
+/// envelope-level equivalent of an IL `:declared-caps` entry that
+/// grants filesystem write authority.
+pub const IO_FS_CAP: &str = "io.fs";
+
+/// Capability required by `Op::Infer`. Envelope-level analogue of the
+/// IL `Synthesis/infer/v1` cap.
+pub const INFER_REMOTE_CAP: &str = "infer.remote";
 
 /// Outcome of the (eventual) proof checker for a given Form.
 ///
@@ -83,8 +100,8 @@ impl Op {
     pub fn required_capability(&self) -> Option<&'static str> {
         match self {
             Op::Emit { .. } => None,
-            Op::Write { .. } => Some("io.fs"),
-            Op::Infer { .. } => Some("infer.remote"),
+            Op::Write { .. } => Some(IO_FS_CAP),
+            Op::Infer { .. } => Some(INFER_REMOTE_CAP),
         }
     }
 
@@ -93,6 +110,17 @@ impl Op {
     /// permits exactly the observable-only ops.
     pub fn is_observable_only(&self) -> bool {
         matches!(self, Op::Emit { .. })
+    }
+
+    /// Short lowercase tag used in structured output and diagnostics.
+    /// Mirrors `Opcode::mnemonic` for the IL; matches the serde
+    /// `rename_all = "lowercase"` tag on `Op`.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Op::Emit { .. } => "emit",
+            Op::Write { .. } => "write",
+            Op::Infer { .. } => "infer",
+        }
     }
 }
 
@@ -188,8 +216,7 @@ impl FormEnvelope {
         // serde_json with no whitespace and struct-declaration field
         // order is our canonical encoding.
         let bytes = serde_json::to_vec(&view).expect("canonical envelope view must serialize");
-        let h = blake3::hash(&bytes);
-        hex_lower(h.as_bytes())
+        blake3::hash(&bytes).to_hex().to_string()
     }
 
     /// Produce a copy with `hash` overwritten to the canonical value.
@@ -227,24 +254,9 @@ pub const GENESIS_RULE: &str = "genesis";
 
 /// JSON parse error wrapped so callers can match without depending on
 /// `serde_json` directly.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Error)]
+#[error("envelope JSON parse error: {0}")]
 pub struct EnvelopeParseError(pub String);
-
-impl std::fmt::Display for EnvelopeParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "envelope JSON parse error: {}", self.0)
-    }
-}
-
-impl std::error::Error for EnvelopeParseError {}
-
-fn hex_lower(bytes: &[u8]) -> String {
-    let mut s = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        s.push_str(&format!("{:02x}", b));
-    }
-    s
-}
 
 #[cfg(test)]
 mod tests {

@@ -11,7 +11,7 @@
 //! is then chosen from `proof_status`. So a deferred form may verify
 //! and still be denied full execution downstream — that is by design.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use crate::envelope::{EnvelopeParseError, FormEnvelope, ProofStatus};
@@ -70,6 +70,15 @@ impl Ledger {
                 path: dir.to_path_buf(),
                 source: e.to_string(),
             })?;
+            // `file_type` avoids a second stat compared to `path.is_file()`
+            // and gives us enough to skip subdirectories cheaply.
+            let is_file = entry
+                .file_type()
+                .map(|t| t.is_file())
+                .unwrap_or(false);
+            if !is_file {
+                continue;
+            }
             let path = entry.path();
             if !is_envelope_path(&path) {
                 continue;
@@ -94,19 +103,27 @@ fn is_envelope_path(path: &Path) -> bool {
     // Match either `*.envelope.json` or any plain `*.json` so that
     // single-file demos can use either convention. The `*.envelope`
     // suffix is the recommended convention but we do not enforce it.
+    // `file_type`-based file/directory filtering is done upstream by
+    // `load_from_dir`; this function is a pure name test.
     let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
         return false;
     };
-    name.ends_with(".envelope.json") || (name.ends_with(".json") && path.is_file())
+    name.ends_with(".envelope.json") || name.ends_with(".json")
 }
 
 /// All the ways `Ledger::load_from_dir` can fail. Surfaced separately
 /// from `VerifyError` because a ledger problem is upstream of any
 /// individual envelope's verification.
+///
+/// Hand-rolled `Display` rather than `thiserror` because the `path`
+/// field is a `PathBuf` (no `Display` impl) and needs `.display()`.
 #[derive(Debug)]
 pub enum LedgerLoadError {
     Io { path: PathBuf, source: String },
-    ParseError { path: PathBuf, source: EnvelopeParseError },
+    ParseError {
+        path: PathBuf,
+        source: EnvelopeParseError,
+    },
 }
 
 impl std::fmt::Display for LedgerLoadError {
@@ -122,12 +139,24 @@ impl std::fmt::Display for LedgerLoadError {
     }
 }
 
-impl std::error::Error for LedgerLoadError {}
+impl std::error::Error for LedgerLoadError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            LedgerLoadError::ParseError { source, .. } => Some(source),
+            _ => None,
+        }
+    }
+}
 
 /// One distinct reason the verifier may refuse an envelope.
 ///
 /// Each variant maps to one line of the structured `explain` output.
 /// Keep variants flat (no nested errors) so callers can match directly.
+///
+/// A hand-rolled `Display` impl is used here (rather than `thiserror`)
+/// because the `HashMismatch` variant invokes the `short` helper on its
+/// fields to truncate long hex hashes, and that is awkward to express
+/// in the `#[error(...)]` format-args grammar.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VerifyError {
     /// The `hash` field disagrees with the recomputed canonical hash.
@@ -256,12 +285,14 @@ pub fn verify(env: &FormEnvelope, ledger: &Ledger) -> Result<VerifyOutcome, Veri
     //    be in env.capabilities. This is independent of execution
     //    mode — the gate refuses an envelope that is structurally
     //    inconsistent (asks to run an op it has not declared).
+    //    Build a set once rather than linear-scanning per op.
+    let declared: HashSet<&str> = env.capabilities.iter().map(String::as_str).collect();
     for (i, op) in env.payload.ops.iter().enumerate() {
         if let Some(required) = op.required_capability() {
-            if !env.capabilities.iter().any(|c| c == required) {
+            if !declared.contains(required) {
                 return Err(VerifyError::UndeclaredCapability {
                     op_index: i,
-                    op_name: op_name_of(op),
+                    op_name: op.name(),
                     required,
                     declared: env.capabilities.clone(),
                 });
@@ -283,15 +314,6 @@ pub fn verify(env: &FormEnvelope, ledger: &Ledger) -> Result<VerifyOutcome, Veri
         proof_status: env.proof_status,
         warnings,
     })
-}
-
-fn op_name_of(op: &crate::envelope::Op) -> &'static str {
-    use crate::envelope::Op;
-    match op {
-        Op::Emit { .. } => "emit",
-        Op::Write { .. } => "write",
-        Op::Infer { .. } => "infer",
-    }
 }
 
 fn short(hash: &str) -> String {

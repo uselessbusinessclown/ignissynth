@@ -20,7 +20,7 @@ use ignis0::capability::{
     builtin_cap_id, GPU_COMPUTE_CAP_DESCRIPTOR, INFER_CAP_DESCRIPTOR,
 };
 use ignis0::derive::derive_form;
-use ignis0::envelope::FormEnvelope;
+use ignis0::envelope::{FormEnvelope, ProofStatus};
 use ignis0::fixed_point::{FixedPointCheck, FixedPointVerdict};
 use ignis0::parser::parse_form_lines;
 use ignis0::pretty::pretty_print;
@@ -252,37 +252,59 @@ fn parse_file_and_ledger(args: &[String], subcommand: &str) -> Option<(PathBuf, 
     Some((path, resolved_ledger))
 }
 
-fn load_envelope_and_ledger(
-    path: &Path,
-    ledger_dir: &Path,
-) -> Result<(FormEnvelope, Ledger), String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("cannot read {}: {}", path.display(), e))?;
-    let env = FormEnvelope::from_json_bytes(&bytes)
-        .map_err(|e| format!("cannot parse {}: {}", path.display(), e))?;
-    let mut ledger = Ledger::load_from_dir(ledger_dir)
-        .map_err(|e| format!("cannot load ledger from {}: {}", ledger_dir.display(), e))?;
-    // Make sure the envelope under inspection is itself in the ledger
-    // so that *its* descendants (if any are loaded later) can resolve
-    // it as a parent. This is idempotent.
-    ledger.insert(env.clone());
-    Ok((env, ledger))
+/// Shared preamble for `verify` / `run` / `explain`: parse argv, load
+/// envelope + ledger, and return an `ExitCode::from(2)` on usage or
+/// I/O failure so the caller can early-return.
+///
+/// The ledger is read-only here: if the envelope lives inside the
+/// ledger dir, `load_from_dir` already picked it up; otherwise it does
+/// not need to be present (the verifier's parent-lookup is against
+/// predecessors, not the form itself).
+fn envelope_preamble(
+    args: &[String],
+    subcommand: &'static str,
+) -> Result<(PathBuf, FormEnvelope, Ledger), ExitCode> {
+    let Some((path, ledger_dir)) = parse_file_and_ledger(args, subcommand) else {
+        eprintln!("Usage: ignis0 {} <file> [--ledger <dir>]", subcommand);
+        return Err(ExitCode::from(2));
+    };
+    let bytes = match std::fs::read(&path) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("{}: cannot read {}: {}", subcommand, path.display(), e);
+            return Err(ExitCode::from(2));
+        }
+    };
+    let env = match FormEnvelope::from_json_bytes(&bytes) {
+        Ok(env) => env,
+        Err(e) => {
+            eprintln!("{}: cannot parse {}: {}", subcommand, path.display(), e);
+            return Err(ExitCode::from(2));
+        }
+    };
+    let ledger = match Ledger::load_from_dir(&ledger_dir) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!(
+                "{}: cannot load ledger from {}: {}",
+                subcommand,
+                ledger_dir.display(),
+                e
+            );
+            return Err(ExitCode::from(2));
+        }
+    };
+    Ok((path, env, ledger))
 }
 
 fn run_verify_cmd(args: &[String]) -> ExitCode {
-    let Some((path, ledger_dir)) = parse_file_and_ledger(args, "verify") else {
-        eprintln!("Usage: ignis0 verify <file> [--ledger <dir>]");
-        return ExitCode::from(2);
-    };
-    let (env, ledger) = match load_envelope_and_ledger(&path, &ledger_dir) {
+    let (_path, env, ledger) = match envelope_preamble(args, "verify") {
         Ok(t) => t,
-        Err(e) => {
-            eprintln!("verify: {}", e);
-            return ExitCode::from(2);
-        }
+        Err(code) => return code,
     };
     match verify(&env, &ledger) {
         Ok(out) => {
-            println!("verify: ADMIT  ({})", out.proof_status_label());
+            println!("verify: ADMIT  ({})", proof_status_label(out.proof_status));
             for w in &out.warnings {
                 println!("  warning: {}", w);
             }
@@ -296,16 +318,9 @@ fn run_verify_cmd(args: &[String]) -> ExitCode {
 }
 
 fn run_run_cmd(args: &[String]) -> ExitCode {
-    let Some((path, ledger_dir)) = parse_file_and_ledger(args, "run") else {
-        eprintln!("Usage: ignis0 run <file> [--ledger <dir>]");
-        return ExitCode::from(2);
-    };
-    let (env, ledger) = match load_envelope_and_ledger(&path, &ledger_dir) {
+    let (_path, env, ledger) = match envelope_preamble(args, "run") {
         Ok(t) => t,
-        Err(e) => {
-            eprintln!("run: {}", e);
-            return ExitCode::from(2);
-        }
+        Err(code) => return code,
     };
     let outcome = match verify(&env, &ledger) {
         Ok(o) => o,
@@ -339,16 +354,9 @@ fn run_run_cmd(args: &[String]) -> ExitCode {
 }
 
 fn run_explain_cmd(args: &[String]) -> ExitCode {
-    let Some((path, ledger_dir)) = parse_file_and_ledger(args, "explain") else {
-        eprintln!("Usage: ignis0 explain <file> [--ledger <dir>]");
-        return ExitCode::from(2);
-    };
-    let (env, ledger) = match load_envelope_and_ledger(&path, &ledger_dir) {
+    let (path, env, ledger) = match envelope_preamble(args, "explain") {
         Ok(t) => t,
-        Err(e) => {
-            eprintln!("explain: {}", e);
-            return ExitCode::from(2);
-        }
+        Err(code) => return code,
     };
     println!("explain: {}", path.display());
     println!("  form_id        = {}", env.form_id);
@@ -368,7 +376,7 @@ fn run_explain_cmd(args: &[String]) -> ExitCode {
             if !out.warnings.is_empty() {
                 println!("warnings:");
                 for w in &out.warnings {
-                    println!("  - {}", explain_one(w));
+                    println!("  - {}", w);
                 }
             }
             // Also print what the runner would do.
@@ -393,7 +401,7 @@ fn run_explain_cmd(args: &[String]) -> ExitCode {
         Err(e) => {
             println!("verdict: REFUSE");
             println!("reason ({}):", classify(&e));
-            println!("  {}", explain_one(&e));
+            println!("  {}", e);
             println!();
             println!("structured fields:");
             print_structured(&e);
@@ -481,16 +489,16 @@ fn run_derive_cmd(args: &[String]) -> ExitCode {
 fn classify(e: &VerifyError) -> &'static str {
     match e {
         VerifyError::HashMismatch { .. } => "hash mismatch",
+        // Distinguished so the `explain` header matches the
+        // structured-field `kind` on both the orphan (no parents,
+        // non-genesis rule) and missing-parent (ledger lookup
+        // failed) paths.
         VerifyError::MissingParent { .. } => "missing parent",
-        VerifyError::OrphanForm { .. } => "missing parent",
+        VerifyError::OrphanForm { .. } => "orphan form",
         VerifyError::InvalidProofStatus => "invalid proof state",
         VerifyError::UndeclaredCapability { .. } => "undeclared capability",
         VerifyError::UnresolvedObligations { .. } => "unresolved obligations",
     }
-}
-
-fn explain_one(e: &VerifyError) -> String {
-    format!("{}", e)
 }
 
 fn print_structured(e: &VerifyError) {
@@ -543,18 +551,12 @@ fn short_hash(h: &str) -> String {
     }
 }
 
-// Tiny extension trait so the verify command can print a friendly
-// proof-status label without depending on Display for ProofStatus.
-trait ProofStatusLabel {
-    fn proof_status_label(&self) -> &'static str;
-}
-
-impl ProofStatusLabel for ignis0::verify::VerifyOutcome {
-    fn proof_status_label(&self) -> &'static str {
-        match self.proof_status {
-            ignis0::envelope::ProofStatus::Verified => "verified → full execution",
-            ignis0::envelope::ProofStatus::Deferred => "deferred → restricted execution",
-            ignis0::envelope::ProofStatus::Invalid => "invalid → execution denied",
-        }
+/// Friendly one-line label for the proof-status → execution-mode
+/// mapping, used in the `verify` command's admit line.
+fn proof_status_label(status: ProofStatus) -> &'static str {
+    match status {
+        ProofStatus::Verified => "verified → full execution",
+        ProofStatus::Deferred => "deferred → restricted execution",
+        ProofStatus::Invalid => "invalid → execution denied",
     }
 }

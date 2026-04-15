@@ -135,7 +135,7 @@ pub fn run_envelope_with_mode(env: &FormEnvelope, mode: EnvelopeMode) -> Envelop
 fn decide_one(op: &Op, mode: EnvelopeMode) -> OpDecision {
     if mode == EnvelopeMode::Restricted && !op.is_observable_only() {
         return OpDecision::SkippedRestricted {
-            op_name: name_of(op),
+            op_name: op.name(),
         };
     }
     OpDecision::Executed {
@@ -155,14 +155,6 @@ fn simulate_effect(op: &Op) -> String {
             "infer (simulated): would submit {}-char prompt to infer.remote",
             prompt.len()
         ),
-    }
-}
-
-fn name_of(op: &Op) -> &'static str {
-    match op {
-        Op::Emit { .. } => "emit",
-        Op::Write { .. } => "write",
-        Op::Infer { .. } => "infer",
     }
 }
 

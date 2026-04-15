@@ -67,14 +67,8 @@ fn derive_id(parent_hash: &str, parent_form_id: &str, rule: &str) -> String {
     hasher.update(parent_hash.as_bytes());
     hasher.update(b":");
     hasher.update(rule.as_bytes());
-    let h = hasher.finalize();
-    let bytes = h.as_bytes();
-    let short: String = bytes
-        .iter()
-        .take(4)
-        .map(|b| format!("{:02x}", b))
-        .collect();
-    format!("{}:{}:{}", parent_form_id, rule, short)
+    let hex = hasher.finalize().to_hex();
+    format!("{}:{}:{}", parent_form_id, rule, &hex[..8])
 }
 
 #[cfg(test)]

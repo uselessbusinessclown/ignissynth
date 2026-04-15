@@ -29,7 +29,8 @@ pub use capability::{
 };
 pub use derive::derive_form;
 pub use envelope::{
-    EnvelopeParseError, FormEnvelope, Op, Payload, ProofStatus, GENESIS_RULE,
+    EnvelopeParseError, FormEnvelope, Op, Payload, ProofStatus, GENESIS_RULE, INFER_REMOTE_CAP,
+    IO_FS_CAP,
 };
 pub use exec::{ExecState, ExecVerdict, Frame, Interpreter};
 pub use fixed_point::{FixedPointCheck, FixedPointVerdict};
