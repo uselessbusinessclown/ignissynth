@@ -267,6 +267,16 @@ Whether this seed actually ignites is a question for the next stage of
 work. Whether it *deserves* to ignite is a question this stage's
 artifacts have made answerable.
 
+## Contributing and security
+
+- **Contributing** — see [CONTRIBUTING.md](CONTRIBUTING.md) for the
+  reviewer quickstart and the per-artefact (specs / forms / proofs /
+  substrate) workflows.
+- **Security** — see [SECURITY.md](SECURITY.md) for the capability
+  threat model and the disclosure policy. Note in particular the
+  "Non-goals for the stage-0 scaffold" section: `ignis0` is a research
+  scaffold and is not safe to run untrusted Forms.
+
 ## License
 
 MIT. See `LICENSE`.
