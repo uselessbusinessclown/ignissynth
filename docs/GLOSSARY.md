@@ -45,7 +45,7 @@
   interpreter steps over. Itself a substance type.
 - **Form** — A substance of executable type, written in the IL.
   (A6.1, `kernel/IL.md`)
-- **Form IL** — The 34-opcode intermediate language specified in
+- **Form IL** — The 35-opcode intermediate language specified in
   `kernel/IL.md`, in which every encoded seed Form is written. Total
   small-step semantics, no `MINT`, no `TIME`, no `RAND`, no `MALLOC`,
   no `SYSCALL`. The smallness is load-bearing: S-08's checker reasons
@@ -71,7 +71,7 @@
   and self-erases its slot.
 - **`ignis0`** — The stage-0 interpreter: an ordinary software
   artifact (in Rust, OCaml, C, or similar) that implements the
-  34-opcode IL specification outside the habitat. It is the base
+  35-opcode IL specification outside the habitat. It is the base
   case of the runtime recursion, named by axiom A9 and specified
   operationally in `kernel/IGNITION-BOOTSTRAP.md`. Not a Form, not
   a mind, not an inhabitant — the substrate the habitat runs on,

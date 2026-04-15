@@ -64,7 +64,7 @@ intermediate language itself.
 
 - **source**: `kernel/IL.md` § Opcodes
 - **claim**: There is no `MINT` opcode in the IL.
-- **discharge**: Enumerate the 34 opcodes in the IL.md table.
+- **discharge**: Enumerate the 35 opcodes in the IL.md table.
   None of them is named `MINT` or has the effect of producing a
   `CapId` not derived from one already in `cap_view`. This is the
   load-bearing fact for I10 instantiated to the IL.

@@ -3,7 +3,7 @@
 Derived from A0.6, A0.7, A6.5.
 
 The IL is a specification. Specifications do not execute themselves.
-Something in the physical world must implement the IL's 34-opcode
+Something in the physical world must implement the IL's 35-opcode
 semantics before any Form can ever run — including the runtime
 Form (S-07) whose body says "how to interpret IL". This axiom
 names that something, defines its contract, and declares what

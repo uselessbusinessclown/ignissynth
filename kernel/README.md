@@ -13,7 +13,7 @@ produced it.
 
 ```
 kernel/
-  IL.md                                # 34-opcode Form intermediate language
+  IL.md                                # 35-opcode Form intermediate language
   PROOF.md                             # 12 sorts, 17 term constructors, 30-rule table
   SIMULATION.md                        # Stage 4 simulation harness specification
   manifest.json                        # the seed manifest — binds everything

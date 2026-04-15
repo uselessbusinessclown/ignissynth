@@ -19,7 +19,12 @@ read every opcode in one sitting.
 
 ## Design constraints (from the breakdowns)
 
-1. **34 opcodes** (S-07 budget claim of "~30" resolved to exactly 34).
+1. **35 opcodes** (S-07 budget claim of "~30" resolved to 34 in
+   the v0.1.0-pre-ignition freeze; the 35th — `CALLI` — was
+   added post-freeze to close a drift between the spec and
+   every encoded Form, which assumed an indirect-call opcode
+   since the `READSLOT` + `CALL` idiom is not composable under
+   immediate-only CALL. See the Control flow section below).
 2. **Total small-step semantics**: every instruction is one of
    `step`, `trap{kind}`, `yield{continuation}` — no undefined
    behavior (S-07 obligation 5).
@@ -83,7 +88,7 @@ sealed `ExecState`.
 
 ## Opcodes
 
-Thirty-four exactly. Grouped by purpose. Each line names the opcode,
+Thirty-five exactly. Grouped by purpose. Each line names the opcode,
 its stack effect, and the small-step rule. Every rule is total:
 it produces `step(s')`, `trap{kind}`, or `yield(cont)` and
 nothing else.
@@ -106,13 +111,14 @@ nothing else.
 | `EQ`   | `(a,b) → (a==b)`    | structural equality, total                |
 | `LT`   | `(a,b) → (a<b)`     | `Nat` only                                |
 
-### Control flow (4)
+### Control flow (5)
 
 | Opcode      | Effect           | Rule                                       |
 |-------------|------------------|--------------------------------------------|
 | `JMP off`   | `() → ()`        | `pc := pc + off`                           |
 | `JMPZ off`  | `(b) → ()`       | branch if `b = false`                      |
-| `CALL h n`  | `(arg₁..argₙ) → (ret)` | invoke Form at `h` with `n` args via S-07 sub-call    |
+| `CALL h n`  | `(arg₁..argₙ) → (ret)` | invoke Form at immediate `h` with `n` args via S-07 sub-call (static target; the call-graph is visible without executing) |
+| `CALLI n`   | `(arg₁..argₙ, h) → (ret)` | invoke Form at stack-top `h` (a `Hash`) with `n` args via S-07 sub-call; trap `ETYPE` if the top of stack is not a `Hash`. This is the indirect form that composes with `READSLOT`: `PUSH name_hash; READSLOT; CALLI n` is the canonical slot-dispatch idiom |
 | `RET`       | `(v) → ()`       | return `v` to caller; emits one `Invoked` weave entry |
 
 ### Structure (4)
@@ -177,7 +183,7 @@ holds.
 | `BINDSLOT`  | `(name_hash, form_hash) → ()`      | atomically advance the binding `name_hash → form_hash`; trap `EUNAUTHORISED` if no kernel mutation cap held |
 | `READSLOT`  | `(name_hash) → (form_hash)`        | look up the current binding for `name_hash`                                                      |
 
-That is the entire IL. Thirty-four opcodes. Three of them
+That is the entire IL. Thirty-five opcodes. Three of them
 (`ATTENUATE`, `INVOKE`, `BINDSLOT`) reduce to operations on other
 seed Forms, and the rest are fully defined by their rules above.
 
@@ -299,8 +305,9 @@ bump of `magic`.
 | 0x1F | PARSEFORM  | —                                                         |
 | 0x20 | BINDSLOT   | —                                                         |
 | 0x21 | READSLOT   | —                                                         |
+| 0x22 | CALLI      | ULEB128 u32 `n` (argument count; hash comes from stack)   |
 
-Tag bytes `0x22..=0xFF` are reserved and decode to
+Tag bytes `0x23..=0xFF` are reserved and decode to
 `WireError::BadOpcodeTag`.
 
 **Value layout** (used by `PUSH imm`):

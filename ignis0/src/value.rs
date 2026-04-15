@@ -158,7 +158,7 @@ pub enum TrapKind {
     /// Not in IL.md; used by this scaffold to flag opcodes
     /// whose implementation is not yet written. A real `ignis0`
     /// would not have this variant — it would implement all
-    /// 34 opcodes.
+    /// 35 opcodes.
     #[error("NotImplemented: {0}")]
     NotImplemented(String),
 }

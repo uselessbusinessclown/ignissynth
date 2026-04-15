@@ -8,7 +8,7 @@ contract in `../kernel/IGNITION-BOOTSTRAP.md`.
 
 A compilable, testable Rust implementation that:
 
-1. Enumerates all 34 IL opcodes from `../kernel/IL.md` and
+1. Enumerates all 35 IL opcodes from `../kernel/IL.md` and
    executes each of them with IL-defined semantics. No opcode
    returns `TrapKind::NotImplemented` from `exec::step` after
    v0.2.4; `NotImplemented` remains in the enum only as a
@@ -23,7 +23,7 @@ A compilable, testable Rust implementation that:
    whose observed frame depth matches the expected 2 / 3.
 3. Implements the byte-exact Form wire codec (`src/wire.rs`)
    per `IL.md` § "Byte-exact wire grammar (v1)": encode +
-   decode, round-trip over all 34 opcodes, 7 Value variants,
+   decode, round-trip over all 35 opcodes, 7 Value variants,
    and 11 TrapKind variants.
 4. Provides a capability dispatch table (`src/capability.rs`)
    with a `CapabilityInvoker` trait, built-in GPU and inference
@@ -66,11 +66,14 @@ A compilable, testable Rust implementation that:
 
 ## Note on the opcode count
 
-`kernel/IL.md` § Opcodes enumerates 34 opcodes (4 stack/locals +
-4 arith + 4 control + 4 structure + 4 substance + 4 capability +
-2 weave + 2 attention + 2 trap + 4 reflection). The IL prose and
-all cross-references now consistently say "Thirty-four". This
-scaffold implements all 34.
+`kernel/IL.md` § Opcodes enumerates 35 opcodes (4 stack/locals +
+4 arith + 5 control + 4 structure + 4 substance + 4 capability +
+2 weave + 2 attention + 2 trap + 4 reflection). The 34→35 bump
+added `CALLI` (indirect call, opcode tag `0x22`) so that
+`READSLOT + CALLI` composes into slot-based dynamic dispatch;
+direct `CALL` with an immediate hash is retained for statically
+known targets. The IL prose and all cross-references now
+consistently say "Thirty-five". This scaffold implements all 35.
 
 ## Running
 
@@ -84,10 +87,12 @@ cargo run -- version
 
 The test harness exercises all three levels of the A9.3
 fixed-point check (direct, one-level indirect, two-level
-indirect), the byte-exact wire codec over all 34 opcodes, and
-each opcode's IL-defined outcome (19 integration tests in
-`tests/opcode_tests.rs`). A full `cargo test` pass is a
-necessary (not sufficient) condition for faithful IL
+indirect), the byte-exact wire codec over all 35 opcodes, and
+each opcode's IL-defined outcome (23 integration tests in
+`tests/opcode_tests.rs`, including four CALLI tests that cover
+direct stack-top dispatch, the `READSLOT + CALLI` idiom, and
+the `ETYPE` / `EUNHELD` trap paths). A full `cargo test` pass
+is a necessary (not sufficient) condition for faithful IL
 interpretation.
 
 ## Layout
@@ -100,7 +105,7 @@ ignis0/
   src/
     lib.rs              # public API
     value.rs            # Value, Hash, TrapKind
-    opcode.rs           # the 34 opcode variants
+    opcode.rs           # the 35 opcode variants
     exec.rs             # ExecState + small-step interpreter (CALL/RET)
     store.rs            # in-memory substance store (S-03 abstract)
     registry.rs         # content-addressed FormRegistry + slot store

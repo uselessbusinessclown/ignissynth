@@ -1,7 +1,14 @@
-//! The 34 IL opcodes from `../../kernel/IL.md` § Opcodes.
+//! The 35 IL opcodes from `../../kernel/IL.md` § Opcodes.
 //!
 //! Implementations of `step()` for each opcode live in
 //! `exec.rs`. This file is the type-level enumeration.
+//!
+//! The 34→35 bump added `CALLI` (indirect call): it pops its
+//! target hash from the stack, so `READSLOT + CALLI` composes
+//! and slot-based dynamic dispatch becomes expressible. Direct
+//! `CALL` (with an immediate hash) is retained for statically
+//! known targets where the call graph should remain visible
+//! without execution.
 
 use crate::value::{Hash, TrapKind, Value};
 
@@ -33,8 +40,15 @@ pub enum Opcode {
     Jmp(i32),
     /// JMPZ off — pop Bool; branch if false.
     Jmpz(i32),
-    /// CALL h/n — call Form at `h` with `n` stack args.
+    /// CALL h/n — call Form at immediate `h` with `n` stack
+    /// args. Static target; visible in the call graph without
+    /// execution.
     Call { form: Hash, n: u32 },
+    /// CALLI n — call Form at stack-top hash with `n` stack
+    /// args. Indirect target; composes with `READSLOT` to
+    /// realise slot-based dynamic dispatch. Traps `ETYPE` if
+    /// the top of the stack is not a `Hash`.
+    CallI { n: u32 },
     /// RET — return top of stack to caller; emits one Invoked
     /// weave entry (in a real implementation).
     Ret,
@@ -117,6 +131,7 @@ impl Opcode {
             Opcode::Jmp(_) => "JMP",
             Opcode::Jmpz(_) => "JMPZ",
             Opcode::Call { .. } => "CALL",
+            Opcode::CallI { .. } => "CALLI",
             Opcode::Ret => "RET",
             Opcode::MakePair => "MAKEPAIR",
             Opcode::Fst => "FST",

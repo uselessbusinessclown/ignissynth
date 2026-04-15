@@ -39,7 +39,7 @@ faithful to their stated purpose:
 
 ### 1. The IL specification (`kernel/IL.md`)
 
-- 34 opcodes, total small-step semantics
+- 35 opcodes, total small-step semantics
 - Closed value-type set
 - Closed trap-kind enumeration
 - Absence of `MINT` (the I10 exception lives only in S-01)

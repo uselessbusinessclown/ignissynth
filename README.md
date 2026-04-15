@@ -39,7 +39,7 @@ What is in the repository as of this commit:
 | Constitution        | `docs/MANIFESTO.md`, `axioms/A0..A8`                                 | complete                                    |
 | Discipline          | `synthesis/PROTOCOL.md`, `INVARIANTS.md`, `SELF-IMPROVEMENT.md`, `SEED.md` | complete                              |
 | Worked synthesis    | `breakdown/S-01..S-11.md`                                            | 11 of 11 (every primary Form)               |
-| IL specification    | `kernel/IL.md`                                                       | 34 opcodes, total small-step                |
+| IL specification    | `kernel/IL.md`                                                       | 35 opcodes, total small-step                |
 | Encoded Forms       | `kernel/forms/S-01..S-11.form`                                       | 11 of 11, written against the IL            |
 | Seed manifest       | `kernel/manifest.json`                                               | binds sources/proofs/immediates             |
 | Helper stubs        | `kernel/forms/helpers/STUBS.md`                                      | 86 helpers encoded across 10 files; remaining slots catalogued |
@@ -96,7 +96,7 @@ axioms/      First-principles axioms — the only source of normative truth
 synthesis/   How the OS reasons about itself and rewrites itself
 breakdown/   Worked synthesis acts for each seed Form
 kernel/      The encoded seed
-  IL.md      The 34-opcode Form intermediate language
+  IL.md      The 35-opcode Form intermediate language
   forms/     S-01..S-11, plus helpers/
   manifest.json    Sources, breakdowns, proofs, immediates, boot order
   README.md  Encoding status
@@ -124,7 +124,7 @@ The shortest path through, in dependency order:
 8. **One worked breakdown end-to-end** — `breakdown/S-02-cap-registry.md`
    is the model the others follow; `breakdown/S-08-proof-checker.md` is
    the bootstrap exception worth reading for its three-layered discharge.
-9. **`kernel/IL.md`** — the 34-opcode Form intermediate language. Total
+9. **`kernel/IL.md`** — the 35-opcode Form intermediate language. Total
    small-step semantics, no ambient authority, no implicit clock, no
    implicit entropy.
 10. **One encoded Form end-to-end** — `kernel/forms/S-01-ignite.form` is
@@ -175,7 +175,7 @@ cargo run -- version
 | Module | Purpose |
 |--------|---------|
 | `value.rs` | `Value`, `Hash` (BLAKE3), `TrapKind` |
-| `opcode.rs` | All 34 IL opcode variants |
+| `opcode.rs` | All 35 IL opcode variants |
 | `exec.rs` | `ExecState` (call-frame stack), `Interpreter`, `CALL`/`RET` |
 | `store.rs` | In-memory substance store (S-03 abstract interface) |
 | `registry.rs` | Content-addressed `FormRegistry` for CALL resolution (incl. `register_wire`) |
@@ -228,10 +228,11 @@ Two declarations carry most of the proof load:
   problem is exactly the one `synthesis/SEED.md` describes: an
   external synthesis event must produce the first interpretable
   form of the seed. That external event is supplied by `ignis0/`
-  (axiom A9), which is a working stage-0 IL interpreter — all 34
-  opcodes return IL-defined outcomes as of v0.2.4-ignis0-cap —
-  but `ignis0` is explicitly *not* part of IgnisSynth and does
-  not run inside the habitat.
+  (axiom A9), which is a working stage-0 IL interpreter — all 35
+  opcodes return IL-defined outcomes as of v0.2.4-ignis0-cap
+  (34 opcodes) plus the post-freeze `CALLI` addition — but
+  `ignis0` is explicitly *not* part of IgnisSynth and does not
+  run inside the habitat.
 - **A working proof checker.** `kernel/forms/S-08-proof-checker.form`
   encodes the natural-deduction kernel; the rule table substance, the
   abstract-model lemma library substance, and the hand-inspection record

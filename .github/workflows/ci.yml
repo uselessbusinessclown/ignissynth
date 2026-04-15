@@ -142,13 +142,13 @@ jobs:
           fi
           echo "Proof artifact lint: all files pass."
 
-      - name: Verify IL.md opcode count is 34
+      - name: Verify IL.md opcode count is 35
         run: |
           set -e
-          if grep -q "Thirty-four exactly" kernel/IL.md; then
-            echo "IL.md opcode count: 34 ✓"
+          if grep -q "Thirty-five exactly" kernel/IL.md; then
+            echo "IL.md opcode count: 35 ✓"
           else
-            echo "ERROR: kernel/IL.md does not declare 'Thirty-four exactly'" >&2
+            echo "ERROR: kernel/IL.md does not declare 'Thirty-five exactly'" >&2
             exit 1
           fi
 

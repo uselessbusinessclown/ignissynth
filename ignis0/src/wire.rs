@@ -8,7 +8,7 @@
 //!
 //! Scope (v0.2.2-ignis0-wire):
 //!
-//! - Full coverage of all 34 opcodes, all 7 PUSH Value variants,
+//! - Full coverage of all 35 opcodes, all 7 PUSH Value variants,
 //!   and all 11 TrapKind variants from IL.md.
 //! - Trailing BLAKE3 hash is written by the encoder and verified
 //!   by the decoder.
@@ -322,6 +322,10 @@ fn read_opcode_nom(i: &[u8]) -> IResult<&[u8], Opcode> {
         0x1F => Ok((i, Opcode::ParseForm)),
         0x20 => Ok((i, Opcode::BindSlot)),
         0x21 => Ok((i, Opcode::ReadSlot)),
+        0x22 => {
+            let (i, n) = read_uleb128_u32_nom(i)?;
+            Ok((i, Opcode::CallI { n }))
+        }
         _ => Err(nom::Err::Error(nom::error::Error::new(
             i,
             nom::error::ErrorKind::Tag,
@@ -570,6 +574,10 @@ fn encode_opcode(out: &mut Vec<u8>, op: &Opcode) -> Result<(), WireError> {
         Opcode::ParseForm => out.push(0x1F),
         Opcode::BindSlot => out.push(0x20),
         Opcode::ReadSlot => out.push(0x21),
+        Opcode::CallI { n } => {
+            out.push(0x22);
+            write_uleb128_u32(out, *n);
+        }
     }
     Ok(())
 }
