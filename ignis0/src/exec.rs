@@ -309,10 +309,7 @@ impl<'a> Interpreter<'a> {
                 StepResult::Step
             }
             // CALL, CALLI, RET, and INVOKE are handled above the match.
-            Opcode::Call { .. }
-            | Opcode::CallI { .. }
-            | Opcode::Ret
-            | Opcode::Invoke { .. } => {
+            Opcode::Call { .. } | Opcode::CallI { .. } | Opcode::Ret | Opcode::Invoke { .. } => {
                 unreachable!("CALL/CALLI/RET/INVOKE handled above the match in step()")
             }
 
