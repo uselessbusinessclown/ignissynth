@@ -406,7 +406,7 @@ fn invoke_dispatches_to_registered_capability() {
 
     let mut store = SubstanceStore::new();
     let code = vec![
-        Opcode::Push(Value::Nat(21)),  // arg
+        Opcode::Push(Value::Nat(21)),      // arg
         Opcode::Push(Value::Hash(cap_id)), // cap_id on top
         Opcode::Invoke { n: 1 },
         Opcode::Ret,

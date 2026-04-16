@@ -106,7 +106,7 @@ impl FormRegistry {
     /// it matches what CALL expects at dispatch time.
     pub fn register_wire(&mut self, name: &str, bytes: &[u8]) -> Result<Hash, WireError> {
         let form: Form = decode_form(bytes)?;
-        let hash = Hash(*blake3::hash(bytes).as_bytes());
+        let hash = Hash::of(bytes);
         let loaded = LoadedForm {
             code: form.code,
             locals_n: form.locals_n as usize,

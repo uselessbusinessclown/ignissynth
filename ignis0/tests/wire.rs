@@ -15,7 +15,7 @@
 //! crosses into the habitat.
 
 use ignis0::wire::{decode_form, encode_form, Form, WireError, MAGIC, VERSION};
-use ignis0::{Hash, Opcode, TrapKind, Value};
+use ignis0::{Opcode, SubstanceHash as Hash, TrapKind, Value};
 
 // ---------- splitmix64 PRNG ----------
 

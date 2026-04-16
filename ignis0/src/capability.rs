@@ -291,7 +291,7 @@ impl InferenceCapability {
                 }
                 Err(format!("unexpected response shape: {}", json))
             }
-            Err(ureq::Error::Status(status, _)) if status == 404 => {
+            Err(ureq::Error::Status(404, _)) => {
                 // Fall back to chat completions endpoint
                 let chat_url = format!("{}/v1/chat/completions", self.config.base_url);
                 let chat_body = serde_json::json!({
@@ -330,7 +330,7 @@ impl CapabilityInvoker for InferenceCapability {
         store: &mut SubstanceStore,
     ) -> Result<Value, TrapKind> {
         // args[0] = prompt_hash, args[1] = params_hash (or BOTTOM_HASH)
-        if args.len() < 1 {
+        if args.is_empty() {
             return Err(TrapKind::EType(
                 "Synthesis/infer: expected at least 1 arg (prompt_hash)".into(),
             ));
@@ -348,10 +348,9 @@ impl CapabilityInvoker for InferenceCapability {
                 )))
             }
         };
-        let prompt =
-            std::str::from_utf8(&prompt_bytes).map_err(|e| {
-                TrapKind::EType(format!("Synthesis/infer: prompt not valid UTF-8: {}", e))
-            })?;
+        let prompt = std::str::from_utf8(&prompt_bytes).map_err(|e| {
+            TrapKind::EType(format!("Synthesis/infer: prompt not valid UTF-8: {}", e))
+        })?;
 
         // Read optional params.
         let (max_tokens, temperature) = if args.len() >= 2 {
@@ -379,8 +378,7 @@ impl CapabilityInvoker for InferenceCapability {
             .map_err(|e| TrapKind::EType(format!("Synthesis/infer: HTTP error: {}", e)))?;
 
         // Seal the completion as a Bytes/v1 substance and return its hash.
-        let result_hash =
-            store.seal("Bytes/v1", Value::Bytes(completion.into_bytes()));
+        let result_hash = store.seal("Bytes/v1", Value::Bytes(completion.into_bytes()));
         Ok(Value::Hash(result_hash))
     }
 }
@@ -423,6 +421,9 @@ pub struct GpuComputeConfig {
 ///
 /// Input and output buffers are raw `u32` arrays; the calling Form is
 /// responsible for type-safe interpretation of the bytes.
+#[cfg(feature = "gpu")]
+use wgpu::util::DeviceExt;
+
 #[cfg(feature = "gpu")]
 pub struct GpuComputeCapability {
     pub config: GpuComputeConfig,
@@ -490,12 +491,12 @@ impl GpuComputeCapability {
             .ok_or_else(|| "no GPU adapter available".to_string())?;
 
         // Pad input to u32 alignment.
-        let input_u32_len = (input_bytes.len() + 3) / 4;
+        let input_u32_len = input_bytes.len().div_ceil(4);
         let mut input_padded = vec![0u8; input_u32_len * 4];
         input_padded[..input_bytes.len()].copy_from_slice(input_bytes);
         let input_u32: &[u32] = bytemuck::cast_slice(&input_padded);
 
-        let output_u32_len = (output_size + 3) / 4;
+        let output_u32_len = output_size.div_ceil(4);
 
         // Create GPU buffers.
         let input_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -517,52 +518,49 @@ impl GpuComputeCapability {
         });
 
         // Compile the shader.
-        let shader_module =
-            device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("ignis0/shader"),
-                source: wgpu::ShaderSource::Wgsl(shader_wgsl.into()),
-            });
+        let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("ignis0/shader"),
+            source: wgpu::ShaderSource::Wgsl(shader_wgsl.into()),
+        });
 
         // Build bind group layout + pipeline.
-        let bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: None,
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: None,
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: false },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                ],
-            });
-        let pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: None,
-                bind_group_layouts: &[&bind_group_layout],
-                push_constant_ranges: &[],
-            });
-        let pipeline =
-            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("ignis0/compute"),
-                layout: Some(&pipeline_layout),
-                module: &shader_module,
-                entry_point: "main",
-            });
+                    count: None,
+                },
+            ],
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
+        });
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("ignis0/compute"),
+            layout: Some(&pipeline_layout),
+            module: &shader_module,
+            entry_point: "main",
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &bind_group_layout,
@@ -579,14 +577,13 @@ impl GpuComputeCapability {
         });
 
         // Submit the compute pass.
-        let mut encoder = device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         {
-            let mut cpass =
-                encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label: None,
-                    timestamp_writes: None,
-                });
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: None,
+                timestamp_writes: None,
+            });
             cpass.set_pipeline(&pipeline);
             cpass.set_bind_group(0, &bind_group, &[]);
             cpass.dispatch_workgroups(1, 1, 1);
@@ -654,9 +651,8 @@ impl CapabilityInvoker for GpuComputeCapability {
                 )))
             }
         };
-        let shader_wgsl = std::str::from_utf8(&shader_bytes).map_err(|e| {
-            TrapKind::EType(format!("Compute/gpu: shader not valid UTF-8: {}", e))
-        })?;
+        let shader_wgsl = std::str::from_utf8(&shader_bytes)
+            .map_err(|e| TrapKind::EType(format!("Compute/gpu: shader not valid UTF-8: {}", e)))?;
 
         // Read input bytes.
         let input_bytes = match store.read(&input_hash)? {
@@ -760,7 +756,7 @@ impl CapabilityRegistry {
 mod tests {
     use super::*;
     use crate::store::SubstanceStore;
-    use crate::value::{Hash, Value};
+    use crate::value::Hash;
 
     #[test]
     fn builtin_cap_ids_are_stable() {
@@ -786,8 +782,10 @@ mod tests {
 
     #[test]
     fn registry_with_builtins_has_two_caps() {
-        let reg =
-            CapabilityRegistry::with_builtins(InferenceConfig::default(), GpuComputeConfig::default());
+        let reg = CapabilityRegistry::with_builtins(
+            InferenceConfig::default(),
+            GpuComputeConfig::default(),
+        );
         assert_eq!(reg.len(), 2, "with_builtins must register exactly 2 caps");
     }
 

@@ -34,7 +34,7 @@
 //! `ignis0/tests/wire.rs` pin the correspondence.
 
 use crate::opcode::Opcode;
-use crate::value::{Hash, TrapKind, Value};
+use crate::value::{Hash, SubstanceHash, TrapKind, Value};
 use nom::bytes::complete::{tag as nom_tag, take};
 use nom::IResult;
 use thiserror::Error;
@@ -146,10 +146,7 @@ pub fn decode_form(input: &[u8]) -> Result<Form, WireError> {
     if input.len() < 4 + 1 + 32 {
         return Err(WireError::Truncated);
     }
-    let body_end = input
-        .len()
-        .checked_sub(32)
-        .ok_or(WireError::Truncated)?;
+    let body_end = input.len().checked_sub(32).ok_or(WireError::Truncated)?;
     let body = &input[..body_end];
     let trailing = &input[body_end..];
 
@@ -204,7 +201,7 @@ fn parse_form_body(i: &[u8]) -> IResult<&[u8], Form> {
         let (i2, bytes) = take(32usize)(i)?;
         let mut arr = [0u8; 32];
         arr.copy_from_slice(bytes);
-        declared_caps.push(Hash(arr));
+        declared_caps.push(SubstanceHash(arr));
         i = i2;
     }
 
@@ -250,7 +247,7 @@ fn read_hash_nom(i: &[u8]) -> IResult<&[u8], Hash> {
     let (i, bytes) = take(32usize)(i)?;
     let mut arr = [0u8; 32];
     arr.copy_from_slice(bytes);
-    Ok((i, Hash(arr)))
+    Ok((i, SubstanceHash(arr)))
 }
 
 fn read_opcode_nom(i: &[u8]) -> IResult<&[u8], Opcode> {
