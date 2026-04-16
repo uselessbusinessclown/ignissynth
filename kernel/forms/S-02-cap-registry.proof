@@ -354,3 +354,5 @@
 ; (invocation accounting), referenced by S-01 obligation 5
 ; (replay refusal). S-07's proof is the next move.
 ; ============================================================
+
+; Verdict: Pass — end-to-end structurally checkable.
