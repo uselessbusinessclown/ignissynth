@@ -173,7 +173,11 @@ mod tests {
         let code = FixedPointCheck::build_F();
         let printed = pretty_print(&code);
         let reparsed = parse_form_lines(&printed).expect("pretty output must be parseable");
-        assert_eq!(code.len(), reparsed.len(), "length mismatch after round-trip");
+        assert_eq!(
+            code.len(),
+            reparsed.len(),
+            "length mismatch after round-trip"
+        );
         for (a, b) in code.iter().zip(reparsed.iter()) {
             assert_eq!(
                 a.mnemonic(),
@@ -220,7 +224,13 @@ mod tests {
             (Opcode::Lt, "LT"),
             (Opcode::Jmp(0), "JMP"),
             (Opcode::Jmpz(0), "JMPZ"),
-            (Opcode::Call { form: Hash::BOTTOM, n: 0 }, "CALL"),
+            (
+                Opcode::Call {
+                    form: Hash::BOTTOM,
+                    n: 0,
+                },
+                "CALL",
+            ),
             (Opcode::Ret, "RET"),
             (Opcode::MakePair, "MAKEPAIR"),
             (Opcode::Fst, "FST"),

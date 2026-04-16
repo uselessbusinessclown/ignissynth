@@ -242,7 +242,9 @@ impl<'a> Interpreter<'a> {
                 }
                 let v = match s.stack.pop() {
                     Some(v) => v,
-                    None => return StepResult::Trapped(TrapKind::type_mismatch("STORE on empty stack")),
+                    None => {
+                        return StepResult::Trapped(TrapKind::type_mismatch("STORE on empty stack"))
+                    }
                 };
                 s.locals[idx] = v;
                 StepResult::Step
@@ -339,7 +341,9 @@ impl<'a> Interpreter<'a> {
             Opcode::MakeVec(n) => {
                 let n = n as usize;
                 if s.stack.len() < n {
-                    return StepResult::Trapped(TrapKind::type_mismatch("MAKEVEC not enough elements"));
+                    return StepResult::Trapped(TrapKind::type_mismatch(
+                        "MAKEVEC not enough elements",
+                    ));
                 }
                 let tail = s.stack.split_off(s.stack.len() - n);
                 s.stack.push(Value::Vec(tail));
@@ -350,7 +354,9 @@ impl<'a> Interpreter<'a> {
             Opcode::Seal(tag) => {
                 let v = match s.stack.pop() {
                     Some(v) => v,
-                    None => return StepResult::Trapped(TrapKind::type_mismatch("SEAL on empty stack")),
+                    None => {
+                        return StepResult::Trapped(TrapKind::type_mismatch("SEAL on empty stack"))
+                    }
                 };
                 let h = self.store.seal(&tag, v);
                 s.stack.push(Value::Hash(h));
@@ -362,7 +368,9 @@ impl<'a> Interpreter<'a> {
                         Ok(h) => h,
                         Err(k) => return StepResult::Trapped(k),
                     },
-                    None => return StepResult::Trapped(TrapKind::type_mismatch("READ on empty stack")),
+                    None => {
+                        return StepResult::Trapped(TrapKind::type_mismatch("READ on empty stack"))
+                    }
                 };
                 match self.store.read(&h) {
                     Ok(v) => {
@@ -378,7 +386,9 @@ impl<'a> Interpreter<'a> {
                         Ok(h) => h,
                         Err(k) => return StepResult::Trapped(k),
                     },
-                    None => return StepResult::Trapped(TrapKind::type_mismatch("PIN on empty stack")),
+                    None => {
+                        return StepResult::Trapped(TrapKind::type_mismatch("PIN on empty stack"))
+                    }
                 };
                 match self.store.pin(&h) {
                     Ok(()) => StepResult::Step,
@@ -391,7 +401,9 @@ impl<'a> Interpreter<'a> {
                         Ok(h) => h,
                         Err(k) => return StepResult::Trapped(k),
                     },
-                    None => return StepResult::Trapped(TrapKind::type_mismatch("UNPIN on empty stack")),
+                    None => {
+                        return StepResult::Trapped(TrapKind::type_mismatch("UNPIN on empty stack"))
+                    }
                 };
                 match self.store.unpin(&h) {
                     Ok(()) => StepResult::Step,
@@ -410,9 +422,14 @@ impl<'a> Interpreter<'a> {
                         Ok(h) => h,
                         Err(k) => return StepResult::Trapped(k),
                     },
-                    None => return StepResult::Trapped(TrapKind::type_mismatch("CAPHELD: empty stack")),
+                    None => {
+                        return StepResult::Trapped(TrapKind::type_mismatch("CAPHELD: empty stack"))
+                    }
                 };
-                let held = self.cap_registry.as_ref().map_or(false, |r| r.contains(&cap_id));
+                let held = self
+                    .cap_registry
+                    .as_ref()
+                    .is_some_and(|r| r.contains(&cap_id));
                 s.stack.push(Value::Bool(held));
                 StepResult::Step
             }
@@ -425,16 +442,27 @@ impl<'a> Interpreter<'a> {
             Opcode::Attenuate => {
                 let predicate = match s.stack.pop() {
                     Some(v) => v,
-                    None => return StepResult::Trapped(TrapKind::type_mismatch("ATTENUATE: empty stack (predicate)")),
+                    None => {
+                        return StepResult::Trapped(TrapKind::type_mismatch(
+                            "ATTENUATE: empty stack (predicate)",
+                        ))
+                    }
                 };
                 let cap_id = match s.stack.pop() {
                     Some(v) => match v.as_hash() {
                         Ok(h) => h,
                         Err(k) => return StepResult::Trapped(k),
                     },
-                    None => return StepResult::Trapped(TrapKind::type_mismatch("ATTENUATE: empty stack (cap_id)")),
+                    None => {
+                        return StepResult::Trapped(TrapKind::type_mismatch(
+                            "ATTENUATE: empty stack (cap_id)",
+                        ))
+                    }
                 };
-                let held = self.cap_registry.as_ref().map_or(false, |r| r.contains(&cap_id));
+                let held = self
+                    .cap_registry
+                    .as_ref()
+                    .is_some_and(|r| r.contains(&cap_id));
                 if !held {
                     return StepResult::Trapped(TrapKind::ENotHeld);
                 }
@@ -455,9 +483,14 @@ impl<'a> Interpreter<'a> {
                         Ok(h) => h,
                         Err(k) => return StepResult::Trapped(k),
                     },
-                    None => return StepResult::Trapped(TrapKind::type_mismatch("REVOKE: empty stack")),
+                    None => {
+                        return StepResult::Trapped(TrapKind::type_mismatch("REVOKE: empty stack"))
+                    }
                 };
-                let held = self.cap_registry.as_ref().map_or(false, |r| r.contains(&cap_id));
+                let held = self
+                    .cap_registry
+                    .as_ref()
+                    .is_some_and(|r| r.contains(&cap_id));
                 if !held {
                     return StepResult::Trapped(TrapKind::ENotHeld);
                 }
@@ -475,7 +508,9 @@ impl<'a> Interpreter<'a> {
             Opcode::Append => {
                 match s.stack.pop() {
                     Some(_) => {}
-                    None => return StepResult::Trapped(TrapKind::type_mismatch("APPEND: empty stack")),
+                    None => {
+                        return StepResult::Trapped(TrapKind::type_mismatch("APPEND: empty stack"))
+                    }
                 }
                 StepResult::Trapped(TrapKind::EStale)
             }
@@ -486,14 +521,15 @@ impl<'a> Interpreter<'a> {
             Opcode::Why => {
                 match s.stack.pop() {
                     Some(_) => {}
-                    None => return StepResult::Trapped(TrapKind::type_mismatch("WHY: empty stack")),
+                    None => {
+                        return StepResult::Trapped(TrapKind::type_mismatch("WHY: empty stack"))
+                    }
                 }
                 s.stack.push(Value::Vec(vec![]));
                 StepResult::Step
             }
 
             // ---- Attention ----
-
             Opcode::Yield => StepResult::Yielded,
 
             // SPLIT (budget) → (AttId)
@@ -503,7 +539,9 @@ impl<'a> Interpreter<'a> {
             Opcode::Split => {
                 match s.stack.pop() {
                     Some(_) => {}
-                    None => return StepResult::Trapped(TrapKind::type_mismatch("SPLIT: empty stack")),
+                    None => {
+                        return StepResult::Trapped(TrapKind::type_mismatch("SPLIT: empty stack"))
+                    }
                 }
                 StepResult::Trapped(TrapKind::EOverBudget)
             }
@@ -535,13 +573,20 @@ impl<'a> Interpreter<'a> {
                         Ok(h) => h,
                         Err(k) => return StepResult::Trapped(k),
                     },
-                    None => return StepResult::Trapped(TrapKind::type_mismatch("PARSEFORM: empty stack")),
+                    None => {
+                        return StepResult::Trapped(TrapKind::type_mismatch(
+                            "PARSEFORM: empty stack",
+                        ))
+                    }
                 };
                 let bytes = match self.store.read(&h) {
                     Ok(Value::Bytes(b)) => b,
-                    Ok(other) => return StepResult::Trapped(TrapKind::EType(format!(
-                        "PARSEFORM: expected Bytes substance, got {:?}", other
-                    ))),
+                    Ok(other) => {
+                        return StepResult::Trapped(TrapKind::EType(format!(
+                            "PARSEFORM: expected Bytes substance, got {:?}",
+                            other
+                        )))
+                    }
                     Err(k) => return StepResult::Trapped(k),
                 };
                 match decode_form(&bytes) {
@@ -551,7 +596,7 @@ impl<'a> Interpreter<'a> {
                         StepResult::Step
                     }
                     Err(_) => StepResult::Trapped(TrapKind::EType(
-                        "PARSEFORM: substance at h is not a valid Form/v1".into()
+                        "PARSEFORM: substance at h is not a valid Form/v1".into(),
                     )),
                 }
             }
@@ -578,13 +623,20 @@ impl<'a> Interpreter<'a> {
                         Ok(h) => h,
                         Err(k) => return StepResult::Trapped(k),
                     },
-                    None => return StepResult::Trapped(TrapKind::type_mismatch("READSLOT: empty stack")),
+                    None => {
+                        return StepResult::Trapped(TrapKind::type_mismatch(
+                            "READSLOT: empty stack",
+                        ))
+                    }
                 };
                 let form_hash = match self.registry.and_then(|r| r.read_slot(&name_hash)) {
                     Some(h) => h,
-                    None => return StepResult::Trapped(TrapKind::EUnheld(format!(
-                        "READSLOT: no binding for {}", name_hash.short()
-                    ))),
+                    None => {
+                        return StepResult::Trapped(TrapKind::EUnheld(format!(
+                            "READSLOT: no binding for {}",
+                            name_hash.short()
+                        )))
+                    }
                 };
                 s.stack.push(Value::Hash(form_hash));
                 StepResult::Step
@@ -600,9 +652,7 @@ impl<'a> Interpreter<'a> {
     /// initial inputs (in order — arg0 ends up on top).
     fn do_call(&mut self, state: &mut ExecState, form: Hash, n: u32) -> StepResult {
         if state.frames.len() >= self.max_call_depth {
-            return StepResult::Trapped(TrapKind::type_mismatch(
-                "CALL: max_call_depth exceeded",
-            ));
+            return StepResult::Trapped(TrapKind::type_mismatch("CALL: max_call_depth exceeded"));
         }
         let registry = match self.registry {
             Some(r) => r,
@@ -627,9 +677,7 @@ impl<'a> Interpreter<'a> {
         // preserve their order so the callee sees arg0 on top.
         let caller = state.top_mut();
         if caller.stack.len() < n {
-            return StepResult::Trapped(TrapKind::type_mismatch(
-                "CALL: not enough stack args",
-            ));
+            return StepResult::Trapped(TrapKind::type_mismatch("CALL: not enough stack args"));
         }
         let split_at = caller.stack.len() - n;
         let callee_stack: Vec<Value> = caller.stack.split_off(split_at);
@@ -709,11 +757,7 @@ impl<'a> Interpreter<'a> {
             let s = state.top_mut();
             match s.stack.pop() {
                 Some(v) => v,
-                None => {
-                    return StepResult::Trapped(TrapKind::type_mismatch(
-                        "RET on empty stack",
-                    ))
-                }
+                None => return StepResult::Trapped(TrapKind::type_mismatch("RET on empty stack")),
             }
         };
         state.frames.pop();

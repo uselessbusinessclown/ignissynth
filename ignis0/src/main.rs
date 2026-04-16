@@ -8,9 +8,7 @@
 //!   ignis0 version              Print the scaffold version.
 //!   ignis0 help                 Print this message.
 
-use ignis0::capability::{
-    builtin_cap_id, GPU_COMPUTE_CAP_DESCRIPTOR, INFER_CAP_DESCRIPTOR,
-};
+use ignis0::capability::{builtin_cap_id, GPU_COMPUTE_CAP_DESCRIPTOR, INFER_CAP_DESCRIPTOR};
 use ignis0::fixed_point::{FixedPointCheck, FixedPointVerdict};
 use ignis0::parser::parse_form_lines;
 use ignis0::pretty::pretty_print;
@@ -26,7 +24,7 @@ fn main() {
         "version" => {
             println!("ignis0 v{}", env!("CARGO_PKG_VERSION"));
         }
-        "help" | _ => print_help(),
+        _ => print_help(),
     }
 }
 
@@ -135,8 +133,14 @@ fn run_fixed_point() {
         } => {
             println!("fixed-point: PASS");
             println!("  direct     = {:?}", direct);
-            println!("  indirect_1 = {:?} (max frame depth {})", indirect_1, indirect_1_max_depth);
-            println!("  indirect_2 = {:?} (max frame depth {})", indirect_2, indirect_2_max_depth);
+            println!(
+                "  indirect_1 = {:?} (max frame depth {})",
+                indirect_1, indirect_1_max_depth
+            );
+            println!(
+                "  indirect_2 = {:?} (max frame depth {})",
+                indirect_2, indirect_2_max_depth
+            );
             println!("\nA9.3 necessary condition holds. ignis0 is faithful to");
             println!("the IL on the canonical case across all three levels.");
         }
@@ -161,7 +165,11 @@ fn run_fixed_point() {
             eprintln!("\nThis is an ignis0 bug. A correct stage-0 must pass the direct case.");
             std::process::exit(1);
         }
-        FixedPointVerdict::Disagreed { direct, indirect, level } => {
+        FixedPointVerdict::Disagreed {
+            direct,
+            indirect,
+            level,
+        } => {
             eprintln!("fixed-point: FAIL (level {} disagrees with direct)", level);
             eprintln!("  direct   = {:?}", direct);
             eprintln!("  indirect = {:?}", indirect);

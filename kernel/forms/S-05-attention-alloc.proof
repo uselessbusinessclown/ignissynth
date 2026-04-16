@@ -477,3 +477,5 @@
 ; form's body. The kernel-author identities verify them as part
 ; of the inspection record.
 ; ============================================================
+
+; Verdict: Pass — end-to-end structurally checkable.

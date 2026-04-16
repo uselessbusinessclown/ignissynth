@@ -258,3 +258,6 @@
 ; the inspection record is drafted, the entire seed's proof
 ; load is structurally complete.
 ; ============================================================
+
+; Verdict: Structural — structural piece via WitnessExec; obligations 2 & 3 await
+; external discharge (signed inspection record + K-of-N consensus protocol).
