@@ -180,7 +180,7 @@ real gap that should be visible to any agent picking up the work.
 
 ### Gap 1: the abstract-model lemma library — RESOLVED
 
-> **Status**: `kernel/lemma-library.md` produced (105 lemmas
+> **Status**: `kernel/lemma-library.md` produced (104 lemmas
 > across 14 source groups). Every `LemmaApp` head referenced
 > across the eleven proof artifacts now has a named entry
 > with a structural-reading discharge. The S-08 inspection
@@ -319,7 +319,7 @@ a clear scope for the inspection-record review.
 
 1. ~~**Catalogue Schema/* primitives in STUBS.md**~~ ✓ done
 2. ~~**Add the helper exemption to PROTOCOL.md**~~ ✓ done
-3. ~~**Produce `kernel/lemma-library.md`**~~ ✓ done (105 lemmas; sealing is post-v0.5.0)
+3. ~~**Produce `kernel/lemma-library.md`**~~ ✓ done (104 lemmas; sealing is post-v0.5.0)
 4. ~~**Encode the IL parser** (`S-07/parse_form`)~~ ✓ done at the orchestration layer (`parser.form` ships top-level + 7 sub-Forms; 13 lower-level Parser/* primitives are catalogued as pending; non-exempt — needs `parser.proof`)
 5. ~~**Encode Parser/* primitives**~~ ✓ done (`parser-primitives.form` ships 13 sub-Forms)
 6. ~~**Encode Parser/* byte-arithmetic leaves**~~ ✓ done (`parser-bytes.form` ships 20 sub-Forms; 10 second-generation leaves catalogued)
@@ -401,6 +401,8 @@ the habitat self-hosts. It has its own version line.
 | v0.2.4-ignis0-cap   | CAPHELD/ATTENUATE/**INVOKE**/REVOKE + APPEND/WHY (weave) + YIELD/SPLIT (attention) + READSLOT/BINDSLOT/PARSEFORM (reflection). All nine remaining stubs replaced with IL-defined trap kinds or live behaviour. No opcode returns `TrapKind::NotImplemented` after this milestone. Stage-0 constraints noted in-code for REVOKE/APPEND/SPLIT/BINDSLOT/PARSEFORM. | ✓ done |
 | v0.2.5-ignis0-store | Replace HashMap-backed `SubstanceStore` with the persistent hash trie spec (S-03) so `digest` is substitutive | depends on Trie.md |
 | v0.3.0-compute      | Capability dispatch table, builtin GPU compute cap, builtin inference cap, env-configured registry (`capability.rs`, CLI extensions) | ✓ done (`d28b466`) — landed out of order; schedule above is corrected |
+| v0.3.0-envelope+ci  | `FormEnvelope` (derivation-gated execution control plane: `ignis0/src/envelope.rs`, `derive.rs`, `runner.rs`, `verify.rs`), CALLI opcode (0x22) closing the READSLOT+CALL drift, cargo-fuzz scaffold for parser + wire codec, `CONTRIBUTING.md`, `SECURITY.md` (capability threat model), reproducibility-CI smoke job + `--locked` discipline. Landed via PR #18. | ✓ done (`e954a27`) |
+| v0.3.0-build-int    | Build-integrity hardening on top of #18: stable-rustc 1.94 fixes (`Hash` type-alias call sites, `Opcode` PartialEq/Eq, exhaustive match on `EvalVerdict`, doctest fences in `parser.rs`), wgpu 0.20.1 API drift fixes (`DeviceExt`, `compilation_options`), newer-clippy lint cleanup (`is_some_and`, `is_empty`, `div_ceil`, wildcard-in-or), proof-lint Verdict markers on the seven proofs that lacked them, and CI manifest-key `seed_forms`→`forms` correction. PRs #19 + #21. | ✓ done (`a130590`) |
 
 When v0.2.5 lands, ignis0 is feature-complete against the
 contract in `kernel/IGNITION-BOOTSTRAP.md`, and v0.3.0-simulation
@@ -439,17 +441,20 @@ merges `48e2197` / `9b48f9c`):
 - Borrowed-store design remains intact post-merge; CALL/RET
   share the store across frames.
 - `JMPZ` polarity still matches IL.md (branches on false).
-- `cargo` is not available in the current sandbox so compile-
-  verification of the merged tree is flagged as the next-session
-  step: `cd ignis0 && cargo test`. The INVOKE resync means the
-  pre-resync tip (7567c7a) would have failed to compile; the
-  current working tree is the first post-merge state where
-  `opcode.rs`, `wire.rs`, and `tests/wire.rs` all agree on
-  `Invoke { n }`.
+- **Compile + CI verified** on stable rustc 1.94 with wgpu
+  0.20.1 (resolved by `cargo generate-lockfile` at CI time).
+  Local `cargo fmt --all --check && cargo clippy --all-targets
+  --all-features -- -D warnings && cargo test` exits 0 (117
+  tests pass across the lib + envelope + fixed-point + opcode
+  + wire suites); `cargo run -- fixed-point` reports
+  `PASS Nat(43)` on all three A9.3 levels. The proof-check and
+  helper-catalogue CI jobs are also green on `main` after the
+  build-integrity fixes from PRs #19 and #21.
 - **Drift check**: no drift between `ignis0/src/exec.rs` and
   `kernel/IL.md` for the implemented opcodes. `wire.rs` and
   IL.md's wire-grammar table both now carry the ULEB128 `n`
-  on INVOKE.
+  on INVOKE, and the post-freeze `CALLI` (0x22) is enumerated
+  in both opcode.rs and the wire codec.
 
 ### v0.3.0-simulation: run Stage 4 against the encoded seed
 
