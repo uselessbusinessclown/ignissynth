@@ -146,10 +146,7 @@ pub fn decode_form(input: &[u8]) -> Result<Form, WireError> {
     if input.len() < 4 + 1 + 32 {
         return Err(WireError::Truncated);
     }
-    let body_end = input
-        .len()
-        .checked_sub(32)
-        .ok_or(WireError::Truncated)?;
+    let body_end = input.len().checked_sub(32).ok_or(WireError::Truncated)?;
     let body = &input[..body_end];
     let trailing = &input[body_end..];
 

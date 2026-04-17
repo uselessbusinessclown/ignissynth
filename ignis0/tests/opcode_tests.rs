@@ -39,11 +39,7 @@ impl CapabilityInvoker for StubCap {
 }
 
 /// Build a single-opcode Form + RET and run it to verdict.
-fn run_single(
-    op: Opcode,
-    stack_inputs: Vec<Value>,
-    store: &mut SubstanceStore,
-) -> ExecVerdict {
+fn run_single(op: Opcode, stack_inputs: Vec<Value>, store: &mut SubstanceStore) -> ExecVerdict {
     // Build: push inputs in argument order then execute the opcode.
     // ExecState::new reverses inputs so first input ends up on top —
     // that's arg0 on top, which is what single-arg opcodes expect.
@@ -90,12 +86,7 @@ fn capheld_returns_true_for_registered_cap() {
     let arc = reg.into_arc();
 
     let mut store = SubstanceStore::new();
-    let verdict = run_with_capreg(
-        Opcode::CapHeld,
-        vec![Value::Hash(cap_id)],
-        &mut store,
-        arc,
-    );
+    let verdict = run_with_capreg(Opcode::CapHeld, vec![Value::Hash(cap_id)], &mut store, arc);
     assert!(
         matches!(verdict, ExecVerdict::Returned(Value::Bool(true))),
         "CAPHELD must return true for a registered cap; got {:?}",
@@ -112,12 +103,7 @@ fn capheld_returns_false_for_unknown_cap() {
     let arc = reg.into_arc();
 
     let mut store = SubstanceStore::new();
-    let verdict = run_with_capreg(
-        Opcode::CapHeld,
-        vec![Value::Hash(unknown)],
-        &mut store,
-        arc,
-    );
+    let verdict = run_with_capreg(Opcode::CapHeld, vec![Value::Hash(unknown)], &mut store, arc);
     assert!(
         matches!(verdict, ExecVerdict::Returned(Value::Bool(false))),
         "CAPHELD must return false for an unregistered cap"
@@ -353,11 +339,7 @@ fn bindslot_always_traps_eunauthorised_at_stage0() {
     let mut store = SubstanceStore::new();
     // IL convention: name_hash pushed first, form_hash pushed second (form_hash on top).
     // inputs[0] = form_hash (top), inputs[1] = name_hash.
-    let verdict = run_single(
-        Opcode::BindSlot,
-        vec![form_hash, name_hash],
-        &mut store,
-    );
+    let verdict = run_single(Opcode::BindSlot, vec![form_hash, name_hash], &mut store);
     assert!(
         matches!(verdict, ExecVerdict::Trapped(TrapKind::EUnauthorised)),
         "BINDSLOT must trap EUnauthorised at stage-0 (no kernel mutation cap)"

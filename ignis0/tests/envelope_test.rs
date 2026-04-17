@@ -50,8 +50,8 @@ fn demo_valid_form_verifies_and_executes_in_full_mode() {
         ProofStatus::Verified,
     );
 
-    let outcome =
-        verify(&env, &Ledger::new()).expect("a verified, declared, hash-correct genesis must verify");
+    let outcome = verify(&env, &Ledger::new())
+        .expect("a verified, declared, hash-correct genesis must verify");
 
     let result = run_envelope(&env, &outcome);
     assert_eq!(result.mode, EnvelopeMode::Full);
@@ -72,7 +72,9 @@ fn demo_orphan_form_parses_but_is_refused_by_verifier() {
     // must refuse it because it has no derivation predecessor.
     let mut env = genesis(
         "demo/orphan",
-        vec![Op::Emit { text: "alone".into() }],
+        vec![Op::Emit {
+            text: "alone".into(),
+        }],
         vec![],
         ProofStatus::Verified,
     );
@@ -146,10 +148,7 @@ fn demo_deferred_form_admits_with_restricted_execution_only() {
     assert_eq!(result.skipped_count(), 2, "write and infer must be skipped");
 
     // The first op (emit) ran; the rest were marked skipped.
-    assert!(matches!(
-        &result.decisions[0],
-        OpDecision::Executed { .. }
-    ));
+    assert!(matches!(&result.decisions[0], OpDecision::Executed { .. }));
     assert!(matches!(
         &result.decisions[1],
         OpDecision::SkippedRestricted { op_name } if *op_name == "write"
@@ -222,7 +221,9 @@ fn tampered_payload_invalidates_hash() {
     // recomputing the hash. The verifier must catch the discrepancy.
     let mut env = genesis(
         "demo/tamper",
-        vec![Op::Emit { text: "original".into() }],
+        vec![Op::Emit {
+            text: "original".into(),
+        }],
         vec![],
         ProofStatus::Verified,
     );
@@ -241,7 +242,9 @@ fn tampered_payload_invalidates_hash() {
 fn invalid_proof_status_is_denied_at_gate() {
     let env = genesis(
         "demo/invalid",
-        vec![Op::Emit { text: "should not run".into() }],
+        vec![Op::Emit {
+            text: "should not run".into(),
+        }],
         vec![],
         ProofStatus::Invalid,
     );
@@ -255,7 +258,9 @@ fn invalid_proof_status_is_denied_at_gate() {
 fn derived_child_links_to_parent_and_verifies_against_ledger() {
     let parent = genesis(
         "g",
-        vec![Op::Emit { text: "ancestor".into() }],
+        vec![Op::Emit {
+            text: "ancestor".into(),
+        }],
         vec!["io.fs".into()],
         ProofStatus::Verified,
     );
@@ -303,7 +308,11 @@ fn explicit_restricted_mode_overrides_status_mapping() {
     );
     let result = run_envelope_with_mode(&env, EnvelopeMode::Restricted);
     assert_eq!(result.mode, EnvelopeMode::Restricted);
-    assert_eq!(result.executed_count(), 0, "write must be skipped under restricted");
+    assert_eq!(
+        result.executed_count(),
+        0,
+        "write must be skipped under restricted"
+    );
     assert_eq!(result.skipped_count(), 1);
 }
 
@@ -313,14 +322,13 @@ fn explicit_restricted_mode_overrides_status_mapping() {
 fn ledger_round_trip_through_json_files() {
     let env = genesis(
         "demo/persisted",
-        vec![Op::Emit { text: "rehydrated".into() }],
+        vec![Op::Emit {
+            text: "rehydrated".into(),
+        }],
         vec![],
         ProofStatus::Verified,
     );
-    let tmp = std::env::temp_dir().join(format!(
-        "ignis0-envelope-test-{}",
-        std::process::id()
-    ));
+    let tmp = std::env::temp_dir().join(format!("ignis0-envelope-test-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(&tmp).unwrap();
     let path = tmp.join("demo-persisted.envelope.json");
@@ -329,7 +337,10 @@ fn ledger_round_trip_through_json_files() {
     let ledger = Ledger::load_from_dir(&tmp).expect("ledger must load");
     assert_eq!(ledger.len(), 1);
     let loaded = ledger.get("demo/persisted").expect("form id must index");
-    assert_eq!(loaded.hash, env.hash, "round-trip must preserve canonical hash");
+    assert_eq!(
+        loaded.hash, env.hash,
+        "round-trip must preserve canonical hash"
+    );
 
     // Verify still passes after the round trip.
     verify(loaded, &ledger).unwrap();

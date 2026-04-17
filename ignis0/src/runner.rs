@@ -116,12 +116,7 @@ pub fn run_envelope(env: &FormEnvelope, outcome: &VerifyOutcome) -> EnvelopeRunR
 /// caller wants to dry-run a verified form under restricted mode.
 pub fn run_envelope_with_mode(env: &FormEnvelope, mode: EnvelopeMode) -> EnvelopeRunResult {
     let decisions = match mode {
-        EnvelopeMode::Denied => env
-            .payload
-            .ops
-            .iter()
-            .map(|_| OpDecision::Denied)
-            .collect(),
+        EnvelopeMode::Denied => env.payload.ops.iter().map(|_| OpDecision::Denied).collect(),
         EnvelopeMode::Restricted | EnvelopeMode::Full => env
             .payload
             .ops
@@ -134,9 +129,7 @@ pub fn run_envelope_with_mode(env: &FormEnvelope, mode: EnvelopeMode) -> Envelop
 
 fn decide_one(op: &Op, mode: EnvelopeMode) -> OpDecision {
     if mode == EnvelopeMode::Restricted && !op.is_observable_only() {
-        return OpDecision::SkippedRestricted {
-            op_name: op.name(),
-        };
+        return OpDecision::SkippedRestricted { op_name: op.name() };
     }
     OpDecision::Executed {
         effect: simulate_effect(op),
@@ -184,12 +177,18 @@ mod tests {
 
     #[test]
     fn mode_mapping_is_canonical() {
-        assert_eq!(EnvelopeMode::for_status(ProofStatus::Verified), EnvelopeMode::Full);
+        assert_eq!(
+            EnvelopeMode::for_status(ProofStatus::Verified),
+            EnvelopeMode::Full
+        );
         assert_eq!(
             EnvelopeMode::for_status(ProofStatus::Deferred),
             EnvelopeMode::Restricted
         );
-        assert_eq!(EnvelopeMode::for_status(ProofStatus::Invalid), EnvelopeMode::Denied);
+        assert_eq!(
+            EnvelopeMode::for_status(ProofStatus::Invalid),
+            EnvelopeMode::Denied
+        );
     }
 
     #[test]
@@ -229,7 +228,11 @@ mod tests {
         let outcome = verified_outcome(&env);
         let result = run_envelope(&env, &outcome);
         assert_eq!(result.mode, EnvelopeMode::Restricted);
-        assert_eq!(result.executed_count(), 1, "only emit may run in restricted mode");
+        assert_eq!(
+            result.executed_count(),
+            1,
+            "only emit may run in restricted mode"
+        );
         assert_eq!(result.skipped_count(), 2);
         // The single executed op must be the emit.
         assert!(matches!(

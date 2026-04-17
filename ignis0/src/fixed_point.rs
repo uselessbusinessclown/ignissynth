@@ -129,7 +129,9 @@ pub struct FixedPointCheck {
 
 impl FixedPointCheck {
     pub fn new() -> Self {
-        Self { store: SubstanceStore::new() }
+        Self {
+            store: SubstanceStore::new(),
+        }
     }
 
     /// Build the canonical Form F either via the parser (new
@@ -137,8 +139,7 @@ impl FixedPointCheck {
     /// (legacy path, kept for tests that want to bypass the
     /// parser). This method calls the parser.
     pub fn build_f_parsed() -> Vec<Opcode> {
-        parse_form_lines(CANONICAL_F_SOURCE)
-            .expect("canonical F source is always valid")
+        parse_form_lines(CANONICAL_F_SOURCE).expect("canonical F source is always valid")
     }
 
     /// Legacy hand-constructed build path. Tests that want to
@@ -175,9 +176,7 @@ impl FixedPointCheck {
         match interp.run(&mut state, 1024) {
             ExecVerdict::Returned(v) => EvalVerdict::Produced(v),
             ExecVerdict::Trapped(k) => EvalVerdict::Trapped(format!("{}", k)),
-            ExecVerdict::Yielded => {
-                EvalVerdict::Trapped("unexpected YIELD in F".to_string())
-            }
+            ExecVerdict::Yielded => EvalVerdict::Trapped("unexpected YIELD in F".to_string()),
         }
     }
 
@@ -253,9 +252,7 @@ impl FixedPointCheck {
                 StepResult::Step => continue,
                 StepResult::Returned(v) => return Ok((v, max_depth)),
                 StepResult::Trapped(k) => return Err(format!("{}", k)),
-                StepResult::Yielded => {
-                    return Err("unexpected YIELD in fixed-point run".into())
-                }
+                StepResult::Yielded => return Err("unexpected YIELD in fixed-point run".into()),
             }
         }
         Err("max_steps exceeded in fixed-point run".into())
@@ -271,16 +268,14 @@ impl FixedPointCheck {
     /// outer = S07² (which CALLs S07, which CALLs F).
     fn build_indirect_chain(levels: usize) -> (FormRegistry, Hash) {
         let mut reg = FormRegistry::new();
-        let f_bytes = encode_form(&Self::build_f_wire())
-            .expect("canonical F encodes cleanly");
+        let f_bytes = encode_form(&Self::build_f_wire()).expect("canonical F encodes cleanly");
         let f_hash = reg
             .register_wire("A9.3/F", &f_bytes)
             .expect("canonical F decodes cleanly");
         let mut current_hash = f_hash;
         for i in 1..=levels {
             let s07 = Self::build_micro_s07(current_hash);
-            let bytes = encode_form(&s07)
-                .expect("micro-S-07 encodes cleanly");
+            let bytes = encode_form(&s07).expect("micro-S-07 encodes cleanly");
             let name = format!("A9.3/micro_s07_level_{}", i);
             current_hash = reg
                 .register_wire(&name, &bytes)
@@ -298,12 +293,8 @@ impl FixedPointCheck {
             .get(&outer)
             .expect("outer Form is in the registry by construction")
             .clone();
-        let mut state = ExecState::new(
-            outer,
-            loaded.code,
-            loaded.locals_n,
-            vec![Value::Nat(input)],
-        );
+        let mut state =
+            ExecState::new(outer, loaded.code, loaded.locals_n, vec![Value::Nat(input)]);
         let mut interp = Interpreter::new(&mut self.store).with_registry(&reg);
         match Self::run_traced(&mut interp, &mut state, 4096) {
             Ok((v, depth)) => EvalVerdict::ProducedTraced(v, depth),
@@ -320,12 +311,8 @@ impl FixedPointCheck {
             .get(&outer)
             .expect("outer Form is in the registry by construction")
             .clone();
-        let mut state = ExecState::new(
-            outer,
-            loaded.code,
-            loaded.locals_n,
-            vec![Value::Nat(input)],
-        );
+        let mut state =
+            ExecState::new(outer, loaded.code, loaded.locals_n, vec![Value::Nat(input)]);
         let mut interp = Interpreter::new(&mut self.store).with_registry(&reg);
         match Self::run_traced(&mut interp, &mut state, 4096) {
             Ok((v, depth)) => EvalVerdict::ProducedTraced(v, depth),
@@ -373,10 +360,7 @@ impl FixedPointCheck {
         let indirect_2 = self.eval_indirect_2(INPUT);
 
         match (&indirect_1, &indirect_2) {
-            (
-                EvalVerdict::ProducedTraced(v1, d1),
-                EvalVerdict::ProducedTraced(v2, d2),
-            ) => {
+            (EvalVerdict::ProducedTraced(v1, d1), EvalVerdict::ProducedTraced(v2, d2)) => {
                 if *v1 != direct_value {
                     return FixedPointVerdict::Disagreed {
                         direct: direct_value,

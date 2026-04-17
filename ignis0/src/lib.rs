@@ -38,7 +38,9 @@ pub use opcode::Opcode;
 pub use parser::{parse_form_lines, ParseError};
 pub use pretty::{opcode_to_line, pretty_print, pretty_print_with_header};
 pub use registry::{FormRegistry, LoadedForm};
-pub use runner::{run_envelope, run_envelope_with_mode, EnvelopeMode, EnvelopeRunResult, OpDecision};
+pub use runner::{
+    run_envelope, run_envelope_with_mode, EnvelopeMode, EnvelopeRunResult, OpDecision,
+};
 pub use store::SubstanceStore;
 pub use value::{Hash, SubstanceHash, TrapKind, Value};
 // Note: the `verify` function lives at `ignis0::verify::verify`. We do

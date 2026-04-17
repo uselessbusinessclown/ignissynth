@@ -72,10 +72,7 @@ impl Ledger {
             })?;
             // `file_type` avoids a second stat compared to `path.is_file()`
             // and gives us enough to skip subdirectories cheaply.
-            let is_file = entry
-                .file_type()
-                .map(|t| t.is_file())
-                .unwrap_or(false);
+            let is_file = entry.file_type().map(|t| t.is_file()).unwrap_or(false);
             if !is_file {
                 continue;
             }
@@ -87,12 +84,11 @@ impl Ledger {
                 path: path.clone(),
                 source: e.to_string(),
             })?;
-            let env = FormEnvelope::from_json_bytes(&bytes).map_err(|e| {
-                LedgerLoadError::ParseError {
+            let env =
+                FormEnvelope::from_json_bytes(&bytes).map_err(|e| LedgerLoadError::ParseError {
                     path: path.clone(),
                     source: e,
-                }
-            })?;
+                })?;
             ledger.insert(env);
         }
         Ok(ledger)
@@ -119,7 +115,10 @@ fn is_envelope_path(path: &Path) -> bool {
 /// field is a `PathBuf` (no `Display` impl) and needs `.display()`.
 #[derive(Debug)]
 pub enum LedgerLoadError {
-    Io { path: PathBuf, source: String },
+    Io {
+        path: PathBuf,
+        source: String,
+    },
     ParseError {
         path: PathBuf,
         source: EnvelopeParseError,

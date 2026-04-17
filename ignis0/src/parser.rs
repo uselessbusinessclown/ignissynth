@@ -14,20 +14,24 @@
 //!
 //! Grammar:
 //!
-//!     form     = line*
-//!     line     = comment | blank | instruction
-//!     comment  = ';' ...
-//!     blank    = whitespace only
-//!     instruction = mnemonic (whitespace operand)*
+//! ```text
+//! form     = line*
+//! line     = comment | blank | instruction
+//! comment  = ';' ...
+//! blank    = whitespace only
+//! instruction = mnemonic (whitespace operand)*
+//! ```
 //!
 //! Examples:
 //!
-//!     ; add 1 to input
-//!     STORE 0
-//!     LOAD 0
-//!     PUSH 1
-//!     ADD
-//!     RET
+//! ```text
+//! ; add 1 to input
+//! STORE 0
+//! LOAD 0
+//! PUSH 1
+//! ADD
+//! RET
+//! ```
 //!
 //! When the canonical parser lands (as a proper IL-encoded
 //! helper chain under ignis0), this file will be deleted.
@@ -74,10 +78,19 @@ fn parse_line(line: &str) -> Option<Opcode> {
     }
     match parts[0] {
         // Stack and locals
-        "PUSH" => parts.get(1).and_then(|s| s.parse::<u128>().ok()).map(|n| Opcode::Push(Value::Nat(n))),
+        "PUSH" => parts
+            .get(1)
+            .and_then(|s| s.parse::<u128>().ok())
+            .map(|n| Opcode::Push(Value::Nat(n))),
         "POP" => Some(Opcode::Pop),
-        "LOAD" => parts.get(1).and_then(|s| s.parse::<u32>().ok()).map(Opcode::Load),
-        "STORE" => parts.get(1).and_then(|s| s.parse::<u32>().ok()).map(Opcode::Store),
+        "LOAD" => parts
+            .get(1)
+            .and_then(|s| s.parse::<u32>().ok())
+            .map(Opcode::Load),
+        "STORE" => parts
+            .get(1)
+            .and_then(|s| s.parse::<u32>().ok())
+            .map(Opcode::Store),
 
         // Arithmetic
         "ADD" => Some(Opcode::Add),
@@ -86,18 +99,30 @@ fn parse_line(line: &str) -> Option<Opcode> {
         "LT" => Some(Opcode::Lt),
 
         // Control flow
-        "JMP" => parts.get(1).and_then(|s| s.parse::<i32>().ok()).map(Opcode::Jmp),
-        "JMPZ" => parts.get(1).and_then(|s| s.parse::<i32>().ok()).map(Opcode::Jmpz),
+        "JMP" => parts
+            .get(1)
+            .and_then(|s| s.parse::<i32>().ok())
+            .map(Opcode::Jmp),
+        "JMPZ" => parts
+            .get(1)
+            .and_then(|s| s.parse::<i32>().ok())
+            .map(Opcode::Jmpz),
         "RET" => Some(Opcode::Ret),
         // CALL intentionally omitted — needs hash parsing which
         // the line-oriented scaffold does not support.
-        "INVOKE" => parts.get(1).and_then(|s| s.parse::<u32>().ok()).map(|n| Opcode::Invoke { n }),
+        "INVOKE" => parts
+            .get(1)
+            .and_then(|s| s.parse::<u32>().ok())
+            .map(|n| Opcode::Invoke { n }),
 
         // Structure
         "MAKEPAIR" => Some(Opcode::MakePair),
         "FST" => Some(Opcode::Fst),
         "SND" => Some(Opcode::Snd),
-        "MAKEVEC" => parts.get(1).and_then(|s| s.parse::<u32>().ok()).map(Opcode::MakeVec),
+        "MAKEVEC" => parts
+            .get(1)
+            .and_then(|s| s.parse::<u32>().ok())
+            .map(Opcode::MakeVec),
 
         // Substance
         "SEAL" => parts.get(1).map(|t| Opcode::Seal(t.to_string())),

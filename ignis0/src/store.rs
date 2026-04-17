@@ -30,7 +30,9 @@ pub struct SubstanceStore {
 
 impl SubstanceStore {
     pub fn new() -> Self {
-        Self { cells: HashMap::new() }
+        Self {
+            cells: HashMap::new(),
+        }
     }
 
     /// Seal a value under a type tag. Idempotent: if the hash
@@ -48,7 +50,11 @@ impl SubstanceStore {
         self.cells
             .entry(h)
             .and_modify(|c| c.pin_count += 1)
-            .or_insert(Cell { type_tag: type_tag.to_string(), value, pin_count: 1 });
+            .or_insert(Cell {
+                type_tag: type_tag.to_string(),
+                value,
+                pin_count: 1,
+            });
         h
     }
 
