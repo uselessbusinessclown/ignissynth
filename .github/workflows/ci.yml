@@ -264,3 +264,57 @@ jobs:
             echo "ERROR: encoded helper count ($encoded) is below baseline ($baseline)" >&2
             exit 1
           fi
+
+  # ── Status dashboard regeneration check ──────────────────────────────
+  status-dashboard:
+    name: Status dashboard (drift check)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install jq (preinstalled on ubuntu-latest, sanity-check)
+        run: jq --version
+
+      - name: Regenerate dashboard into a tmp dir
+        # The script writes status.json + STATUS.md back into
+        # tools/status/. We snapshot the committed copies first, run
+        # the generator, then diff.
+        run: |
+          set -e
+          cp tools/status/status.json /tmp/committed-status.json
+          cp tools/status/STATUS.md   /tmp/committed-STATUS.md
+          bash tools/status/build-status.sh > /dev/null
+
+      - name: Compare regenerated JSON against committed (ignoring metadata)
+        # `generated_at` and `generated_from_commit` change every run.
+        # Everything else must be byte-identical to what reviewers saw.
+        # If this fails, run `bash tools/status/build-status.sh` locally
+        # and commit the regenerated files.
+        run: |
+          set -e
+          jq 'del(.generated_at, .generated_from_commit)' /tmp/committed-status.json > /tmp/committed-stable.json
+          jq 'del(.generated_at, .generated_from_commit)' tools/status/status.json    > /tmp/regen-stable.json
+          if ! diff -u /tmp/committed-stable.json /tmp/regen-stable.json; then
+            echo "" >&2
+            echo "ERROR: tools/status/status.json is out of date." >&2
+            echo "Run: bash tools/status/build-status.sh && commit the result." >&2
+            exit 1
+          fi
+          echo "status.json is up to date with the live repo state."
+
+      - name: Compare regenerated markdown against committed (ignoring metadata)
+        # The markdown carries the same two volatile fields. Strip
+        # them before diffing so the check is content-only.
+        run: |
+          set -e
+          strip='/^> Generated at:/d; /^> From commit:/d'
+          sed "$strip" /tmp/committed-STATUS.md > /tmp/committed-STATUS.stable.md
+          sed "$strip" tools/status/STATUS.md   > /tmp/regen-STATUS.stable.md
+          if ! diff -u /tmp/committed-STATUS.stable.md /tmp/regen-STATUS.stable.md; then
+            echo "" >&2
+            echo "ERROR: tools/status/STATUS.md is out of date." >&2
+            echo "Run: bash tools/status/build-status.sh && commit the result." >&2
+            exit 1
+          fi
+          echo "STATUS.md is up to date with the live repo state."

@@ -1,0 +1,155 @@
+{
+  "generated_at": "2026-04-17T19:56:46Z",
+  "generated_from_commit": "80e058c",
+  "seed": {
+    "version": "0.1.0-pre-ignition"
+  },
+  "ignis0": {
+    "version": "0.3.0-compute",
+    "rust_msrv": "1.75"
+  },
+  "primary_forms": {
+    "expected": 11,
+    "present": 11,
+    "with_proof": 11
+  },
+  "proofs": {
+    "files": [
+      {
+        "name": "S-01-ignite",
+        "obligations": 7,
+        "declared_verdict": "Pass"
+      },
+      {
+        "name": "S-02-cap-registry",
+        "obligations": 8,
+        "declared_verdict": "Pass"
+      },
+      {
+        "name": "S-03-substance-store",
+        "obligations": 6,
+        "declared_verdict": "Pass"
+      },
+      {
+        "name": "S-04-weave-log",
+        "obligations": 6,
+        "declared_verdict": null
+      },
+      {
+        "name": "S-05-attention-alloc",
+        "obligations": 6,
+        "declared_verdict": "Pass"
+      },
+      {
+        "name": "S-06-intent-match",
+        "obligations": 6,
+        "declared_verdict": "Pass"
+      },
+      {
+        "name": "S-07-form-runtime",
+        "obligations": 6,
+        "declared_verdict": null
+      },
+      {
+        "name": "S-08-proof-checker",
+        "obligations": 3,
+        "declared_verdict": "Structural"
+      },
+      {
+        "name": "S-09-synth-kernel",
+        "obligations": 8,
+        "declared_verdict": null
+      },
+      {
+        "name": "S-10-hephaistion-seed",
+        "obligations": 8,
+        "declared_verdict": "Pass"
+      },
+      {
+        "name": "S-11-bridge-proto",
+        "obligations": 6,
+        "declared_verdict": null
+      }
+    ],
+    "total_obligations": 70,
+    "verdicts": {
+      "Pass": 6,
+      "Structural": 1,
+      "unspecified": 4
+    }
+  },
+  "helpers": {
+    "files": 10,
+    "encoded": 86,
+    "pending": 99
+  },
+  "il": {
+    "opcode_count_impl": 35,
+    "opcode_count_spec": 35,
+    "opcode_spec_string": "Thirty-five exactly",
+    "in_sync": true
+  },
+  "manifest": {
+    "required_keys_present": true,
+    "missing_keys": [],
+    "forms": 11,
+    "axioms": 9,
+    "kernel_authors": 3
+  },
+  "axioms": {
+    "files_on_disk": 10,
+    "manifest_entries": 9,
+    "drift_not_in_manifest": [
+      "A9-ignition-substrate"
+    ]
+  },
+  "invariants": {
+    "count": 12
+  },
+  "roadmap_ignis0": {
+    "milestones": [
+      {
+        "tag": "v0.2.0-ignition",
+        "status": "done",
+        "raw": "✓ done"
+      },
+      {
+        "tag": "v0.2.1-ignis0-call",
+        "status": "done",
+        "raw": "✓ done (`c4c033a`)"
+      },
+      {
+        "tag": "v0.2.2-ignis0-wire",
+        "status": "done",
+        "raw": "✓ done (`8353185` + post-merge iteration)"
+      },
+      {
+        "tag": "v0.2.3-ignis0-fp",
+        "status": "done",
+        "raw": "✓ done"
+      },
+      {
+        "tag": "v0.2.4-ignis0-cap",
+        "status": "done",
+        "raw": "✓ done"
+      },
+      {
+        "tag": "v0.2.5-ignis0-store",
+        "status": "blocked",
+        "raw": "depends on Trie.md"
+      },
+      {
+        "tag": "v0.3.0-compute",
+        "status": "done",
+        "raw": "✓ done (`d28b466`) — landed out of order; schedule above is corrected"
+      }
+    ],
+    "done": 6,
+    "blocked": 1,
+    "other": 0
+  },
+  "drift": [
+    "proofs without explicit '; Verdict:' line: S-04-weave-log, S-07-form-runtime, S-09-synth-kernel, S-11-bridge-proto",
+    "axioms on disk but not in manifest: A9-ignition-substrate"
+  ]
+}

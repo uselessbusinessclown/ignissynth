@@ -64,7 +64,7 @@ kernel/
 | Substance schemas           | partial — `types/SCHEMA.md` covers 5 of ~25 types |
 | Seed manifest               | ✓ `manifest.json` (placeholders for hashes/keys)|
 | Inspection record           | drafted with placeholder signatures            |
-| Helper Forms                | 28 of ~115 encoded; ~87 catalogued as pending  |
+| Helper Forms                | encoded/pending counts in [`tools/status/STATUS.md`](../tools/status/STATUS.md) |
 | Lemma library               | **referenced but not yet sealed** — see ROADMAP.md "Project review" |
 | Schema/* primitives         | **referenced but not catalogued in STUBS.md** — see ROADMAP.md |
 | Persistent-trie/treap layouts | not yet specified — `types/Trie.md`, `types/Treap.md`, `types/Forest.md` are post-v0.1.0 |
@@ -74,7 +74,8 @@ kernel/
 The seed at this checkpoint is **fully proof-traced** at the
 primary-Form layer (every primary Form has an artifact whose
 mechanizable obligations are discharged) and **partially encoded**
-at the helper layer (28 of ~115 helpers). What ships at v0.1.0 is
+at the helper layer (current encoded/pending split in
+[`tools/status/STATUS.md`](../tools/status/STATUS.md)). What ships at v0.1.0 is
 the design + the proof load + the helper catalogue; what is in
 progress at v0.2.0 is the helper bodies; what is *not yet*
 specified is named explicitly in the table above and tracked in
