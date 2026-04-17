@@ -216,7 +216,7 @@ jobs:
       - name: Verify manifest exists and has required top-level keys
         run: |
           set -e
-          for key in version seed_forms kernel_authors boot_order immediates; do
+          for key in version forms kernel_authors boot_order immediates; do
             if ! grep -q "\"$key\"" kernel/manifest.json; then
               echo "ERROR: manifest.json missing top-level key: $key" >&2
               exit 1
