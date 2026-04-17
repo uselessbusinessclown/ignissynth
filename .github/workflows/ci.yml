@@ -41,24 +41,11 @@ jobs:
         working-directory: ignis0
         run: cargo fmt --all --check
 
-      - name: Generate lockfile (if missing)
-        working-directory: ignis0
-        # Cargo.lock is intentionally not committed yet (tracked as a
-        # follow-up under the Build Integrity milestone). Generate it
-        # once at the start of the job so subsequent steps run against
-        # a stable resolution for this run.
-        run: |
-          if [ ! -f Cargo.lock ]; then
-            cargo generate-lockfile
-          fi
-
       - name: Clippy (deny warnings, all targets, all features)
         working-directory: ignis0
-        # --locked: refuse to update the lockfile mid-build. Once
-        # Cargo.lock is committed (issue #9), this prevents transitive
-        # version drift between CI runs. Today the lockfile is freshly
-        # generated above so --locked is effectively a no-op, but the
-        # discipline is in place.
+        # --locked: refuse to update the lockfile mid-build. Cargo.lock
+        # is committed, so this guarantees a stable resolution across
+        # CI runs and pins transitive versions to what was reviewed.
         run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
       - name: Build
@@ -98,16 +85,6 @@ jobs:
 
       - name: Install stable Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Generate lockfile (if missing)
-        working-directory: ignis0
-        # Same workaround as the ignis0 job: Cargo.lock is not yet
-        # committed (issue #9). Once it is, this step can be removed
-        # and --locked will guarantee a stable resolution across runs.
-        run: |
-          if [ ! -f Cargo.lock ]; then
-            cargo generate-lockfile
-          fi
 
       - name: First release build
         working-directory: ignis0
