@@ -174,9 +174,9 @@ cargo run -- version
 
 | Module | Purpose |
 |--------|---------|
-| `value.rs` | `Value`, `Hash` (BLAKE3), `TrapKind` |
-| `opcode.rs` | All 35 IL opcode variants |
-| `exec.rs` | `ExecState` (call-frame stack), `Interpreter`, `CALL`/`RET` |
+| `value.rs` | `Value`, `Hash` (BLAKE3 alias for `SubstanceHash`), `TrapKind` |
+| `opcode.rs` | All 35 IL opcode variants (34 frozen + post-freeze `CALLI`) |
+| `exec.rs` | `ExecState` (call-frame stack), `Interpreter`, `CALL`/`CALLI`/`RET` |
 | `store.rs` | In-memory substance store (S-03 abstract interface) |
 | `registry.rs` | Content-addressed `FormRegistry` for CALL resolution (incl. `register_wire`) |
 | `capability.rs` | `CapabilityRegistry`, `CapabilityInvoker` trait, builtin GPU + inference caps for `INVOKE` |
@@ -184,13 +184,21 @@ cargo run -- version
 | `wire.rs` | Byte-exact Form wire codec (`encode_form`/`decode_form`) per IL.md § "Byte-exact wire grammar (v1)" |
 | `pretty.rs` | Pretty-printer: `Vec<Opcode>` → scaffold source text |
 | `fixed_point.rs` | A9.3 fixed-point check harness |
+| `envelope.rs` | `FormEnvelope` — derivation-gated execution control plane |
+| `derive.rs` | Derivation rules consumed by `FormEnvelope` |
+| `runner.rs` | Envelope-aware Form runner used by the CLI |
+| `verify.rs` | Envelope verifier (`ProofStatus` + envelope checks) |
+| `fuzz/` | `cargo-fuzz` harness for the parser and wire codec |
 
 ### CI
 
-GitHub Actions runs `cargo fmt --check`, `cargo clippy`, `cargo build`,
-`cargo test`, and the fixed-point CLI smoke-test on every push and pull
-request. It also lints the proof artifacts and manifest structurally.
-See `.github/workflows/ci.yml`.
+GitHub Actions runs `cargo fmt --check`, `cargo clippy --all-targets
+--all-features -- -D warnings`, `cargo build`, `cargo test`, the
+fixed-point CLI smoke-test, and a release-build reproducibility smoke
+test on every push and pull request. It also lints the proof
+artifacts and manifest structurally and checks the helper-catalogue
+baseline. See `.github/workflows/ci.yml`. As of `a130590`, all jobs
+are green on `main`.
 
 ### Relationship to IgnisSynth
 
