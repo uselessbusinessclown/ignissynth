@@ -13,7 +13,7 @@ use ignis0::{
     capability::{CapabilityInvoker, CapabilityRegistry},
     exec::{ExecState, ExecVerdict, Interpreter},
     opcode::Opcode,
-    registry::FormRegistry,
+    registry::{FormRegistry, LoadedForm},
     store::SubstanceStore,
     value::{Hash, TrapKind, Value},
     wire::{encode_form, Form},
@@ -426,4 +426,127 @@ fn parseform_result_hash_differs_from_input_hash() {
         }
         other => panic!("expected Hash, got {:?}", other),
     }
+}
+
+// ── CALLI ─────────────────────────────────────────────────────────────────────
+
+/// Build a minimal callee Form that takes one Nat on the stack (as arg₀),
+/// adds 1, and returns. The caller invokes it via CALLI to exercise the
+/// indirect-call path end-to-end.
+fn register_increment_form(reg: &mut FormRegistry) -> Hash {
+    // Code: STORE 0; LOAD 0; PUSH 1; ADD; RET
+    // Arity: 1, locals_n: 1 — identical body to the A9.3 canonical F.
+    let callee = LoadedForm {
+        name: "increment".to_string(),
+        locals_n: 1,
+        code: vec![
+            Opcode::Store(0),
+            Opcode::Load(0),
+            Opcode::Push(Value::Nat(1)),
+            Opcode::Add,
+            Opcode::Ret,
+        ],
+    };
+    // Dispatch is by content hash; at stage-0 the choice of hash
+    // doesn't need to match canonical wire bytes because nothing
+    // else in this test reaches back into the store. Pick a
+    // deterministic hash so the binding-side code matches.
+    let h = Hash::of(b"ignis0/test/increment");
+    reg.register(h, callee);
+    h
+}
+
+#[test]
+fn calli_dispatches_to_stack_top_hash() {
+    // Direct form of the idiom: PUSH arg; PUSH form_hash; CALLI /n=1; RET.
+    // No READSLOT involved — pins CALLI's contract (consume top hash,
+    // invoke it with n args) independently of slot resolution.
+    let mut reg = FormRegistry::new();
+    let target = register_increment_form(&mut reg);
+
+    let mut store = SubstanceStore::new();
+    let code = vec![
+        Opcode::Push(Value::Nat(42)),
+        Opcode::Push(Value::Hash(target)),
+        Opcode::CallI { n: 1 },
+        Opcode::Ret,
+    ];
+    let mut state = ExecState::new(Hash::BOTTOM, code, 0, vec![]);
+    let mut interp = Interpreter::new(&mut store).with_registry(&reg);
+    let verdict = interp.run(&mut state, 100);
+    assert!(
+        matches!(verdict, ExecVerdict::Returned(Value::Nat(43))),
+        "CALLI must dispatch to the stack-top hash (42 + 1 = 43); got {:?}",
+        verdict
+    );
+}
+
+#[test]
+fn readslot_plus_calli_resolves_and_invokes() {
+    // The canonical idiom from IL.md § Control flow: the whole point of
+    // the 34→35 bump. PUSH name; READSLOT; CALLI /n=1 must chain so the
+    // target Form bound at `name` runs with the supplied arg.
+    let mut reg = FormRegistry::new();
+    let target = register_increment_form(&mut reg);
+    let slot_name = Hash::of(b"test/slot/increment");
+    reg.bind_slot(slot_name, target);
+
+    let mut store = SubstanceStore::new();
+    let code = vec![
+        Opcode::Push(Value::Nat(99)),
+        Opcode::Push(Value::Hash(slot_name)),
+        Opcode::ReadSlot,
+        Opcode::CallI { n: 1 },
+        Opcode::Ret,
+    ];
+    let mut state = ExecState::new(Hash::BOTTOM, code, 0, vec![]);
+    let mut interp = Interpreter::new(&mut store).with_registry(&reg);
+    let verdict = interp.run(&mut state, 100);
+    assert!(
+        matches!(verdict, ExecVerdict::Returned(Value::Nat(100))),
+        "READSLOT + CALLI must compose into slot dispatch (99 + 1 = 100); got {:?}",
+        verdict
+    );
+}
+
+#[test]
+fn calli_traps_etype_on_non_hash_top() {
+    // CALLI expects a Hash on top of the stack. A Nat must produce ETYPE.
+    let reg = FormRegistry::new();
+    let mut store = SubstanceStore::new();
+    let code = vec![
+        Opcode::Push(Value::Nat(7)),
+        Opcode::CallI { n: 0 },
+        Opcode::Ret,
+    ];
+    let mut state = ExecState::new(Hash::BOTTOM, code, 0, vec![]);
+    let mut interp = Interpreter::new(&mut store).with_registry(&reg);
+    let verdict = interp.run(&mut state, 100);
+    assert!(
+        matches!(verdict, ExecVerdict::Trapped(TrapKind::EType(_))),
+        "CALLI must trap ETYPE when the top of stack is not a Hash; got {:?}",
+        verdict
+    );
+}
+
+#[test]
+fn calli_traps_eunheld_for_unregistered_hash() {
+    // CALLI resolves via the same registry path as direct CALL, so an
+    // unknown hash must surface EUNHELD.
+    let reg = FormRegistry::new();
+    let unknown = Hash::of(b"no-such-form");
+    let mut store = SubstanceStore::new();
+    let code = vec![
+        Opcode::Push(Value::Hash(unknown)),
+        Opcode::CallI { n: 0 },
+        Opcode::Ret,
+    ];
+    let mut state = ExecState::new(Hash::BOTTOM, code, 0, vec![]);
+    let mut interp = Interpreter::new(&mut store).with_registry(&reg);
+    let verdict = interp.run(&mut state, 100);
+    assert!(
+        matches!(verdict, ExecVerdict::Trapped(TrapKind::EUnheld(_))),
+        "CALLI must trap EUNHELD when the resolved hash is not registered; got {:?}",
+        verdict
+    );
 }

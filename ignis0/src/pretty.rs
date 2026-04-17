@@ -77,6 +77,7 @@ pub fn opcode_to_line(op: &Opcode) -> String {
         Opcode::Jmp(off) => format!("JMP {}", off),
         Opcode::Jmpz(off) => format!("JMPZ {}", off),
         Opcode::Call { form, n } => format!("CALL h={} /n={}", form.short(), n),
+        Opcode::CallI { n } => format!("CALLI /n={}", n),
         Opcode::Ret => "RET".to_string(),
 
         // ── Structure ─────────────────────────────────────────────────
@@ -231,6 +232,7 @@ mod tests {
                 },
                 "CALL",
             ),
+            (Opcode::CallI { n: 0 }, "CALLI"),
             (Opcode::Ret, "RET"),
             (Opcode::MakePair, "MAKEPAIR"),
             (Opcode::Fst, "FST"),
@@ -256,7 +258,7 @@ mod tests {
             (Opcode::ReadSlot, "READSLOT"),
         ];
 
-        assert_eq!(samples.len(), 34, "must cover all 34 opcodes");
+        assert_eq!(samples.len(), 35, "must cover all 35 opcodes");
 
         for (op, expected_mnemonic) in &samples {
             let line = opcode_to_line(op);

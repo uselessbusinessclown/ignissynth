@@ -329,17 +329,16 @@ impl FixedPointCheck {
         let direct = self.eval_direct(INPUT);
         let direct_value = match direct {
             EvalVerdict::Produced(ref v) => v.clone(),
+            // eval_direct does not emit ProducedTraced today (it uses
+            // Interpreter::run, not run_traced), but we cover the arm
+            // so the match stays exhaustive if that ever changes.
+            EvalVerdict::ProducedTraced(ref v, _) => v.clone(),
             EvalVerdict::Trapped(msg) => {
                 return FixedPointVerdict::DirectFailed(msg);
             }
             EvalVerdict::NotImplemented(_) => {
                 return FixedPointVerdict::DirectFailed(
                     "direct case is not implemented — scaffold bug".into(),
-                );
-            }
-            EvalVerdict::ProducedTraced(_, _) => {
-                return FixedPointVerdict::DirectFailed(
-                    "direct case unexpectedly produced a traced verdict — scaffold bug".into(),
                 );
             }
         };

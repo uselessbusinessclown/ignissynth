@@ -1,0 +1,42 @@
+[package]
+name = "ignis0-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+rust-version = "1.75"
+
+# Excluded from the parent crate's build by virtue of being a separate
+# package without a workspace link. cargo-fuzz drives this crate
+# directly via `cargo +nightly fuzz run ...` from `ignis0/`.
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.ignis0]
+path = ".."
+
+# Each [[bin]] block below corresponds to one fuzz target. Add a new
+# block + a matching `fuzz_targets/<name>.rs` file to register a target.
+[[bin]]
+name = "decode_form"
+path = "fuzz_targets/decode_form.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse_form_lines"
+path = "fuzz_targets/parse_form_lines.rs"
+test = false
+doc = false
+bench = false
+
+# Disable optimizer assumptions that elide panics: a fuzz target's job
+# is to *find* panics, so we want them to abort and be caught by
+# libFuzzer rather than be optimised out.
+[profile.release]
+debug = 1
+overflow-checks = true

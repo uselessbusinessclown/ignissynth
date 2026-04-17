@@ -75,7 +75,7 @@ Provocation {
 ### Candidate A — Pure interpreter over Form IL, continuation = sealed substance
 
 - Sketch: Form IL is a small set of typed instructions
-  (34 opcodes: arithmetic, struct/array ops, hash ops, capability
+  (35 opcodes: arithmetic, struct/array ops, hash ops, capability
   ops, intent ops, yield, call, return, seal, unpin). The runtime
   is an interpreter loop:
   1. Fetch the Form by hash through S-03 (`read`); the result is

@@ -3,12 +3,13 @@
 //! The interpreter's `step()` method implements the small-step
 //! rule for each opcode in `../../kernel/IL.md` § Opcodes.
 //!
-//! ## Opcode coverage (v0.2.4)
+//! ## Opcode coverage (v0.2.4 + `CALLI`)
 //!
-//! **Fully live** (26): `PUSH`, `POP`, `LOAD`, `STORE`, `ADD`,
-//! `SUB`, `EQ`, `LT`, `JMP`, `JMPZ`, `CALL`, `RET`, `MAKEPAIR`,
-//! `FST`, `SND`, `MAKEVEC`, `SEAL`, `READ`, `PIN`, `UNPIN`,
-//! `INVOKE`, `ASSERT`, `SELFHASH`, `TRAP`, `CAPHELD`, `READSLOT`.
+//! **Fully live** (27): `PUSH`, `POP`, `LOAD`, `STORE`, `ADD`,
+//! `SUB`, `EQ`, `LT`, `JMP`, `JMPZ`, `CALL`, `CALLI`, `RET`,
+//! `MAKEPAIR`, `FST`, `SND`, `MAKEVEC`, `SEAL`, `READ`, `PIN`,
+//! `UNPIN`, `INVOKE`, `ASSERT`, `SELFHASH`, `TRAP`, `CAPHELD`,
+//! `READSLOT`.
 //!
 //! **Stage-0 live** (7): `ATTENUATE` (ENotHeld check + sealed
 //! AttenCap/v1 descriptor), `REVOKE` (ENotHeld check; can't
@@ -204,6 +205,9 @@ impl<'a> Interpreter<'a> {
             Opcode::Call { form, n } => {
                 return self.do_call(state, *form, *n);
             }
+            Opcode::CallI { n } => {
+                return self.do_calli(state, *n);
+            }
             Opcode::Ret => {
                 return self.do_ret(state);
             }
@@ -306,9 +310,9 @@ impl<'a> Interpreter<'a> {
                 }
                 StepResult::Step
             }
-            // CALL, RET, and INVOKE are handled above the match.
-            Opcode::Call { .. } | Opcode::Ret | Opcode::Invoke { .. } => {
-                unreachable!("CALL/RET/INVOKE handled above the match in step()")
+            // CALL, CALLI, RET, and INVOKE are handled above the match.
+            Opcode::Call { .. } | Opcode::CallI { .. } | Opcode::Ret | Opcode::Invoke { .. } => {
+                unreachable!("CALL/CALLI/RET/INVOKE handled above the match in step()")
             }
 
             // ---- Structure ----
@@ -694,6 +698,33 @@ impl<'a> Interpreter<'a> {
             code: loaded.code,
         });
         StepResult::Step
+    }
+
+    /// Dispatch `CALLI n`: pop the target `Hash` from the top of
+    /// the stack, then delegate to the same frame-setup path as
+    /// direct `CALL`. This is the opcode that makes the
+    /// `READSLOT; CALLI n` idiom work — `READSLOT` pushes the
+    /// form hash bound at a name, and `CALLI` consumes it.
+    ///
+    /// Traps `ETYPE` if the top of the stack is not a `Hash`, and
+    /// `EUNHELD` (via `do_call`) if the resolved hash is not in
+    /// the registry.
+    fn do_calli(&mut self, state: &mut ExecState, n: u32) -> StepResult {
+        let form = {
+            let s = state.top_mut();
+            match s.stack.pop() {
+                Some(v) => match v.as_hash() {
+                    Ok(h) => h,
+                    Err(k) => return StepResult::Trapped(k),
+                },
+                None => {
+                    return StepResult::Trapped(TrapKind::type_mismatch(
+                        "CALLI: stack empty (target hash missing)",
+                    ))
+                }
+            }
+        };
+        self.do_call(state, form, n)
     }
 
     /// Dispatch `INVOKE n`: pop the CapId from the top of the stack,

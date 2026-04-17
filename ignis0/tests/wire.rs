@@ -15,7 +15,7 @@
 //! crosses into the habitat.
 
 use ignis0::wire::{decode_form, encode_form, Form, WireError, MAGIC, VERSION};
-use ignis0::{Opcode, SubstanceHash as Hash, TrapKind, Value};
+use ignis0::{Hash, Opcode, SubstanceHash, TrapKind, Value};
 
 // ---------- splitmix64 PRNG ----------
 
@@ -51,7 +51,7 @@ impl Rng {
             let w = self.next_u64().to_le_bytes();
             chunk.copy_from_slice(&w);
         }
-        Hash(out)
+        SubstanceHash(out)
     }
     fn gen_string(&mut self, max_len: u32) -> String {
         let n = self.gen_u32(max_len);
@@ -105,7 +105,7 @@ fn gen_value(rng: &mut Rng) -> Value {
 }
 
 fn gen_opcode(rng: &mut Rng) -> Opcode {
-    match rng.gen_u32(34) {
+    match rng.gen_u32(35) {
         0 => Opcode::Push(gen_value(rng)),
         1 => Opcode::Pop,
         2 => Opcode::Load(rng.gen_u32(32)),
@@ -142,7 +142,8 @@ fn gen_opcode(rng: &mut Rng) -> Opcode {
         30 => Opcode::SelfHash,
         31 => Opcode::ParseForm,
         32 => Opcode::BindSlot,
-        _ => Opcode::ReadSlot,
+        33 => Opcode::ReadSlot,
+        _ => Opcode::CallI { n: rng.gen_u32(8) },
     }
 }
 
@@ -204,7 +205,7 @@ fn canonical_bytes_are_deterministic() {
         type_tag: "Form/v1".into(),
         arity: 1,
         locals_n: 1,
-        declared_caps: vec![Hash([7u8; 32])],
+        declared_caps: vec![SubstanceHash([7u8; 32])],
         declared_traps: vec![TrapKind::EType("Nat".into())],
         code: vec![
             Opcode::Store(0),
@@ -260,7 +261,8 @@ fn truncated_input_rejected() {
 #[test]
 fn bad_opcode_tag_rejected() {
     // Build a minimal valid Form and then corrupt the single
-    // code byte to an unassigned tag (0x22..=0xFF are reserved).
+    // code byte to an unassigned tag (0x23..=0xFF are reserved
+    // after the CALLI addition).
     let form = Form {
         type_tag: "Form/v1".into(),
         arity: 0,
@@ -335,10 +337,10 @@ fn every_opcode_tag_roundtrips_individually() {
         Opcode::Push(Value::Bool(false)),
         Opcode::Push(Value::Nat(0)),
         Opcode::Push(Value::Nat(u128::MAX)),
-        Opcode::Push(Value::Hash(Hash([3u8; 32]))),
+        Opcode::Push(Value::Hash(SubstanceHash([3u8; 32]))),
         Opcode::Push(Value::Bytes(vec![1, 2, 3, 4, 5])),
-        Opcode::Push(Value::Cell(Hash([4u8; 32]))),
-        Opcode::Push(Value::Cont(Hash([5u8; 32]))),
+        Opcode::Push(Value::Cell(SubstanceHash([4u8; 32]))),
+        Opcode::Push(Value::Cont(SubstanceHash([5u8; 32]))),
         Opcode::Pop,
         Opcode::Load(0),
         Opcode::Load(u32::MAX),
@@ -353,13 +355,16 @@ fn every_opcode_tag_roundtrips_individually() {
         Opcode::Jmp(i32::MIN),
         Opcode::Jmpz(-1),
         Opcode::Call {
-            form: Hash([9u8; 32]),
+            form: SubstanceHash([9u8; 32]),
             n: 0,
         },
         Opcode::Call {
-            form: Hash([9u8; 32]),
+            form: SubstanceHash([9u8; 32]),
             n: 42,
         },
+        Opcode::CallI { n: 0 },
+        Opcode::CallI { n: 3 },
+        Opcode::CallI { n: u32::MAX },
         Opcode::Ret,
         Opcode::MakePair,
         Opcode::Fst,
@@ -411,6 +416,32 @@ fn every_opcode_tag_roundtrips_individually() {
         let decoded = decode_form(&bytes).unwrap();
         assert_eq!(decoded, form, "opcode round-trip failed for {:?}", op);
     }
+}
+
+#[test]
+fn calli_tag_is_0x22() {
+    // Pin the tag byte so a future rewrite of the wire codec
+    // cannot silently remap CALLI onto another opcode's slot.
+    let form = Form {
+        type_tag: "Form/v1".into(),
+        arity: 0,
+        locals_n: 0,
+        declared_caps: vec![],
+        declared_traps: vec![],
+        code: vec![Opcode::CallI { n: 0 }],
+    };
+    let bytes = encode_form(&form).unwrap();
+    // Trailing 32 bytes are the hash; the byte before the
+    // ULEB128 `n=0` is the opcode tag.
+    let body_end = bytes.len() - 32;
+    // body: ...(code header)... 0x22 0x00 (hash)
+    // The 0x22 tag is two bytes before body_end (tag + 1-byte ULEB128 zero).
+    assert_eq!(bytes[body_end - 2], 0x22, "CALLI must encode as tag 0x22");
+    assert_eq!(
+        bytes[body_end - 1],
+        0x00,
+        "CALLI n=0 must ULEB128-encode as a single 0x00 byte"
+    );
 }
 
 #[test]

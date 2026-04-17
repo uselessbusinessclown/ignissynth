@@ -16,14 +16,19 @@
 > direct, one-level indirect via a hand-encoded micro-
 > `S-07/execute`, and two-level indirect via nested micro
 > wrappers — frame-depth observations 2 and 3 respectively),
-> and **`v0.2.4-ignis0-cap`** (all 34 opcodes now return
-> IL-defined outcomes — CAPHELD/ATTENUATE/REVOKE, APPEND/WHY,
-> SPLIT, READSLOT/BINDSLOT/PARSEFORM — with stage-0 constraints
-> noted in-code where the habitat substance for a behaviour
-> does not yet exist). Milestone 1 (Build Integrity) also
-> hardened `ignis0/Cargo.toml` with reproducibility settings,
-> pinned the toolchain, and tightened CI. See the **ignis0
-> milestone track** below.
+> and **`v0.2.4-ignis0-cap`** (all 34 opcodes then defined
+> now return IL-defined outcomes — CAPHELD/ATTENUATE/REVOKE,
+> APPEND/WHY, SPLIT, READSLOT/BINDSLOT/PARSEFORM — with
+> stage-0 constraints noted in-code where the habitat
+> substance for a behaviour does not yet exist). Post-v0.2.4
+> the IL was bumped 34→35 by adding `CALLI` (indirect call,
+> opcode tag `0x22`) to close drift between the spec and
+> every encoded Form, which relied on stack-delivered call
+> targets for slot dispatch; `ignis0` implements `CALLI`
+> alongside direct `CALL`. Milestone 1 (Build Integrity)
+> also hardened `ignis0/Cargo.toml` with reproducibility
+> settings, pinned the toolchain, and tightened CI. See
+> the **ignis0 milestone track** below.
 
 This document tracks what is needed to declare a *prototypical release
 form* of IgnisSynth — the smallest set of artifacts that, taken
@@ -49,7 +54,7 @@ problem rather than an open design problem.
 | # | Artifact                                                              | Status     |
 |---|-----------------------------------------------------------------------|------------|
 | 1 | 11 worked breakdowns (S-01..S-11)                                     | ✓ done     |
-| 2 | 34-opcode IL specification (`kernel/IL.md`)                           | ✓ done     |
+| 2 | 35-opcode IL specification (`kernel/IL.md`, 34 at v0.1.0 freeze + post-freeze `CALLI`) | ✓ done     |
 | 3 | 11 encoded primary Forms (`kernel/forms/S-01..S-11.form`)             | ✓ done     |
 | 4 | Seed manifest (`kernel/manifest.json`)                                | ✓ done     |
 | 5 | Proof term language (`kernel/PROOF.md`)                               | ✓ done     |
@@ -406,9 +411,10 @@ problem — it *is* ignis0.
 `cdeeb2e`..`7567c7a`, incorporating the `claude/nice-brahmagupta`
 merges `48e2197` / `9b48f9c`):
 
-- **34/34 opcode variants enumerated** in `ignis0/src/opcode.rs`.
-  The IL.md prose/table mismatch is fixed: both prose and tables
-  now say "Thirty-four exactly".
+- **35/35 opcode variants enumerated** in `ignis0/src/opcode.rs`
+  (34 at the v0.1.0 freeze, plus post-freeze `CALLI`). The IL.md
+  prose/table mismatch is fixed: both prose and tables now say
+  "Thirty-five exactly" and CI enforces the string.
 - **`Opcode::Invoke` gained an `n: u32` immediate** as part of
   v0.3.0-compute's capability dispatch. The wire codec
   (v0.2.2-ignis0-wire) has been resynchronised in this iteration
@@ -465,10 +471,12 @@ Done when:
 This stage requires a working interpreter for the IL outside
 the habitat (to actually run the harness). That interpreter is
 **ignis0** (see the ignis0 milestone track above). ignis0 has
-now reached v0.2.4 (full opcode coverage: all 34 opcodes return
-IL-defined outcomes; no `NotImplemented` in any step path).
-The remaining gate before v0.3.0 is v0.2.5-ignis0-store
-(persistent trie, depends on `kernel/types/Trie.md`).
+now reached v0.2.4 (full opcode coverage: all 34 opcodes then
+defined return IL-defined outcomes; no `NotImplemented` in any
+step path) plus the post-freeze `CALLI` (opcode `0x22`, indirect
+call), bringing total opcode coverage to 35/35. The remaining
+gate before v0.3.0 is v0.2.5-ignis0-store (persistent trie,
+depends on `kernel/types/Trie.md`).
 
 ### v0.4.0-inspection: sign the inspection record
 
