@@ -34,6 +34,11 @@ What is in the repository as of this commit:
 
 **Release: `v0.1.0-pre-ignition`** — see `RELEASE-NOTES-v0.1.0.md`.
 
+> **Live status:** counts in this table that move with the codebase
+> (helper encoded/pending, opcode count, milestone state, drift)
+> are regenerated into [`tools/status/STATUS.md`](tools/status/STATUS.md)
+> on every commit. If a number here disagrees with STATUS, STATUS wins.
+
 | Layer               | Artifact                                                             | Status                                      |
 |---------------------|----------------------------------------------------------------------|---------------------------------------------|
 | Constitution        | `docs/MANIFESTO.md`, `axioms/A0..A8`                                 | complete                                    |
@@ -42,7 +47,7 @@ What is in the repository as of this commit:
 | IL specification    | `kernel/IL.md`                                                       | 35 opcodes, total small-step                |
 | Encoded Forms       | `kernel/forms/S-01..S-11.form`                                       | 11 of 11, written against the IL            |
 | Seed manifest       | `kernel/manifest.json`                                               | binds sources/proofs/immediates             |
-| Helper stubs        | `kernel/forms/helpers/STUBS.md`                                      | 86 helpers encoded across 10 files; remaining slots catalogued |
+| Helper stubs        | `kernel/forms/helpers/STUBS.md`                                      | encoded/pending split in [`tools/status/STATUS.md`](tools/status/STATUS.md) |
 | Proof term language | `kernel/PROOF.md`                                                    | 12 sorts, 17 constructors, 30-rule table    |
 | Proof artifacts     | `kernel/forms/S-XX-*.proof`                                          | **11 of 11** (10 end-to-end, S-08 structural) |
 | Inspection record   | `kernel/forms/S-08-*.inspection-record.md`                           | drafted; placeholder signatures             |
