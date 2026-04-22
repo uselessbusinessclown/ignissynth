@@ -464,3 +464,5 @@
 ; verifiable: the closure of authority chain from R is a real
 ; proof tree, not a pending obligation.
 ; ============================================================
+
+; Verdict: Pass — end-to-end structurally checkable.
