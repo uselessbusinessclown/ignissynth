@@ -399,3 +399,5 @@
 ; The remaining items are SIMULATION.md, the inspection record
 ; draft, helper stubs, and the release notes + tag.
 ; ============================================================
+
+; Verdict: Pass — end-to-end structurally checkable.

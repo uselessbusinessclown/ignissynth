@@ -163,14 +163,23 @@ jobs:
           set -e
           fail=0
           for f in kernel/forms/S-*.proof; do
-            # Each proof file must declare at least one obligation block
-            if ! grep -q ":obligation" "$f"; then
-              echo "WARN: $f has no :obligation marker" >&2
+            # Each proof file must declare at least one (obligation N ...)
+            # block — the structural unit, distinct from the `:obligation`
+            # claim keyword which appears once per file regardless of how
+            # many obligations the proof actually discharges. Prior to
+            # this commit the check grepped `:obligation` and so always
+            # passed without measuring what its name implied.
+            if ! grep -q "(obligation" "$f"; then
+              echo "WARN: $f has no (obligation ...) block" >&2
               fail=$((fail + 1))
             fi
-            # Each proof file must have a Verdict line
-            if ! grep -q "Verdict\|verdict\|Pass\|Incomplete\|Structural" "$f"; then
-              echo "WARN: $f has no Verdict/Pass/Incomplete marker" >&2
+            # Each proof file must have an explicit `; Verdict:` line.
+            # Earlier this check accepted any of Verdict|verdict|Pass|
+            # Incomplete|Structural as a substring anywhere, which let
+            # files with only narrative prose pass. Tightened to require
+            # a leading `; Verdict:` declaration matching S-01's pattern.
+            if ! grep -q "^; Verdict:" "$f"; then
+              echo "WARN: $f has no '; Verdict:' line" >&2
               fail=$((fail + 1))
             fi
           done

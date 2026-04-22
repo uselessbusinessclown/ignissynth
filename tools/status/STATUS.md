@@ -3,8 +3,8 @@
 > **Generated artifact.** Do not edit by hand. Regenerate with:
 > `bash tools/status/build-status.sh`
 >
-> Generated at: `2026-04-22T07:14:41Z`
-> From commit:  `8838b20`
+> Generated at: `2026-04-22T08:03:41Z`
+> From commit:  `c85f0fe`
 >
 > This page is the single source for repo status numbers. Other
 > docs (READMEs, ROADMAP narrative) should link here rather than
@@ -34,17 +34,17 @@
 | `S-01-ignite` | 7 | Pass |
 | `S-02-cap-registry` | 8 | Pass |
 | `S-03-substance-store` | 6 | Pass |
-| `S-04-weave-log` | 6 | _(implicit / not declared)_ |
+| `S-04-weave-log` | 6 | Pass |
 | `S-05-attention-alloc` | 6 | Pass |
 | `S-06-intent-match` | 6 | Pass |
-| `S-07-form-runtime` | 6 | _(implicit / not declared)_ |
+| `S-07-form-runtime` | 6 | Pass |
 | `S-08-proof-checker` | 3 | Structural |
-| `S-09-synth-kernel` | 8 | _(implicit / not declared)_ |
+| `S-09-synth-kernel` | 8 | Pass |
 | `S-10-hephaistion-seed` | 8 | Pass |
-| `S-11-bridge-proto` | 6 | _(implicit / not declared)_ |
+| `S-11-bridge-proto` | 6 | Pass |
 
 **Total obligations across all proofs:** 70
-**Verdicts:** 6 Pass · 1 Structural · 4 unspecified
+**Verdicts:** 10 Pass · 1 Structural · 0 unspecified
 
 ## Helper Forms
 
@@ -104,6 +104,5 @@ Total invariants in `synthesis/INVARIANTS.md`: **12**
 The dashboard noticed the following inconsistencies. None of these
 block the build by themselves; CI decides which warrant a hard fail.
 
-- proofs without explicit '; Verdict:' line: S-04-weave-log, S-07-form-runtime, S-09-synth-kernel, S-11-bridge-proto
 - axioms on disk but not in manifest: A9-ignition-substrate
 

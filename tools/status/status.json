@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-04-22T07:14:41Z",
-  "generated_from_commit": "8838b20",
+  "generated_at": "2026-04-22T08:03:41Z",
+  "generated_from_commit": "c85f0fe",
   "seed": {
     "version": "0.1.0-pre-ignition"
   },
@@ -33,7 +33,7 @@
       {
         "name": "S-04-weave-log",
         "obligations": 6,
-        "declared_verdict": null
+        "declared_verdict": "Pass"
       },
       {
         "name": "S-05-attention-alloc",
@@ -48,7 +48,7 @@
       {
         "name": "S-07-form-runtime",
         "obligations": 6,
-        "declared_verdict": null
+        "declared_verdict": "Pass"
       },
       {
         "name": "S-08-proof-checker",
@@ -58,7 +58,7 @@
       {
         "name": "S-09-synth-kernel",
         "obligations": 8,
-        "declared_verdict": null
+        "declared_verdict": "Pass"
       },
       {
         "name": "S-10-hephaistion-seed",
@@ -68,14 +68,14 @@
       {
         "name": "S-11-bridge-proto",
         "obligations": 6,
-        "declared_verdict": null
+        "declared_verdict": "Pass"
       }
     ],
     "total_obligations": 70,
     "verdicts": {
-      "Pass": 6,
+      "Pass": 10,
       "Structural": 1,
-      "unspecified": 4
+      "unspecified": 0
     }
   },
   "helpers": {
@@ -159,7 +159,6 @@
     "other": 0
   },
   "drift": [
-    "proofs without explicit '; Verdict:' line: S-04-weave-log, S-07-form-runtime, S-09-synth-kernel, S-11-bridge-proto",
     "axioms on disk but not in manifest: A9-ignition-substrate"
   ]
 }
