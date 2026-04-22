@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-04-17T19:56:46Z",
-  "generated_from_commit": "80e058c",
+  "generated_at": "2026-04-22T07:14:41Z",
+  "generated_from_commit": "8838b20",
   "seed": {
     "version": "0.1.0-pre-ignition"
   },
@@ -142,9 +142,19 @@
         "tag": "v0.3.0-compute",
         "status": "done",
         "raw": "✓ done (`d28b466`) — landed out of order; schedule above is corrected"
+      },
+      {
+        "tag": "v0.3.0-envelope+ci",
+        "status": "done",
+        "raw": "✓ done (`e954a27`)"
+      },
+      {
+        "tag": "v0.3.0-build-int",
+        "status": "done",
+        "raw": "✓ done (`a130590`)"
       }
     ],
-    "done": 6,
+    "done": 8,
     "blocked": 1,
     "other": 0
   },

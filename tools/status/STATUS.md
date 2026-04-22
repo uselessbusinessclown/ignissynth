@@ -3,8 +3,8 @@
 > **Generated artifact.** Do not edit by hand. Regenerate with:
 > `bash tools/status/build-status.sh`
 >
-> Generated at: `2026-04-17T19:56:46Z`
-> From commit:  `80e058c`
+> Generated at: `2026-04-22T07:14:41Z`
+> From commit:  `8838b20`
 >
 > This page is the single source for repo status numbers. Other
 > docs (READMEs, ROADMAP narrative) should link here rather than
@@ -94,8 +94,10 @@ Total invariants in `synthesis/INVARIANTS.md`: **12**
 | `v0.2.4-ignis0-cap` | ✓ done |
 | `v0.2.5-ignis0-store` | depends on Trie.md |
 | `v0.3.0-compute` | ✓ done (`d28b466`) — landed out of order; schedule above is corrected |
+| `v0.3.0-envelope+ci` | ✓ done (`e954a27`) |
+| `v0.3.0-build-int` | ✓ done (`a130590`) |
 
-**Milestone summary:** 6 done · 1 blocked · 0 other
+**Milestone summary:** 8 done · 1 blocked · 0 other
 
 ## Drift detected
 
