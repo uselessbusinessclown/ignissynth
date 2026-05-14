@@ -10,7 +10,7 @@ before opening a PR.
 If you are reviewing — not contributing — start here.
 
 1. **Is the spec layer self-consistent?**
-   - `kernel/manifest.yaml` should mention every primary Form
+   - `kernel/manifest.json` should mention every primary Form
      `S-01..S-11` and every helper file under `kernel/forms/helpers/`.
    - `kernel/IL.md` § Opcodes should declare "Thirty-five exactly"
      (CI enforces this; see `.github/workflows/ci.yml` step
@@ -62,7 +62,7 @@ The spec is normative. Changes here ripple downstream. Before editing:
   If you change an axiom, update every `breakdown/S-XX.md` that cites
   it (the breakdown files name their axiom dependencies in the
   Provocation section).
-- **Updating roadmaps** — `ROADMAP.md` and `manifest.yaml` should agree
+- **Updating roadmaps** — `ROADMAP.md` and `manifest.json` should agree
   on what's shipped vs pending.
 
 ### Forms (`kernel/forms/**.form`)
@@ -77,7 +77,7 @@ Forms are content-addressed. Their hash is their identity.
   block (CI checks this). The pretty-printer in `ignis0/src/pretty.rs`
   is the canonical text form; if you hand-write a `.form` file, make
   sure `pretty_print(parse(file))` round-trips.
-- **Hash stability** — once a Form is referenced from `manifest.yaml`,
+- **Hash stability** — once a Form is referenced from `manifest.json`,
   its hash is part of the public surface. Do not edit it; ship a new
   Form at a new path and update the manifest.
 
