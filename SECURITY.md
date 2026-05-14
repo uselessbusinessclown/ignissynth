@@ -11,7 +11,7 @@ Two artefacts live in this repo:
 
 1. **The IgnisSynth specification** (`kernel/`, `axioms/`, `synthesis/`,
    `breakdown/`, `docs/`) — Markdown, `.form` files, `.proof` files,
-   and `manifest.yaml`. These are *specifications*, not running code.
+   and `manifest.json`. These are *specifications*, not running code.
    Security-relevant bugs here are inconsistencies, ambiguities, or
    contract violations between sections.
 
