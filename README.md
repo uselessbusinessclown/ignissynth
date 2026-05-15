@@ -22,6 +22,56 @@ The OS itself is required to think. It must adapt in real time. It must
 self-improve at the architectural level. It must treat code as fluid
 thought rather than static instructions.
 
+## For reviewers and builders
+
+If you are arriving cold and want to know what is actually runnable
+versus what is only specified, start here:
+
+| What | Where | What "done" looks like |
+|---|---|---|
+| **Verify the seed structurally** | `tools/status/build-status.sh` | Regenerates `tools/status/status.json` + `STATUS.md` (versions, opcode/form/proof counts, manifest integrity). CI fails if regen disagrees with the committed copy. |
+| **Build and test ignis0** | `cd ignis0` then run the commands below | All commands exit 0. |
+| **A9.3 fixed-point check** | `cargo run --locked --quiet -- fixed-point` (inside `ignis0/`) | Prints `fixed-point: PASS` with `Nat(43)` and frame depths 2 and 3. |
+| **Read the seed end-to-end** | `synthesis/PROTOCOL.md` → `synthesis/INVARIANTS.md` → `kernel/IL.md` → one `breakdown/S-XX.md` → matching `kernel/forms/S-XX.form` and `.proof` | Confirms the eight-stage discipline scales from axioms to encoded Forms. |
+| **Conformance snapshot** | `tools/status/STATUS.md` | Single source of repo counts; other docs link here. |
+
+Exact local verification (must all exit 0 — same as CI):
+
+```sh
+cd ignis0
+cargo fmt --all --check
+cargo clippy --all-targets --all-features --locked -- -D warnings
+cargo test --locked
+cargo run --locked --quiet -- fixed-point   # must print PASS Nat(43)
+```
+
+What **runs now** (executes as Rust on your machine):
+
+- The `ignis0/` stage-0 IL interpreter — all 35 opcodes return
+  IL-defined outcomes, all three A9.3 fixed-point levels pass, the
+  byte-exact wire codec round-trips, and the `FormEnvelope`
+  derivation-gated runtime is in place.
+- `tools/status/build-status.sh` — emits a machine-readable
+  conformance snapshot from the repo's actual contents.
+
+What is **specified only** (no executable yet, by design):
+
+- Every primary Form `S-01..S-11` — these are encoded against the IL
+  but the proof checker (`S-08`) ships in structural-discharge form;
+  the seed loader is a contract documented in
+  `kernel/IGNITION-BOOTSTRAP.md`, not running code.
+- The Stage-4 simulation harness — `kernel/SIMULATION.md` is the
+  specification; no trial records exist yet.
+- The S-08 inspection record signatures, the K-of-N consensus
+  protocol, and every `$$BLAKE3$$` placeholder in
+  `kernel/manifest.json` — all wait on external build (`v0.5.0`).
+
+The roadmap to ignition lives in `ROADMAP.md`; the **next** milestone
+is `v0.2.5-ignis0-store` (persistent trie, blocked on
+`kernel/types/Trie.md`), and the post-ignition path starts with
+`v0.3.0-simulation`. Known limitations are catalogued in `ROADMAP.md`
+§ "Project review (post-v0.1.0 audit)".
+
 ## Status
 
 This repository is **pre-ignition**. It contains the full synthesis chain
