@@ -1,8 +1,8 @@
 {
-  "generated_at": "2026-04-22T08:03:41Z",
-  "generated_from_commit": "c85f0fe",
+  "generated_at": "2026-05-23T15:24:44Z",
+  "generated_from_commit": "f52659b",
   "seed": {
-    "version": "0.1.0-pre-ignition"
+    "version": "0.1.1-pre-ignition"
   },
   "ignis0": {
     "version": "0.3.0-compute",
@@ -93,15 +93,13 @@
     "required_keys_present": true,
     "missing_keys": [],
     "forms": 11,
-    "axioms": 9,
+    "axioms": 10,
     "kernel_authors": 3
   },
   "axioms": {
     "files_on_disk": 10,
-    "manifest_entries": 9,
-    "drift_not_in_manifest": [
-      "A9-ignition-substrate"
-    ]
+    "manifest_entries": 10,
+    "drift_not_in_manifest": []
   },
   "invariants": {
     "count": 12
@@ -158,7 +156,5 @@
     "blocked": 1,
     "other": 0
   },
-  "drift": [
-    "axioms on disk but not in manifest: A9-ignition-substrate"
-  ]
+  "drift": []
 }

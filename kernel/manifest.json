@@ -1,9 +1,9 @@
 {
   "$schema":     "ignissynth/seed-manifest/v1",
   "name":        "ignissynth-seed",
-  "version":     "0.1.0-pre-ignition",
-  "release":     "v0.1.0-pre-ignition",
-  "release_notes": "RELEASE-NOTES-v0.1.0.md",
+  "version":     "0.1.1-pre-ignition",
+  "release":     "v0.1.1-pre-ignition",
+  "release_notes": "RELEASE-NOTES-v0.1.1.md",
   "description": "The seed manifest. Binds the eleven seed Form hashes, the immediate values referenced by their encodings, and the kernel-author identities under which the S-08 inspection-record discharge is signed. Read by the seed loader at boot. Not a Form; consumed by the loader before any Form runs.",
 
   "axioms": {
@@ -15,7 +15,8 @@
     "A5": "axioms/A5-causality.md",
     "A6": "axioms/A6-fluid-code.md",
     "A7": "axioms/A7-self-modification.md",
-    "A8": "axioms/A8-bridges.md"
+    "A8": "axioms/A8-bridges.md",
+    "A9": "axioms/A9-ignition-substrate.md"
   },
 
   "invariants": "synthesis/INVARIANTS.md",
