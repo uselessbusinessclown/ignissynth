@@ -3,8 +3,8 @@
 > **Generated artifact.** Do not edit by hand. Regenerate with:
 > `bash tools/status/build-status.sh`
 >
-> Generated at: `2026-04-22T08:03:41Z`
-> From commit:  `c85f0fe`
+> Generated at: `2026-05-23T15:24:44Z`
+> From commit:  `f52659b`
 >
 > This page is the single source for repo status numbers. Other
 > docs (READMEs, ROADMAP narrative) should link here rather than
@@ -16,7 +16,7 @@
 
 | Component | Version |
 |---|---|
-| Seed     | `0.1.0-pre-ignition` |
+| Seed     | `0.1.1-pre-ignition` |
 | ignis0   | `0.3.0-compute` (MSRV `1.75`) |
 
 ## Primary Forms
@@ -68,7 +68,7 @@
 |---|---|
 | Required keys present | yes ✓ |
 | Forms in manifest         | 11 |
-| Axioms in manifest        | 9 |
+| Axioms in manifest        | 10 |
 | Kernel authors            | 3 |
 
 ## Axioms
@@ -76,8 +76,7 @@
 | Metric | Value |
 |---|---:|
 | Axiom files on disk          | 10 |
-| Axiom entries in manifest    | 9 |
-| Files not in manifest        | `A9-ignition-substrate` |
+| Axiom entries in manifest    | 10 |
 
 ## Invariants
 
@@ -101,8 +100,5 @@ Total invariants in `synthesis/INVARIANTS.md`: **12**
 
 ## Drift detected
 
-The dashboard noticed the following inconsistencies. None of these
-block the build by themselves; CI decides which warrant a hard fail.
-
-- axioms on disk but not in manifest: A9-ignition-substrate
+_None._ All cross-checks pass.
 

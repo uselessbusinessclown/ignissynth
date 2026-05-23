@@ -82,7 +82,7 @@ actual ignition.
 
 What is in the repository as of this commit:
 
-**Release: `v0.1.0-pre-ignition`** — see `RELEASE-NOTES-v0.1.0.md`.
+**Release: `v0.1.1-pre-ignition`** — see `RELEASE-NOTES-v0.1.1.md`. (Previous: `v0.1.0-pre-ignition` / `RELEASE-NOTES-v0.1.0.md`.)
 
 > **Live status:** counts in this table that move with the codebase
 > (helper encoded/pending, opcode count, milestone state, drift)
@@ -91,7 +91,7 @@ What is in the repository as of this commit:
 
 | Layer               | Artifact                                                             | Status                                      |
 |---------------------|----------------------------------------------------------------------|---------------------------------------------|
-| Constitution        | `docs/MANIFESTO.md`, `axioms/A0..A8`                                 | complete                                    |
+| Constitution        | `docs/MANIFESTO.md`, `axioms/A0..A9`                                 | complete (A9 ignition-substrate added post-v0.1.0) |
 | Discipline          | `synthesis/PROTOCOL.md`, `INVARIANTS.md`, `SELF-IMPROVEMENT.md`, `SEED.md` | complete                              |
 | Worked synthesis    | `breakdown/S-01..S-11.md`                                            | 11 of 11 (every primary Form)               |
 | IL specification    | `kernel/IL.md`                                                       | 35 opcodes, total small-step                |
@@ -102,7 +102,7 @@ What is in the repository as of this commit:
 | Proof artifacts     | `kernel/forms/S-XX-*.proof`                                          | **11 of 11** (10 end-to-end, S-08 structural) |
 | Inspection record   | `kernel/forms/S-08-*.inspection-record.md`                           | drafted; placeholder signatures             |
 | Simulation harness  | `kernel/SIMULATION.md`                                               | specification only; harness Form is post-v0.1.0 |
-| Release notes       | `RELEASE-NOTES-v0.1.0.md`                                            | shipped                                     |
+| Release notes       | `RELEASE-NOTES-v0.1.1.md`, `RELEASE-NOTES-v0.1.0.md`                 | latest: v0.1.1-pre-ignition                 |
 | Kernel-author keys  | `kernel/manifest.json` (`kernel_authors.identities`)                 | placeholders                                |
 
 The breakdowns are the load-bearing artifact: each one is a recorded
