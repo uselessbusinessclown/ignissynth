@@ -113,13 +113,32 @@ A length-prefixed byte sequence. Type tag `"Bytes/v1"`.
 `Bytes/len` reads the substance, verifies the type tag, returns
 the `n` field.
 
+## Companion documents
+
+The persistent data structures the trie/treap/forest helpers walk
+are specified in sister documents under `kernel/types/`:
+
+- **`Trie.md`** — persistent HAMT for the `S-03/substance-store`
+  (`TrieEmpty/v1`, `TrieBranch/v1`, `TrieLeaf/v1`, `Cell/v1`).
+- **`Treap.md`** — persistent treap for the `S-02/cap-registry`
+  (`TreapEmpty/v1`, `TreapBranch/v1`).
+- **`Forest.md`** — persistent attention forest for `S-05/attention-alloc`
+  (`ForestEmpty/v1`, `ForestBranch/v1`, `ForestLeaf/v1`).
+
+These three documents are the v0.2.0-helpers layout reference
+for the `S-03/trie/*`, `S-02/treap/*`, and `S-05/forest/*` helper
+families. They are also the spec `ignis0`'s `v0.2.5-ignis0-store`
+milestone implements (replacing the HashMap-backed
+`SubstanceStore` with a real persistent HAMT).
+
 ## Status
 
-This document is the v0.2.0-helpers layout reference. It is
-sufficient for the schema helpers to be encoded against.
-Additional substance types (`Intent`, `Provocation`, `Stage1Record`
-through `Stage8Record`, `Receipt`, `Continuation`, `ParsedForm`,
-`ProofTree`, `ProofNode`, `Claim`, `Term`, `RuleSpec`,
-`TrialRecord`, `Hypothesis`, `Verdict`) will gain layout entries
-in subsequent v0.2.0 batches as the helpers that need them are
-encoded.
+This document is the v0.2.0-helpers layout reference for the
+schema helpers and the records the persistent data structures
+above carry. It is sufficient for the schema helpers to be
+encoded against. Additional substance types (`Intent`,
+`Provocation`, `Stage1Record` through `Stage8Record`, `Receipt`,
+`Continuation`, `ParsedForm`, `ProofTree`, `ProofNode`, `Claim`,
+`Term`, `RuleSpec`, `TrialRecord`, `Hypothesis`, `Verdict`) will
+gain layout entries in subsequent v0.2.0 batches as the helpers
+that need them are encoded.
