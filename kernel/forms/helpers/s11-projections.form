@@ -1,0 +1,166 @@
+; S-11 bridge_proto field projections
+;
+; Five tiny Forms covering two record types:
+;   BridgeRequest : acceptance_form
+;   MatchResult   : match_kind, fulfiller_hash, sub_attention_id, none_reason
+;
+; The MatchResult projections are the same shape as S-06's
+; (MatchResult is a shared record produced by S-06/match and
+; consumed by both S-06 and S-11). They are bound separately
+; under the S-11 namespace because S-11's body resolves them
+; through its own slot table; the S-08 inspection-record
+; review verifies each binding in isolation.
+;
+; Same pattern as s04-projections.form: STORE arg, READ, READSLOT
+; to the schema-helper layer, CALL, RET.
+;
+; Synthesis chain (abbreviated):
+;   provocation:  STUBS.md catalogues five S-11 projections as
+;                 pending. S-11's body (S-11-bridge-proto.form)
+;                 calls them after match dispatch to assemble
+;                 the Receipt.
+;   grounding:    A1.2, A6.1, A0.6, A0.7. A8.5 (receipt-chain
+;                 completeness) depends on the projections being
+;                 total — every Receipt field must be derivable
+;                 from the MatchResult without trap.
+;   composes_with: schema sub-helpers "BridgeRequest/proj/*" and
+;                  "MatchResult/proj/*" — the latter shared with
+;                  S-06's projections (the schema layer is named
+;                  by the record type, not by the calling Form).
+
+; ============================================================
+; S-11/proj/acceptance_form — BridgeRequest.acceptance_form
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S11_proj_acceptance_form"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "BridgeRequest/proj/acceptance_form"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s11-projections-rationale
+)
+
+; ============================================================
+; S-11/proj/match_kind — MatchResult.kind
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S11_proj_match_kind"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "MatchResult/proj/kind"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s11-projections-rationale
+)
+
+; ============================================================
+; S-11/proj/fulfiller_hash — MatchResult.fulfiller_hash
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S11_proj_fulfiller_hash"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "MatchResult/proj/fulfiller_hash"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s11-projections-rationale
+)
+
+; ============================================================
+; S-11/proj/sub_attention_id — MatchResult.sub_attention_id
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S11_proj_sub_attention_id"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "MatchResult/proj/sub_attention_id"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s11-projections-rationale
+)
+
+; ============================================================
+; S-11/proj/none_reason — MatchResult.none_reason
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S11_proj_none_reason"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "MatchResult/proj/none_reason"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s11-projections-rationale
+)
+
+(exports
+  (S11_proj_acceptance_form    (Hash) → Hash)
+  (S11_proj_match_kind         (Hash) → MatchKind)
+  (S11_proj_fulfiller_hash     (Hash) → Hash)
+  (S11_proj_sub_attention_id   (Hash) → AttId)
+  (S11_proj_none_reason        (Hash) → Reason))

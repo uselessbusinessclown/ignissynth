@@ -1,0 +1,268 @@
+; S-09 synth_kernel field projections
+;
+; Eight tiny Forms covering three record types:
+;   Provocation    : meta_budget, author, generator_form, binding_name
+;   Stage2Record   : axioms (the grounded axioms for this synthesis)
+;   Stage5Record   : winner_form_hash, winner_proof_hash,
+;                    rationale_hash, vigil_declaration
+;
+; Same pattern as s04-projections.form: STORE arg, READ, READSLOT
+; to the schema-helper layer, CALL, RET.
+;
+; Synthesis chain (abbreviated):
+;   provocation:  STUBS.md catalogues eight S-09 projections as
+;                 pending. S-09's body (S-09-synth-kernel.form)
+;                 reads them while orchestrating the 8-stage
+;                 synthesis (Provocation at entry, Stage2Record
+;                 in grounding-check, Stage5Record at selection).
+;   grounding:    A1.2 (type intrinsic), A6.1, A0.6, A0.7
+;                 (totality).
+;   composes_with: schema sub-helpers under "Provocation/proj/*",
+;                  "Stage2Record/proj/*", "Stage5Record/proj/*" —
+;                  catalogued in STUBS.md as Schema/* primitives
+;                  once SCHEMA.md gains the corresponding sections.
+
+; ============================================================
+; S-09/proj/meta_budget — Provocation.meta_budget
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S09_proj_meta_budget"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "Provocation/proj/meta_budget"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s09-projections-rationale
+)
+
+; ============================================================
+; S-09/proj/author — Provocation.author (MindId)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S09_proj_author"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "Provocation/proj/author"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s09-projections-rationale
+)
+
+; ============================================================
+; S-09/proj/generator_form — Provocation.generator_form
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S09_proj_generator_form"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "Provocation/proj/generator_form"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s09-projections-rationale
+)
+
+; ============================================================
+; S-09/proj/binding_name — Provocation.binding_name
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S09_proj_binding_name"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "Provocation/proj/binding_name"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s09-projections-rationale
+)
+
+; ============================================================
+; S-09/grounding/proj/axioms — Stage2Record.axioms
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S09_grounding_proj_axioms"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "Stage2Record/proj/axioms"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s09-projections-rationale
+)
+
+; ============================================================
+; S-09/stage5/proj/winner_form_hash — Stage5Record.winner_form_hash
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S09_stage5_proj_winner_form_hash"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "Stage5Record/proj/winner_form_hash"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s09-projections-rationale
+)
+
+; ============================================================
+; S-09/stage5/proj/winner_proof_hash — Stage5Record.winner_proof_hash
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S09_stage5_proj_winner_proof_hash"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "Stage5Record/proj/winner_proof_hash"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s09-projections-rationale
+)
+
+; ============================================================
+; S-09/stage5/proj/rationale_hash — Stage5Record.rationale_hash
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S09_stage5_proj_rationale_hash"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "Stage5Record/proj/rationale_hash"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s09-projections-rationale
+)
+
+; ============================================================
+; S-09/stage5/proj/vigil_declaration — Stage5Record.vigil_declaration
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S09_stage5_proj_vigil_declaration"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "Stage5Record/proj/vigil_declaration"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s09-projections-rationale
+)
+
+(exports
+  (S09_proj_meta_budget                (Hash) → Nat)
+  (S09_proj_author                     (Hash) → MindId)
+  (S09_proj_generator_form             (Hash) → Hash)
+  (S09_proj_binding_name               (Hash) → Hash)
+  (S09_grounding_proj_axioms           (Hash) → Vec{AxiomId})
+  (S09_stage5_proj_winner_form_hash    (Hash) → Hash)
+  (S09_stage5_proj_winner_proof_hash   (Hash) → Hash)
+  (S09_stage5_proj_rationale_hash      (Hash) → Hash)
+  (S09_stage5_proj_vigil_declaration   (Hash) → Hash))   ; → VigilDeclaration

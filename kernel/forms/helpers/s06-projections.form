@@ -1,0 +1,189 @@
+; S-06 intent_match field projections
+;
+; Six tiny Forms covering two record types:
+;   Intent       : intent_budget, acceptance_form
+;   MatchResult  : match_kind, none_reason, fulfiller_hash, sub_attention_id
+;
+; Same pattern as s04-projections.form: STORE arg, READ, READSLOT
+; to the schema-helper layer ("Intent/proj/*" / "MatchResult/proj/*"),
+; CALL, RET.
+;
+; Synthesis chain (abbreviated — projection is a leaf):
+;   provocation:  STUBS.md catalogues these six S-06 projections as
+;                 pending. S-06's body (S-06-intent-match.form) calls
+;                 them via READSLOT name + CALL.
+;   grounding:    A1.2 (type is intrinsic), A6.1 (a unit of code is
+;                 a substance), A0.6 (code is thought, not artifact).
+;   composes_with: schema sub-helpers under "Intent/proj/*" and
+;                  "MatchResult/proj/*" — catalogued in STUBS.md as
+;                  Schema/* primitives once their substance layouts
+;                  are written in kernel/types/SCHEMA.md (the Intent
+;                  and MatchResult sections are scheduled for the
+;                  next SCHEMA.md batch). Until those land, these
+;                  projection bodies have a pending leaf at the
+;                  inner CALL — consistent with the v0.2.0-helpers
+;                  layered approach established by s04-projections.
+
+; ============================================================
+; S-06/proj/intent_budget — extract intent.budget
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S06_proj_intent_budget"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "Intent/proj/budget"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s06-projections-rationale
+)
+
+; ============================================================
+; S-06/proj/acceptance_form
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S06_proj_acceptance_form"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "Intent/proj/acceptance_form"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s06-projections-rationale
+)
+
+; ============================================================
+; S-06/proj/match_kind — MatchResult.kind
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S06_proj_match_kind"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "MatchResult/proj/kind"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s06-projections-rationale
+)
+
+; ============================================================
+; S-06/proj/none_reason — MatchResult.none_reason (when kind=None)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S06_proj_none_reason"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "MatchResult/proj/none_reason"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s06-projections-rationale
+)
+
+; ============================================================
+; S-06/proj/fulfiller_hash — MatchResult.fulfiller_hash (when kind=Matched)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S06_proj_fulfiller_hash"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "MatchResult/proj/fulfiller_hash"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s06-projections-rationale
+)
+
+; ============================================================
+; S-06/proj/sub_attention_id — MatchResult.sub_attention_id
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S06_proj_sub_attention_id"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "MatchResult/proj/sub_attention_id"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s06-projections-rationale
+)
+
+(exports
+  (S06_proj_intent_budget     (Hash) → Nat)
+  (S06_proj_acceptance_form   (Hash) → Hash)
+  (S06_proj_match_kind        (Hash) → MatchKind)
+  (S06_proj_none_reason       (Hash) → Reason)
+  (S06_proj_fulfiller_hash    (Hash) → Hash)
+  (S06_proj_sub_attention_id  (Hash) → AttId))

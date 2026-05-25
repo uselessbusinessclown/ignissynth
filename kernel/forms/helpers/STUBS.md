@@ -348,12 +348,12 @@ forest chosen as Candidate A in `breakdown/S-05-attention-alloc.md`.
 | `S-06/vec_intersect`            | `(Vec{T}, Vec{T}) → Vec{T}`                | pending  |
 | `S-06/filter_by_predicate`      | `(Vec{Hash}, Hash, CapEntry) → Vec{Hash}`  | pending  |
 | `S-06/rank`                     | `(Vec{Hash}, CapEntry) → Vec{Hash}`        | pending  |
-| `S-06/proj/intent_budget`       | `(Intent) → Nat`                           | pending  |
-| `S-06/proj/acceptance_form`     | `(Intent) → Hash`                          | pending  |
-| `S-06/proj/match_kind`          | `(MatchResult) → MatchKind`                | pending  |
-| `S-06/proj/none_reason`         | `(MatchResult) → Reason`                   | pending  |
-| `S-06/proj/fulfiller_hash`      | `(MatchResult) → Hash`                     | pending  |
-| `S-06/proj/sub_attention_id`    | `(MatchResult) → AttId`                    | pending  |
+| `S-06/proj/intent_budget`       | `(Intent) → Nat`                           | encoded  |
+| `S-06/proj/acceptance_form`     | `(Intent) → Hash`                          | encoded  |
+| `S-06/proj/match_kind`          | `(MatchResult) → MatchKind`                | encoded  |
+| `S-06/proj/none_reason`         | `(MatchResult) → Reason`                   | encoded  |
+| `S-06/proj/fulfiller_hash`      | `(MatchResult) → Hash`                     | encoded  |
+| `S-06/proj/sub_attention_id`    | `(MatchResult) → AttId`                    | encoded  |
 
 `S-06/rank` is the deterministic ranker. Its body must be a pure
 function of `(candidate set, policy cap)` with `(deadline, hash)`
@@ -371,10 +371,10 @@ ordering.
 | `S-07/canon/opcode_fold`        | `(ParsedForm) → ParsedForm`                | pending  |
 | `S-07/canon/sort_blocks`        | `(ParsedForm) → ParsedForm`                | pending  |
 | `S-07/canon/emit`               | `(ParsedForm) → Bytes`                     | pending  |
-| `S-07/proj/arity`               | `(ParsedForm) → Nat`                       | pending  |
-| `S-07/proj/declared_caps`       | `(ParsedForm) → Vec{CapId}`                | pending  |
-| `S-07/proj/locals_n`            | `(ParsedForm) → Nat`                       | pending  |
-| `S-07/proj/return_value`        | `(ExecState) → Hash`                       | pending  |
+| `S-07/proj/arity`               | `(ParsedForm) → Nat`                       | encoded  |
+| `S-07/proj/declared_caps`       | `(ParsedForm) → Vec{CapId}`                | encoded  |
+| `S-07/proj/locals_n`            | `(ParsedForm) → Nat`                       | encoded  |
+| `S-07/proj/return_value`        | `(ExecState) → Hash`                       | encoded  |
 | `S-07/zeros`                    | `(Nat) → Vec{Value}`                       | pending  |
 | `S-07/reverse`                  | `(Vec{T}) → Vec{T}`                        | pending  |
 | `S-07/spent`                    | `(ExecState, ExecState) → Nat`             | pending  |
@@ -397,31 +397,31 @@ operational form of the IL specification.
 | `S-08/walker/visit`             | `(ProofNode, Hash) → Result`               | encoded (in S-08-proof-checker.form) |
 | `S-08/walker/check_all_premises`| `(Vec{ProofNode}, Hash) → Result`          | pending  |
 | `S-08/rules/lookup`             | `(RuleId, Hash) → RuleSpec`                | pending  |
-| `S-08/proj/conclusion`          | `(ProofNode) → Term`                       | pending  |
-| `S-08/proj/rule_id`             | `(ProofNode) → RuleId`                     | pending  |
-| `S-08/proj/premises`            | `(ProofNode) → Vec{ProofNode}`             | pending  |
-| `S-08/proj/rule_arity`          | `(RuleSpec) → Nat`                         | pending  |
-| `S-08/proj/rule_conclusion_derivation` | `(RuleSpec) → Hash`                 | pending  |
+| `S-08/proj/conclusion`          | `(ProofNode) → Term`                       | encoded  |
+| `S-08/proj/rule_id`             | `(ProofNode) → RuleId`                     | encoded  |
+| `S-08/proj/premises`            | `(ProofNode) → Vec{ProofNode}`             | encoded  |
+| `S-08/proj/rule_arity`          | `(RuleSpec) → Nat`                         | encoded  |
+| `S-08/proj/rule_conclusion_derivation` | `(RuleSpec) → Hash`                 | encoded  |
 
 ## Helpers required by S-09 `synth_kernel`
 
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
 | `S-09/parse_provocation`        | `(Bytes) → Provocation`                    | pending  |
-| `S-09/proj/meta_budget`         | `(Provocation) → Nat`                      | pending  |
-| `S-09/proj/author`              | `(Provocation) → MindId`                   | pending  |
-| `S-09/proj/generator_form`      | `(Provocation) → Hash`                     | pending  |
-| `S-09/proj/binding_name`        | `(Provocation) → Hash`                     | pending  |
+| `S-09/proj/meta_budget`         | `(Provocation) → Nat`                      | encoded  |
+| `S-09/proj/author`              | `(Provocation) → MindId`                   | encoded  |
+| `S-09/proj/generator_form`      | `(Provocation) → Hash`                     | encoded  |
+| `S-09/proj/binding_name`        | `(Provocation) → Hash`                     | encoded  |
 | `S-09/grounding/derive`         | `(Provocation) → Stage2Record`             | pending  |
-| `S-09/grounding/proj/axioms`    | `(Stage2Record) → Vec{AxiomId}`            | pending  |
+| `S-09/grounding/proj/axioms`    | `(Stage2Record) → Vec{AxiomId}`            | encoded  |
 | `S-09/run_in_subattention`      | `(AttId, Hash, Stage2Record) → Vec{Candidate}` | pending |
 | `S-09/stage4/simulate_all`      | `(Vec{Candidate}, AttId) → Vec{TrialRecord}` | pending |
 | `S-09/stage4/any_passed`        | `(Vec{TrialRecord}) → Bool`                | pending  |
 | `S-09/stage5/select`            | `(Vec{Candidate}, Vec{TrialRecord}, Provocation) → Stage5Record` | pending |
-| `S-09/stage5/proj/winner_form_hash` | `(Stage5Record) → Hash`                | pending  |
-| `S-09/stage5/proj/winner_proof_hash` | `(Stage5Record) → Hash`               | pending  |
-| `S-09/stage5/proj/rationale_hash` | `(Stage5Record) → Hash`                  | pending  |
-| `S-09/stage5/proj/vigil_declaration` | `(Stage5Record) → VigilDeclaration`   | pending  |
+| `S-09/stage5/proj/winner_form_hash` | `(Stage5Record) → Hash`                | encoded  |
+| `S-09/stage5/proj/winner_proof_hash` | `(Stage5Record) → Hash`               | encoded  |
+| `S-09/stage5/proj/rationale_hash` | `(Stage5Record) → Hash`                  | encoded  |
+| `S-09/stage5/proj/vigil_declaration` | `(Stage5Record) → VigilDeclaration`   | encoded  |
 | `S-09/stage6/build_claim`       | `(Stage5Record, Provocation) → Hash`       | pending  |
 | `S-09/stage6/check_bootstrap_if_s08` | `(Stage5Record) → Bool`               | pending  |
 | `S-09/stage8/mint_vigil`        | `(VigilDeclaration, Hash) → CapId`         | pending  |
@@ -448,18 +448,18 @@ operational form of the IL specification.
 | `S-11/check/can_read`           | `(Hash) → Bool`                            | pending  |
 | `S-11/check_acceptance`         | `(Hash, Hash) → Bool`                      | pending  |
 | `S-11/intent_inputs_vec`        | `(Intent) → Vec{Value}`                    | pending  |
-| `S-11/proj/acceptance_form`     | `(BridgeRequest) → Hash`                   | pending  |
-| `S-11/proj/match_kind`          | `(MatchResult) → MatchKind`                | pending  |
-| `S-11/proj/fulfiller_hash`      | `(MatchResult) → Hash`                     | pending  |
-| `S-11/proj/sub_attention_id`    | `(MatchResult) → AttId`                    | pending  |
-| `S-11/proj/none_reason`         | `(MatchResult) → Reason`                   | pending  |
+| `S-11/proj/acceptance_form`     | `(BridgeRequest) → Hash`                   | encoded  |
+| `S-11/proj/match_kind`          | `(MatchResult) → MatchKind`                | encoded  |
+| `S-11/proj/fulfiller_hash`      | `(MatchResult) → Hash`                     | encoded  |
+| `S-11/proj/sub_attention_id`    | `(MatchResult) → AttId`                    | encoded  |
+| `S-11/proj/none_reason`         | `(MatchResult) → Reason`                   | encoded  |
 
 ## Status summary
 
 | Category              | Count    |
 |-----------------------|----------|
-| Encoded helpers       | 106      |
-| Stub-only helpers     | ~56      |
+| Encoded helpers       | 135      |
+| Stub-only helpers     | ~27      |
 | Schema/* primitives   | 7 (encoded) |
 | Parser/* primitives   | 13 (encoded) |
 | Parser/* byte-arithmetic leaves | 20 (encoded) |

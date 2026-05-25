@@ -1,0 +1,167 @@
+; S-08 proof_checker field projections
+;
+; Five tiny Forms covering two record types:
+;   ProofNode  : conclusion, rule_id, premises
+;   RuleSpec   : rule_arity, rule_conclusion_derivation
+;
+; Same pattern as s04-projections.form: STORE arg, READ, READSLOT
+; to the schema-helper layer ("ProofNode/proj/*" /
+; "RuleSpec/proj/*"), CALL, RET.
+;
+; Synthesis chain (abbreviated):
+;   provocation:  STUBS.md catalogues five S-08 projections as
+;                 pending. S-08's body (S-08-proof-checker.form)
+;                 walks proof trees by repeatedly projecting
+;                 conclusion/premises/rule_id from ProofNode
+;                 substances and rule_arity/rule_conclusion_derivation
+;                 from RuleSpec substances.
+;   grounding:    A1.2 (type intrinsic), A6.1, A0.6, A0.7 (totality
+;                 — the projection traps ETYPE rather than producing
+;                 a wrong field on a wrong type).
+;   composes_with: schema sub-helpers "ProofNode/proj/*" and
+;                  "RuleSpec/proj/*" — catalogued in STUBS.md as
+;                  Schema/* primitives once SCHEMA.md gains the
+;                  ProofNode and RuleSpec sections.
+
+; ============================================================
+; S-08/proj/conclusion — ProofNode.conclusion
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S08_proj_conclusion"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "ProofNode/proj/conclusion"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s08-projections-rationale
+)
+
+; ============================================================
+; S-08/proj/rule_id — ProofNode.rule_id
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S08_proj_rule_id"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "ProofNode/proj/rule_id"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s08-projections-rationale
+)
+
+; ============================================================
+; S-08/proj/premises — ProofNode.premises (Vec{ProofNode})
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S08_proj_premises"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "ProofNode/proj/premises"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s08-projections-rationale
+)
+
+; ============================================================
+; S-08/proj/rule_arity — RuleSpec.arity (number of premises)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S08_proj_rule_arity"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "RuleSpec/proj/arity"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s08-projections-rationale
+)
+
+; ============================================================
+; S-08/proj/rule_conclusion_derivation — RuleSpec.conclusion_derivation
+;
+; A Hash of the Form that, given the premises' conclusions,
+; produces the rule's conclusion. The walker calls this Form
+; to verify the rule application — i.e. that the conclusion in
+; the ProofNode is exactly what the rule's derivation produces
+; from the premise conclusions.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S08_proj_rule_conclusion_derivation"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "RuleSpec/proj/conclusion_derivation"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s08-projections-rationale
+)
+
+(exports
+  (S08_proj_conclusion                (Hash) → Hash)   ; → Term
+  (S08_proj_rule_id                   (Hash) → Hash)   ; → RuleId
+  (S08_proj_premises                  (Hash) → Hash)   ; → Vec{ProofNode}
+  (S08_proj_rule_arity                (Hash) → Nat)
+  (S08_proj_rule_conclusion_derivation (Hash) → Hash))
