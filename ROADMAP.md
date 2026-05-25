@@ -325,7 +325,7 @@ a clear scope for the inspection-record review.
 6. ~~**Encode Parser/* byte-arithmetic leaves**~~ ✓ done (`parser-bytes.form` ships 20 sub-Forms; 10 second-generation leaves catalogued)
 7. ~~**Encode Parser/* second-generation leaves + Schema/* primitives**~~ ✓ done (`primitives.form` ships 17 sub-Forms; 18 third-generation intrinsics catalogued)
 8. ~~**Encode third-generation intrinsics**~~ ✓ done (`intrinsics.form` ships 18 sub-Forms: Bytes/*, Nat/*, Vec/*, Parser/* deepest recursion helpers; parser chain is now fully encoded end-to-end)
-9. **Write `kernel/types/Trie.md`, `Treap.md`, `Forest.md`** (alongside their helper batches)
+9. ~~**Write `kernel/types/Trie.md`, `Treap.md`, `Forest.md`**~~ ✓ done (post-v0.1.1: persistent HAMT for S-03, persistent treap for S-02, persistent attention forest for S-05; cross-linked from `kernel/types/SCHEMA.md`). Unblocks `ignis0` v0.2.5-ignis0-store and the trie/treap/forest helper encoding batches.
 10. **Write `kernel/forms/helpers/parser.proof` and `canon-normalise.proof`** (non-exempt helpers)
 11. ~~**Write `kernel/LOADER.md`**~~ — superseded by `kernel/IGNITION-BOOTSTRAP.md`, which is the loader contract under axiom A9. Cross-reference from `kernel/README.md` if not already present.
 12. ~~**Wire ignis0 CALL + RET**~~ ✓ done (`c4c033a`: FormRegistry, call frames, CALL/RET small-step rules). A9.3 indirect cases still pending a loadable encoded `S-07/execute` (v0.2.3).

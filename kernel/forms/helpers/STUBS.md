@@ -248,8 +248,9 @@ schema helper depends on them.
 The trie operations together implement the persistent hash-array-
 mapped trie chosen as Candidate A in `breakdown/S-03-substance-
 store.md`. They are sealed Forms, recursive over the trie node
-shape, and share a per-node layout document under
-`kernel/types/Trie.md` (post-v0.1.0).
+shape, and share the per-node layout document
+[`kernel/types/Trie.md`](../../types/Trie.md) (post-v0.1.1) — which
+also defines the operations' exact step costs and trap kinds.
 
 ## Helpers required by S-04 `weave_log`
 
@@ -278,6 +279,14 @@ independently of the body.
 | `S-02/treap/lookup`             | `(TreapRoot, CapId) → CapEntry`            | pending  |
 | `S-02/treap/lookup_with_revocation` | `(TreapRoot, CapId) → CapEntry`        | pending  |
 | `S-02/treap/bump_generation`    | `(TreapRoot, CapId) → TreapRoot`           | pending  |
+
+The treap operations implement the persistent treap chosen as
+Candidate A in `breakdown/S-02-cap-registry.md`. Per-node layout,
+priority derivation, and trap kinds are pinned in
+[`kernel/types/Treap.md`](../../types/Treap.md) (post-v0.1.1).
+
+| Slot                            | Signature                                  | Status   |
+|---------------------------------|--------------------------------------------|----------|
 | `S-02/types/is_root_cap`        | `(Bytes) → Bool`                           | pending  |
 | `S-02/lemma/i2_check`           | `(Cap, Rights, Predicate, Nat, Nat) → Bool`| pending  |
 | `S-02/proj/holder`              | `(CapEntry) → MindId`                      | encoded  |
@@ -309,6 +318,15 @@ part of the S-08 inspection record.
 | `S-05/forest/deduct`            | `(ForestRoot, AttId, Nat) → ForestRoot`    | pending  |
 | `S-05/forest/mark_yielded`      | `(ForestRoot, AttId, Hash) → ForestRoot`   | pending  |
 | `S-05/forest/set_deadline`      | `(ForestRoot, AttId, Nat) → ForestRoot`    | pending  |
+
+The forest operations implement the persistent attention forest
+from `breakdown/S-05-attention-alloc.md` (Candidate A). Per-node
+layout, atomicity guarantees, and trap kinds are pinned in
+[`kernel/types/Forest.md`](../../types/Forest.md) (post-v0.1.1);
+the forest reuses the HAMT primitives from `Trie.md`.
+
+| Slot                            | Signature                                  | Status   |
+|---------------------------------|--------------------------------------------|----------|
 | `S-05/append_dissolved_entries` | `(Vec{AttId}) → ()`                        | pending  |
 | `S-05/tick/compute_yielded_eligible` | `(ForestRoot) → Vec{AttId}`           | pending  |
 | `S-05/tick/grant_each`          | `(Vec{AttId}) → ()`                        | pending  |
