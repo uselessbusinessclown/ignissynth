@@ -1,0 +1,136 @@
+; S-07 form_runtime field projections
+;
+; Four tiny Forms covering two record types:
+;   ParsedForm  : arity, declared_caps, locals_n
+;   ExecState   : return_value
+;
+; Same pattern as s04-projections.form: STORE arg, READ, READSLOT
+; to the schema-helper layer ("ParsedForm/proj/*" /
+; "ExecState/proj/*"), CALL, RET.
+;
+; Synthesis chain (abbreviated):
+;   provocation:  STUBS.md catalogues four S-07 projections as
+;                 pending. S-07's body (S-07-form-runtime.form)
+;                 calls them via READSLOT name + CALL.
+;   grounding:    A1.2 (type intrinsic), A6.1 (code is substance),
+;                 A0.6 (code is thought, not artifact).
+;   composes_with: schema sub-helpers under "ParsedForm/proj/*"
+;                  and "ExecState/proj/*" — catalogued in STUBS.md
+;                  as Schema/* primitives once SCHEMA.md gains the
+;                  ParsedForm and ExecState sections. Until then,
+;                  inner CALLs are pending leaves (same convention
+;                  as s04-projections.form).
+
+; ============================================================
+; S-07/proj/arity — ParsedForm.arity
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S07_proj_arity"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "ParsedForm/proj/arity"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s07-projections-rationale
+)
+
+; ============================================================
+; S-07/proj/declared_caps
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S07_proj_declared_caps"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "ParsedForm/proj/declared_caps"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s07-projections-rationale
+)
+
+; ============================================================
+; S-07/proj/locals_n
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S07_proj_locals_n"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "ParsedForm/proj/locals_n"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s07-projections-rationale
+)
+
+; ============================================================
+; S-07/proj/return_value — ExecState.return_value
+;
+; The single ExecState projection. ExecState is the runtime
+; reflection record S-07 produces at RET; the return_value is
+; the top-of-stack value at the time RET fires.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "S07_proj_return_value"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    READ
+    STORE   1
+    LOAD    1
+    PUSH    "ExecState/proj/return_value"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s07-projections-rationale
+)
+
+(exports
+  (S07_proj_arity          (Hash) → Nat)
+  (S07_proj_declared_caps  (Hash) → Vec{CapId})
+  (S07_proj_locals_n       (Hash) → Nat)
+  (S07_proj_return_value   (Hash) → Hash))

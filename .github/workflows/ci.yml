@@ -245,7 +245,10 @@ jobs:
           # helper encoding is scheduled under v0.2.0-helpers (a separate
           # milestone); until then the baseline is a floor, not a target.
           # Adjusted post-v0.2.3 from 104 → 86 to match reality.
-          baseline=86
+          # Bumped post-v0.1.1 from 86 → 115 after the Phase-1.1
+          # projection batch (29 new projection helpers under
+          # s06/s07/s08/s09/s11-projections.form).
+          baseline=115
           if [ "$encoded" -lt "$baseline" ]; then
             echo "ERROR: encoded helper count ($encoded) is below baseline ($baseline)" >&2
             exit 1

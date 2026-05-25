@@ -3,8 +3,8 @@
 > **Generated artifact.** Do not edit by hand. Regenerate with:
 > `bash tools/status/build-status.sh`
 >
-> Generated at: `2026-05-23T15:24:44Z`
-> From commit:  `f52659b`
+> Generated at: `2026-05-25T09:27:05Z`
+> From commit:  `64c721b`
 >
 > This page is the single source for repo status numbers. Other
 > docs (READMEs, ROADMAP narrative) should link here rather than
@@ -50,9 +50,9 @@
 
 | Metric | Value |
 |---|---:|
-| Helper `.form` files | 10 |
-| Helpers encoded (per `STUBS.md`) | 86 |
-| Helpers pending (per `STUBS.md`) | 99 |
+| Helper `.form` files | 15 |
+| Helpers encoded (per `STUBS.md`) | 115 |
+| Helpers pending (per `STUBS.md`) | 70 |
 
 ## IL opcode count
 
