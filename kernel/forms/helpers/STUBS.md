@@ -238,11 +238,11 @@ schema helper depends on them.
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
 | `S-03/canon`                    | `(TypeTag, Value) → Hash`                  | pending  |
-| `S-03/trie/lookup`              | `(TrieRoot, Hash) → Pair{Bool, Cell}`      | pending  |
-| `S-03/trie/insert`              | `(TrieRoot, Hash, Cell) → TrieRoot`        | pending  |
-| `S-03/trie/bump_pin`            | `(TrieRoot, Hash) → TrieRoot`              | pending  |
-| `S-03/trie/decr_pin`            | `(TrieRoot, Hash) → Pair{TrieRoot, Bool}`  | pending  |
-| `S-03/trie/remove`              | `(TrieRoot, Hash) → TrieRoot`              | pending  |
+| `S-03/trie/lookup`              | `(TrieRoot, Hash) → Pair{Bool, Cell}`      | encoded  |
+| `S-03/trie/insert`              | `(TrieRoot, Hash, Cell) → TrieRoot`        | encoded  |
+| `S-03/trie/bump_pin`            | `(TrieRoot, Hash) → TrieRoot`              | encoded  |
+| `S-03/trie/decr_pin`            | `(TrieRoot, Hash) → Pair{TrieRoot, Bool}`  | encoded  |
+| `S-03/trie/remove`              | `(TrieRoot, Hash) → TrieRoot`              | encoded  |
 | `S-03/seal` (recursive call)    | (export, not a helper)                     | encoded  |
 
 The trie operations together implement the persistent hash-array-
@@ -251,6 +251,34 @@ store.md`. They are sealed Forms, recursive over the trie node
 shape, and share the per-node layout document
 [`kernel/types/Trie.md`](../../types/Trie.md) (post-v0.1.1) — which
 also defines the operations' exact step costs and trap kinds.
+
+The five encoded trie Forms above are the public surface; their
+bodies recurse over the node shape by delegating to a schema
+sub-helper layer (named by the node record type, per the
+`s04-projections.form` convention). These sub-helpers are
+catalogued below and remain pending until the schema layer is
+encoded under a later `v0.2.x-helpers` batch. "Pending leaf at the
+inner CALL" is the expected state — the public trie Forms are
+themselves total and sealed.
+
+| Slot                            | Signature                                  | Status   |
+|---------------------------------|--------------------------------------------|----------|
+| `Trie/type_tag_is_empty`        | `(Trie) → Bool`                            | pending  |
+| `Trie/type_tag_is_branch`       | `(Trie) → Bool`                            | pending  |
+| `Trie/type_tag_is_leaf`         | `(Trie) → Bool`                            | pending  |
+| `TrieLeaf/proj/key`             | `(TrieLeaf) → Hash`                        | pending  |
+| `TrieLeaf/proj/cell`            | `(TrieLeaf) → Cell`                        | pending  |
+| `TrieLeaf/proj/pin_count`       | `(TrieLeaf) → Nat`                         | pending  |
+| `TrieLeaf/construct`            | `(Hash, Cell, Nat) → TrieLeaf`             | pending  |
+| `TrieLeaf/bump_pin_count`       | `(TrieLeaf) → TrieLeaf`                     | pending  |
+| `TrieLeaf/decr_pin_count`       | `(TrieLeaf) → Pair{TrieLeaf, Bool}`        | pending  |
+| `Trie/seal_leaf`                | `(TrieLeaf) → Hash`                        | pending  |
+| `Trie/branch_lookup_child`      | `(TrieBranch, Nat) → Trie`                 | pending  |
+| `Trie/branch_insert`            | `(TrieBranch, Nat, Trie) → TrieBranch`     | pending  |
+| `Trie/branch_bump_pin`          | `(TrieBranch, Nat, Trie) → TrieBranch`     | pending  |
+| `Trie/branch_decr_pin`          | `(TrieBranch, Nat, Trie) → TrieBranch`     | pending  |
+| `Trie/branch_remove`            | `(TrieBranch, Nat) → Trie`                 | pending  |
+| `Trie/split_leaves`             | `(TrieLeaf, TrieLeaf, Nat) → TrieBranch`   | pending  |
 
 ## Helpers required by S-04 `weave_log`
 
@@ -458,8 +486,8 @@ operational form of the IL specification.
 
 | Category              | Count    |
 |-----------------------|----------|
-| Encoded helpers       | 135      |
-| Stub-only helpers     | ~27      |
+| Encoded helpers       | 140      |
+| Stub-only helpers     | ~43      |
 | Schema/* primitives   | 7 (encoded) |
 | Parser/* primitives   | 13 (encoded) |
 | Parser/* byte-arithmetic leaves | 20 (encoded) |
