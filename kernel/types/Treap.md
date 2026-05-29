@@ -70,7 +70,7 @@ registry's logical state is named by the root hash.
 | `type_tag` | 0      | `Bytes(13)` | literal `"TreapEmpty/v1"`        |
 
 Total size: 13 bytes. The hash is constant across the seed —
-pinned in the manifest as `EMPTY_TREAP_HASH` (placeholder
+pinned in the manifest as `EMPTY_TREAP` (placeholder
 `$$BLAKE3$$/empty-treap` until the cold-weave seal).
 
 ### `TreapBranch/v1`

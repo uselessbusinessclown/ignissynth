@@ -70,7 +70,7 @@ sub-tree that collapses to nothing reverts to this substance.
 | `type_tag` | 0      | `Bytes(12)` | literal `"TrieEmpty/v1"`         |
 
 Total size: 12 bytes. Hash is constant across the seed — pinned
-in the manifest as `EMPTY_TRIE_HASH` (placeholder
+in the manifest as `EMPTY_TRIE` (placeholder
 `$$BLAKE3$$/empty-trie` until the cold-weave seal).
 
 ### `TrieBranch/v1`

@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-05-25T09:27:05Z",
-  "generated_from_commit": "64c721b",
+  "generated_at": "2026-05-29T09:38:22Z",
+  "generated_from_commit": "355f6a8",
   "seed": {
     "version": "0.1.1-pre-ignition"
   },
@@ -79,9 +79,9 @@
     }
   },
   "helpers": {
-    "files": 15,
-    "encoded": 115,
-    "pending": 70
+    "files": 16,
+    "encoded": 120,
+    "pending": 81
   },
   "il": {
     "opcode_count_impl": 35,

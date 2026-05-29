@@ -248,7 +248,9 @@ jobs:
           # Bumped post-v0.1.1 from 86 → 115 after the Phase-1.1
           # projection batch (29 new projection helpers under
           # s06/s07/s08/s09/s11-projections.form).
-          baseline=115
+          # Bumped 115 → 120 after the Phase-1.2 trie batch
+          # (5 S-03/trie/* public ops encoded in trie.form).
+          baseline=120
           if [ "$encoded" -lt "$baseline" ]; then
             echo "ERROR: encoded helper count ($encoded) is below baseline ($baseline)" >&2
             exit 1

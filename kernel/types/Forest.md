@@ -74,7 +74,7 @@ BOTTOM_HASH` is a tree root).
 |------------|--------|-------------|----------------------------------|
 | `type_tag` | 0      | `Bytes(14)` | literal `"ForestEmpty/v1"`       |
 
-Pinned in the manifest as `EMPTY_FOREST_HASH` (placeholder
+Pinned in the manifest as `EMPTY_FOREST` (placeholder
 `$$BLAKE3$$/empty-forest` until the cold-weave seal).
 
 ### `ForestBranch/v1`

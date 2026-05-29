@@ -1,0 +1,646 @@
+; S-03 persistent HAMT operations — kernel/forms/helpers/trie.form
+;
+; Implements the six trie helpers required by S-03/substance-store,
+; per the spec in kernel/types/Trie.md (post-v0.1.1).
+;
+; Operations encoded here:
+;
+;   S-03/trie/lookup    (TrieRoot, Hash)        → Pair{Bool, Cell}
+;   S-03/trie/insert    (TrieRoot, Hash, Cell)  → TrieRoot
+;   S-03/trie/bump_pin  (TrieRoot, Hash)        → TrieRoot
+;   S-03/trie/decr_pin  (TrieRoot, Hash)        → Pair{TrieRoot, Bool}
+;   S-03/trie/remove    (TrieRoot, Hash)        → TrieRoot
+;
+; (The sixth slot, S-03/canon, is the canonicaliser at the seal/
+; canon layer — it lives in canon-normalise.form, not here.)
+;
+; Synthesis chain:
+;   provocation:  STUBS.md catalogues five S-03/trie/* helpers as
+;                 pending; ROADMAP action item 9 was closed by PR
+;                 #30 (Trie.md spec). The encoding gap is the next
+;                 step on the path to v0.2.5-ignis0-store.
+;   grounding:    A0.5 (energy is finite — operations are O(depth)),
+;                 A1.1 (matter is content-addressed — the trie keys
+;                 ARE the content hash), A1.2 (type is intrinsic —
+;                 dispatch by type-tag), A1.4 (matter shared by
+;                 reference — persistence is automatic via content-
+;                 addressing), A1.5 (proof-of-prior-acquisition —
+;                 pin_count is the holder count), A1.6 (persistence
+;                 by pinning), A6.1 (code is substance).
+;   approach:     recursive descent over the three node kinds
+;                 (TrieEmpty/v1, TrieBranch/v1, TrieLeaf/v1). Each
+;                 operation reads the root substance, dispatches by
+;                 type-tag (via Trie/type_tag_is_{empty,branch,leaf}
+;                 sub-helpers), and either returns (base case) or
+;                 recurses on the appropriate child Hash via
+;                 PUSH "S-03/trie/op"; SEAL Hash; READSLOT; CALL.
+;   composes_with:
+;                 - kernel/types/Trie.md (the layout spec)
+;                 - schema sub-helpers for TrieEmpty/v1, TrieBranch/v1,
+;                   TrieLeaf/v1, Cell/v1 (catalogued in STUBS.md as
+;                   pending — to be encoded in the next batch)
+;                 - canon-normalise.form (for re-sealing modified
+;                   nodes through S-03/seal)
+;
+; Helper exemption: each Form below exceeds the ~30-instruction
+; smallness threshold of synthesis/PROTOCOL.md § Helper exemption.
+; Therefore each ships its own .proof obligation that S-08's walker
+; recurses into; this file's footer drafts those obligations. The
+; .proof artifact lands as a v0.2.0-helpers follow-up tracked under
+; ROADMAP action item 10.
+;
+; Pending leaves: every body below delegates to Schema/* sub-helpers
+; named "TrieEmpty/...", "TrieBranch/proj/...", "TrieLeaf/proj/...",
+; "TrieBranch/construct", "TrieLeaf/construct", "Trie/chunk_at_depth",
+; "Trie/popcount_below_bit", "Trie/type_tag_is_*", and "S-03/seal"
+; (the last is exported from S-03 itself). These sub-helpers are NOT
+; in this file — they are catalogued in STUBS.md and encoded in the
+; subsequent trie-schema batch. Until that batch lands, the trie
+; operations have pending leaves at every inner CALL, consistent
+; with the layered convention from s04-projections.form.
+
+; ============================================================
+; S-03/trie/lookup
+;
+; Walks from TrieRoot down by 5-bit chunks of the key.
+; Returns Pair{Bool, Cell} — the bool indicates presence,
+; the cell is BOTTOM_HASH on miss.
+;
+; Pseudocode:
+;
+;   lookup(root_h, key, depth=0):
+;     node = read(root_h)
+;     if type(node) == "TrieEmpty/v1":
+;         return Pair{false, BOTTOM_HASH}
+;     if type(node) == "TrieLeaf/v1":
+;         if leaf.key == key:
+;             return Pair{true, leaf.cell}
+;         else:
+;             return Pair{false, BOTTOM_HASH}
+;     if type(node) == "TrieBranch/v1":
+;         chunk = chunk_at_depth(key, depth)
+;         if not (bitmap & (1 << chunk)):
+;             return Pair{false, BOTTOM_HASH}
+;         idx = popcount(bitmap & ((1 << chunk) - 1))
+;         child = children[idx]
+;         return lookup(child, key, depth + 1)   ; tail call
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "trie_lookup"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      8
+  :code (
+    STORE   0                            ; locals[0] := root_h (Hash)
+    STORE   1                            ; locals[1] := key (Hash)
+
+    ;; Read the root substance.
+    LOAD    0
+    READ
+    STORE   2                            ; locals[2] := node bytes
+
+    ;; Dispatch on type tag.
+    LOAD    2
+    PUSH    "Trie/type_tag_is_empty"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    JMPZ    +not_empty
+    ;; TrieEmpty/v1 — key not present.
+    PUSH    false
+    PUSH    BOTTOM_HASH
+    MAKEPAIR
+    RET
+
+    :not_empty
+    LOAD    2
+    PUSH    "Trie/type_tag_is_leaf"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    JMPZ    +is_branch
+
+    ;; TrieLeaf/v1 — compare keys.
+    LOAD    2
+    PUSH    "TrieLeaf/proj/key"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   3                            ; locals[3] := leaf.key
+    LOAD    3
+    LOAD    1
+    EQ
+    JMPZ    +miss
+    ;; Hit: return Pair{true, leaf.cell}.
+    PUSH    true
+    LOAD    2
+    PUSH    "TrieLeaf/proj/cell"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    MAKEPAIR
+    RET
+
+    :miss
+    PUSH    false
+    PUSH    BOTTOM_HASH
+    MAKEPAIR
+    RET
+
+    :is_branch
+    ;; TrieBranch/v1 — find child by 5-bit chunk of key.
+    ;; The branch's own depth field tells us which 5-bit chunk
+    ;; of the key to test. We delegate the slot-index arithmetic
+    ;; to Trie/branch_lookup_child, which returns either the
+    ;; child Hash or BOTTOM_HASH if the slot is empty.
+    LOAD    2
+    LOAD    1
+    PUSH    "Trie/branch_lookup_child"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → child_h or BOTTOM_HASH
+    STORE   4                            ; locals[4] := child_h
+    LOAD    4
+    PUSH    BOTTOM_HASH
+    EQ
+    JMPZ    +recurse
+    ;; Slot empty — miss.
+    PUSH    false
+    PUSH    BOTTOM_HASH
+    MAKEPAIR
+    RET
+
+    :recurse
+    ;; Tail call: lookup(child_h, key).
+    LOAD    4
+    LOAD    1
+    PUSH    "S-03/trie/lookup"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/trie-rationale
+)
+
+; ============================================================
+; S-03/trie/insert
+;
+; Inserts (key, cell) into the trie. If the key is already
+; present, returns the root unchanged (pinning is bump_pin's job,
+; not insert's — S-03/seal composes the two).
+;
+; Pseudocode:
+;
+;   insert(root_h, key, cell_h, depth=0):
+;     node = read(root_h)
+;     if type(node) == "TrieEmpty/v1":
+;         return seal(TrieLeaf/v1{key, cell_h, pin_count: 0})
+;     if type(node) == "TrieLeaf/v1":
+;         if leaf.key == key:
+;             return root_h                            ; idempotent
+;         else:
+;             return split_leaves(node, key, cell_h, depth)
+;     if type(node) == "TrieBranch/v1":
+;         chunk = chunk_at_depth(key, depth)
+;         if bitmap & (1 << chunk):
+;             new_child = insert(children[idx], key, cell_h, depth+1)
+;             return branch_replace_child_at(node, idx, new_child)
+;         else:
+;             new_child = seal(TrieLeaf/v1{key, cell_h, pin_count: 0})
+;             return branch_add_child_at(node, chunk, new_child)
+;
+; The "split_leaves" sub-helper handles the leaf-leaf collision:
+; the two leaves' keys share a prefix up to some depth d, so we
+; build a Branch chain from depth..d-1 and split at d.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "trie_insert"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE)
+  :arity         3
+  :locals-n      10
+  :code (
+    STORE   0                            ; locals[0] := root_h
+    STORE   1                            ; locals[1] := key
+    STORE   2                            ; locals[2] := cell_h
+
+    LOAD    0
+    READ
+    STORE   3                            ; locals[3] := node bytes
+
+    ;; Empty case: seal a new leaf, return its hash.
+    LOAD    3
+    PUSH    "Trie/type_tag_is_empty"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    JMPZ    +not_empty_ins
+    LOAD    1
+    LOAD    2
+    PUSH    0
+    PUSH    "TrieLeaf/construct"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                     ; → new leaf bytes
+    PUSH    "Trie/seal_leaf"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → sealed leaf hash
+    RET
+
+    :not_empty_ins
+    LOAD    3
+    PUSH    "Trie/type_tag_is_leaf"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    JMPZ    +branch_ins
+
+    ;; Leaf case: compare keys.
+    LOAD    3
+    PUSH    "TrieLeaf/proj/key"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   4                            ; locals[4] := leaf.key
+    LOAD    4
+    LOAD    1
+    EQ
+    JMPZ    +leaf_split
+    ;; Same key — idempotent insert, return original root.
+    LOAD    0
+    RET
+
+    :leaf_split
+    ;; Two distinct leaves at this depth — delegate the prefix-
+    ;; common-walk to Trie/split_leaves, which returns the new
+    ;; branch subtree root.
+    LOAD    3
+    LOAD    1
+    LOAD    2
+    PUSH    "Trie/split_leaves"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    RET
+
+    :branch_ins
+    ;; Branch case: locate or create child slot. Trie/branch_insert
+    ;; does the slot-index math, recurses into the child if present
+    ;; (via S-03/trie/insert), and returns the rebuilt branch.
+    LOAD    3
+    LOAD    1
+    LOAD    2
+    PUSH    "Trie/branch_insert"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/trie-rationale
+)
+
+; ============================================================
+; S-03/trie/bump_pin
+;
+; Locates the leaf for `key` and increments its pin_count.
+; Persistent: every Branch node on the path is rebuilt with an
+; updated pin_sum (pin_sum += 1).
+;
+; Pseudocode:
+;
+;   bump_pin(root_h, key):
+;     node = read(root_h)
+;     case type(node):
+;       Empty:  trap EBADLOCAL          ; caller must know it exists
+;       Leaf:   if leaf.key == key:
+;                   return seal(leaf with pin_count + 1)
+;               else: trap EBADLOCAL
+;       Branch: chunk = chunk_at_depth(key, branch.depth)
+;               if not (bitmap & (1 << chunk)): trap EBADLOCAL
+;               new_child = bump_pin(child_at(branch, chunk), key)
+;               return branch_replace_child_with_bumped_pin_sum(...)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "trie_bump_pin"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE EBADLOCAL)
+  :arity         2
+  :locals-n      8
+  :code (
+    STORE   0                            ; locals[0] := root_h
+    STORE   1                            ; locals[1] := key
+
+    LOAD    0
+    READ
+    STORE   2                            ; locals[2] := node bytes
+
+    LOAD    2
+    PUSH    "Trie/type_tag_is_empty"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    JMPZ    +bump_not_empty
+    TRAP    EBADLOCAL
+
+    :bump_not_empty
+    LOAD    2
+    PUSH    "Trie/type_tag_is_leaf"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    JMPZ    +bump_branch
+
+    ;; Leaf — verify key match, then build a new leaf with bumped pin.
+    LOAD    2
+    PUSH    "TrieLeaf/proj/key"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    LOAD    1
+    EQ
+    JMPZ    +bump_mismatch
+
+    LOAD    2
+    PUSH    "TrieLeaf/bump_pin_count"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → new leaf bytes
+    PUSH    "Trie/seal_leaf"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → new leaf hash
+    RET
+
+    :bump_mismatch
+    TRAP    EBADLOCAL
+
+    :bump_branch
+    ;; Branch — Trie/branch_bump_pin walks the child, recurses via
+    ;; S-03/trie/bump_pin, rebuilds the branch with pin_sum += 1.
+    LOAD    2
+    LOAD    1
+    PUSH    "Trie/branch_bump_pin"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/trie-rationale
+)
+
+; ============================================================
+; S-03/trie/decr_pin
+;
+; Decrements pin_count on the matching leaf. Returns
+; Pair{new_root, reached_zero_flag}. The caller emits the
+; Reclaimed{hash} weave entry when the flag is true.
+;
+; If pin_count was already zero, traps EUNDERFLOW.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "trie_decr_pin"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE EBADLOCAL EUNDERFLOW)
+  :arity         2
+  :locals-n      8
+  :code (
+    STORE   0                            ; locals[0] := root_h
+    STORE   1                            ; locals[1] := key
+
+    LOAD    0
+    READ
+    STORE   2
+
+    LOAD    2
+    PUSH    "Trie/type_tag_is_empty"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    JMPZ    +decr_not_empty
+    TRAP    EBADLOCAL
+
+    :decr_not_empty
+    LOAD    2
+    PUSH    "Trie/type_tag_is_leaf"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    JMPZ    +decr_branch
+
+    ;; Leaf — verify key, then decrement.
+    LOAD    2
+    PUSH    "TrieLeaf/proj/key"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    LOAD    1
+    EQ
+    JMPZ    +decr_mismatch
+
+    LOAD    2
+    PUSH    "TrieLeaf/decr_pin_count"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Pair{new leaf bytes, reached_zero}
+    STORE   3
+    LOAD    3
+    FST
+    PUSH    "Trie/seal_leaf"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → new leaf hash
+    LOAD    3
+    SND
+    MAKEPAIR
+    RET
+
+    :decr_mismatch
+    TRAP    EBADLOCAL
+
+    :decr_branch
+    LOAD    2
+    LOAD    1
+    PUSH    "Trie/branch_decr_pin"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → Pair{new branch hash, reached_zero}
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/trie-rationale
+)
+
+; ============================================================
+; S-03/trie/remove
+;
+; Removes the leaf for `key` and collapses single-child Branches
+; per the canonicity rule (Trie.md principle 8).
+;
+; If `key` is absent, returns the root unchanged (idempotent per
+; A1.4 — removing what isn't there is a no-op).
+;
+; Composed by S-03/seal's reclaim path after decr_pin returns
+; reached_zero = true.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "trie_remove"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      8
+  :code (
+    STORE   0                            ; locals[0] := root_h
+    STORE   1                            ; locals[1] := key
+
+    LOAD    0
+    READ
+    STORE   2
+
+    LOAD    2
+    PUSH    "Trie/type_tag_is_empty"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    JMPZ    +rem_not_empty
+    ;; Already empty: idempotent.
+    LOAD    0
+    RET
+
+    :rem_not_empty
+    LOAD    2
+    PUSH    "Trie/type_tag_is_leaf"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    JMPZ    +rem_branch
+
+    ;; Leaf — match? then return EMPTY_TRIE; else unchanged.
+    LOAD    2
+    PUSH    "TrieLeaf/proj/key"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    LOAD    1
+    EQ
+    JMPZ    +rem_keep
+    PUSH    EMPTY_TRIE
+    RET
+
+    :rem_keep
+    LOAD    0
+    RET
+
+    :rem_branch
+    ;; Branch — Trie/branch_remove handles recursive descent and the
+    ;; single-child-collapse canonicity rule.
+    LOAD    2
+    LOAD    1
+    PUSH    "Trie/branch_remove"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/trie-rationale
+)
+
+(exports
+  (trie_lookup    (TrieRoot, Hash)       → Pair{Bool, Cell})
+  (trie_insert    (TrieRoot, Hash, Cell) → TrieRoot)
+  (trie_bump_pin  (TrieRoot, Hash)       → TrieRoot)
+  (trie_decr_pin  (TrieRoot, Hash)       → Pair{TrieRoot, Bool})
+  (trie_remove    (TrieRoot, Hash)       → TrieRoot))
+
+; ============================================================
+; Pending sub-helpers introduced by this batch
+;
+; The bodies above delegate to fifteen new sub-helpers that
+; constitute the schema layer for TrieEmpty/v1, TrieBranch/v1,
+; TrieLeaf/v1, plus the trie-specific arithmetic helpers. They
+; are catalogued in STUBS.md as pending under a new
+; "Schema/Trie/* primitives" section and will be encoded in the
+; next v0.2.0-helpers batch (trie-schema.form):
+;
+;   Trie/type_tag_is_empty           (Bytes) → Bool
+;   Trie/type_tag_is_branch          (Bytes) → Bool
+;   Trie/type_tag_is_leaf            (Bytes) → Bool
+;   TrieLeaf/proj/key                (Bytes) → Hash
+;   TrieLeaf/proj/cell               (Bytes) → Hash
+;   TrieLeaf/proj/pin_count          (Bytes) → Nat
+;   TrieLeaf/construct               (Hash, Hash, Nat) → Bytes
+;   TrieLeaf/bump_pin_count          (Bytes) → Bytes
+;   TrieLeaf/decr_pin_count          (Bytes) → Pair{Bytes, Bool}
+;   Trie/seal_leaf                   (Bytes) → Hash
+;   Trie/branch_lookup_child         (Bytes, Hash) → Hash
+;   Trie/branch_insert               (Bytes, Hash, Hash) → Hash
+;   Trie/branch_bump_pin             (Bytes, Hash) → Hash
+;   Trie/branch_decr_pin             (Bytes, Hash) → Pair{Hash, Bool}
+;   Trie/branch_remove               (Bytes, Hash) → Hash
+;   Trie/split_leaves                (Bytes, Hash, Hash) → Hash
+;
+; These fifteen sub-helpers are themselves layered: the Trie/branch_*
+; helpers handle the bitmap/popcount arithmetic and dispatch into
+; further Schema/Trie primitives (TrieBranch/proj/{depth,bitmap,
+; pin_sum,children_n,children}, TrieBranch/{construct,replace_child_at,
+; add_child_at,remove_child_at}, Trie/{chunk_at_depth,popcount_below_bit}).
+; Cataloguing them is the next batch.
+;
+; Until those sub-helpers exist, the five trie operations above
+; have pending leaves at every inner CALL, per the layered-encoding
+; convention from s04-projections.form. This file establishes the
+; shape S-03's body will see and the .proof artifacts will compose
+; against.
+; ============================================================
+
+; ============================================================
+; Proof obligations (drafted; full discharge in trie.proof)
+;
+; O1. Type discipline. Every body reads its TrieRoot argument
+;     via READ and immediately dispatches by Trie/type_tag_is_*.
+;     The only paths to RET that bypass dispatch are explicit
+;     TRAP EBADLOCAL (bump_pin/decr_pin on Empty) or the empty-trie
+;     short-circuits (lookup-on-Empty / remove-on-Empty). The
+;     proof composes against the schema sub-helpers' obligations
+;     ("type-tag dispatch is total").
+;
+; O2. Persistence. None of the operations mutate the input root
+;     substance. Every modification goes through SEAL (via
+;     Trie/seal_leaf or sub-helpers that compose seal). The
+;     proof obligation reads "no opcode in the body that takes
+;     a Hash as input also produces a substance with the same
+;     hash as output unless the bytes are bitwise identical" —
+;     trivially satisfied because there is no MINT or WRITE.
+;
+; O3. Canonicity. lookup / insert / remove are functions of the
+;     (key, cell)-multiset they operate on, not of insertion
+;     order. The proof composes against Trie/branch_insert and
+;     Trie/split_leaves obligations ("canonicity-collapse rule
+;     holds at every Branch rebuild").
+;
+; O4. Pin accounting. bump_pin and decr_pin together with seal
+;     and remove maintain the invariant
+;
+;       branch.pin_sum == sum(leaf.pin_count for leaf in subtree)
+;
+;     at every Branch node. Proven by structural induction.
+;
+; O5. Idempotence of remove. remove(root, key) on a root that
+;     does not contain key is the identity. Proven by the
+;     bottom-up rebuild: if no leaf in the subtree matches, every
+;     Branch rebuild returns its input unchanged.
+;
+; Discharge target: kernel/forms/helpers/trie.proof (non-exempt
+; per the helper exemption — sized above the threshold).
+; ============================================================
