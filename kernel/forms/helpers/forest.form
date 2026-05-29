@@ -1,0 +1,686 @@
+; S-05 persistent attention-forest operations — kernel/forms/helpers/forest.form
+;
+; Implements the seven forest helpers required by S-05/attention-alloc,
+; per the spec in kernel/types/Forest.md (post-v0.1.1).
+;
+; Operations encoded here:
+;
+;   S-05/forest/get                       (ForestRoot, AttId)               → AttentionRecord
+;   S-05/forest/new_child                 (AttId, Nat, CapId)               → AttId
+;   S-05/forest/atomic_split              (ForestRoot, AttId, Nat, AttId, Nat) → ForestRoot
+;   S-05/forest/dissolve_subtree_postorder (ForestRoot, AttId)              → Pair{ForestRoot, Vec{AttId}}
+;   S-05/forest/deduct                    (ForestRoot, AttId, Nat)          → ForestRoot
+;   S-05/forest/mark_yielded              (ForestRoot, AttId, Hash)         → ForestRoot
+;   S-05/forest/set_deadline              (ForestRoot, AttId, Nat)          → ForestRoot
+;
+; Synthesis chain:
+;   provocation:  STUBS.md catalogues seven S-05/forest/* helpers as
+;                 pending; PR #30 closed the Forest.md spec gap. The
+;                 encoding gap is the next step on the path to
+;                 v0.2.5-ignis0-store, alongside the trie batch (PR #32).
+;   grounding:    A0.5 (energy is finite — every operation is O(depth)
+;                 over the HAMT keyed by AttId), A1.1/A1.4 (matter is
+;                 content-addressed and shared by reference — the forest
+;                 is persistent automatically), A3.2 (each mind owns a
+;                 tree of attentions — the forest is the union of those
+;                 trees), A3.5 (minds coexist — a forest, not a tree),
+;                 A6.1 (code is substance). I6 (bounded epoch budget)
+;                 is what the EOVERBUDGET checks below defend.
+;   approach:     the forest is a HAMT instance (Forest.md § "Why a
+;                 forest") parameterised on AttentionRecord leaves
+;                 instead of Cell leaves. The seven public Forms read
+;                 their ForestRoot argument, perform the budget / cap
+;                 / presence checks that must be visible at the API
+;                 surface (so the traps are declared on the public
+;                 Form, not buried in a sub-helper), and delegate the
+;                 HAMT walking and record reconstruction to the
+;                 Forest/* and AttentionRecord/* schema sub-helpers.
+;   composes_with:
+;                 - kernel/types/Forest.md (the layout spec)
+;                 - kernel/types/Trie.md (the shared HAMT primitives)
+;                 - the encoded S-05/proj/* projections (cap_id,
+;                   mind_id, budget_remaining, cap_view)
+;                 - the AttentionRecord/* and Forest/* schema
+;                   sub-helpers catalogued as pending in STUBS.md
+;
+; Helper exemption: each Form below exceeds the ~30-instruction
+; smallness threshold of synthesis/PROTOCOL.md § Helper exemption, so
+; each ships its own .proof obligation that S-08's walker recurses
+; into; this file's footer drafts those obligations. The .proof
+; artifact lands as a v0.2.0-helpers follow-up (ROADMAP action item 10),
+; the same track as trie.proof.
+;
+; Pending leaves: every body below delegates to Forest/* and
+; AttentionRecord/* schema sub-helpers that are NOT in this file —
+; they are catalogued in STUBS.md and encoded in a subsequent
+; forest-schema batch. Until that batch lands, the forest operations
+; have pending leaves at every inner CALL, consistent with the
+; layered convention from s04-projections.form and trie.form.
+
+; ============================================================
+; S-05/forest/get
+;
+; HAMT lookup of att_id. On hit returns the AttentionRecord hash
+; carried by the matching ForestLeaf; on miss traps EUNHELD (the
+; caller must already hold the attention it is asking about).
+;
+; Pseudocode:
+;
+;   get(root_h, att_id):
+;     (found, record_h) = Forest/hamt_lookup(root_h, att_id)
+;     if not found: trap EUNHELD
+;     return record_h
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "forest_get"
+  :declared-caps (S-05/FOREST_RW)
+  :declared-traps (ETYPE EUNHELD)
+  :arity         2
+  :locals-n      6
+  :code (
+    STORE   0                            ; locals[0] := root_h (ForestRoot)
+    STORE   1                            ; locals[1] := att_id (AttId)
+
+    LOAD    0
+    LOAD    1
+    PUSH    "Forest/hamt_lookup"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → Pair{Bool, Hash}
+    STORE   2                            ; locals[2] := lookup result
+
+    LOAD    2
+    FST                                  ; found?
+    JMPZ    +get_miss
+    LOAD    2
+    SND                                  ; record_h
+    RET
+
+    :get_miss
+    TRAP    EUNHELD
+  )
+  :rationale-hash $$BLAKE3$$/forest-rationale
+)
+
+; ============================================================
+; S-05/forest/new_child
+;
+; A pure derivation — no ForestRoot argument. Returns the
+; deterministic AttId a child would have under
+; (parent_att_id, child_index, focus_cap_id):
+;
+;   child = BLAKE3("AttId" ‖ parent ‖ uleb128(index) ‖ focus)
+;
+; The seed never mints AttIds by RAND; every AttId is a function
+; of its parent's AttId plus its index plus its focus, which makes
+; the entire forest replayable from the Split weave entries
+; (Forest.md § new_child). The tagged-hash construction itself is
+; delegated to Forest/derive_att_id so the byte-layout rule lives
+; in one place.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "forest_new_child"
+  :declared-caps (S-05/FOREST_RW)
+  :declared-traps (ETYPE)
+  :arity         3
+  :locals-n      4
+  :code (
+    STORE   0                            ; locals[0] := parent_att_id (AttId)
+    STORE   1                            ; locals[1] := child_index (Nat)
+    STORE   2                            ; locals[2] := focus_cap_id (CapId)
+
+    LOAD    0
+    LOAD    1
+    LOAD    2
+    PUSH    "Forest/derive_att_id"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                     ; → child AttId
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/forest-rationale
+)
+
+; ============================================================
+; S-05/forest/atomic_split
+;
+; Atomic "remove budget from parent + create child with that
+; budget". Either both updates land or none do — there is no
+; public helper that produces a half-applied forest (Forest.md
+; § atomic_split, principle 3).
+;
+; Args: (root_h, parent_id, child_id, child_budget, child_deadline)
+;
+; Pseudocode:
+;
+;   atomic_split(root, parent_id, child_id, child_budget, child_deadline):
+;     (found, parent_rec_h) = Forest/hamt_lookup(root, parent_id)
+;     if not found: trap EUNHELD
+;     parent_rec = read(parent_rec_h)
+;     if parent_rec.budget_remaining < child_budget: trap EOVERBUDGET
+;     child_rec  = AttentionRecord/construct_child(
+;                      parent_id, parent_rec, child_budget, child_deadline)
+;     parent_rec' = AttentionRecord/with_budget_sub_and_child(
+;                      parent_rec, child_budget, child_id)
+;     child_rec_h  = Forest/seal_record(child_rec)
+;     parent_rec_h'= Forest/seal_record(parent_rec')
+;     root'  = Forest/hamt_insert_record(root,  parent_id, parent_rec_h')
+;     root'' = Forest/hamt_insert_record(root', child_id,  child_rec_h)
+;     return root''
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "forest_atomic_split"
+  :declared-caps (S-05/FOREST_RW)
+  :declared-traps (ETYPE EUNHELD EOVERBUDGET)
+  :arity         5
+  :locals-n      14
+  :code (
+    STORE   0                            ; locals[0] := root_h
+    STORE   1                            ; locals[1] := parent_id
+    STORE   2                            ; locals[2] := child_id
+    STORE   3                            ; locals[3] := child_budget (Nat)
+    STORE   4                            ; locals[4] := child_deadline (Nat)
+
+    ;; Locate the parent. Absent ⇒ EUNHELD.
+    LOAD    0
+    LOAD    1
+    PUSH    "Forest/hamt_lookup"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → Pair{Bool, Hash}
+    STORE   5
+    LOAD    5
+    FST
+    JMPZ    +split_absent
+    LOAD    5
+    SND
+    STORE   6                            ; locals[6] := parent_rec_h
+    JMP     +split_present
+
+    :split_absent
+    TRAP    EUNHELD
+
+    :split_present
+    LOAD    6
+    READ
+    STORE   7                            ; locals[7] := parent_rec bytes
+
+    ;; Budget guard: parent.budget_remaining < child_budget ⇒ EOVERBUDGET.
+    LOAD    7
+    PUSH    "S-05/proj/budget_remaining"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → parent.budget_remaining (Nat)
+    LOAD    3                            ; child_budget
+    LT                                   ; (budget < child_budget)?
+    JMPZ    +split_ok
+    TRAP    EOVERBUDGET
+
+    :split_ok
+    ;; Build the child record (inherits mind_id/cap_id/cap_view from
+    ;; the parent record per Forest.md § atomic_split).
+    LOAD    1                            ; parent_id
+    LOAD    7                            ; parent_rec
+    LOAD    3                            ; child_budget
+    LOAD    4                            ; child_deadline
+    PUSH    "AttentionRecord/construct_child"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=4                     ; → child_rec bytes
+    STORE   8
+
+    ;; Build the new parent record: budget -= child_budget, children
+    ;; appended with child_id.
+    LOAD    7                            ; parent_rec
+    LOAD    3                            ; child_budget
+    LOAD    2                            ; child_id
+    PUSH    "AttentionRecord/with_budget_sub_and_child"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                     ; → parent_rec' bytes
+    STORE   9
+
+    ;; Seal both records.
+    LOAD    8
+    PUSH    "Forest/seal_record"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → child_rec_h
+    STORE   10
+    LOAD    9
+    PUSH    "Forest/seal_record"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → parent_rec_h'
+    STORE   11
+
+    ;; Insert parent then child. Two persistent inserts; the second
+    ;; threads the root produced by the first. Neither input root is
+    ;; mutated, so the "atomic" guarantee is structural: only the
+    ;; final root is observable to any caller.
+    LOAD    0                            ; root
+    LOAD    1                            ; parent_id
+    LOAD    11                           ; parent_rec_h'
+    PUSH    "Forest/hamt_insert_record"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                     ; → root'
+    STORE   12
+    LOAD    12                           ; root'
+    LOAD    2                            ; child_id
+    LOAD    10                           ; child_rec_h
+    PUSH    "Forest/hamt_insert_record"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                     ; → root''
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/forest-rationale
+)
+
+; ============================================================
+; S-05/forest/dissolve_subtree_postorder
+;
+; Walks the subtree rooted at att_id in postorder (children before
+; parent), removes each visited record, and returns the new root
+; together with the Vec{AttId} of removed ids in removal order. The
+; caller emits one Dissolved{att_id} weave entry per id returned
+; (S-05 proof obligation #4, "dissolution accounting").
+;
+; The postorder recursion lives in Forest/dissolve_rec — it reads
+; the record's children list (AttentionRecord/proj/children),
+; recurses on each child accumulating both the threaded root and
+; the id vector, then removes the parent. This Form is the public
+; entry point: it bottoms out the recursion and returns the pair.
+;
+; Pseudocode:
+;
+;   dissolve(root, att_id):
+;     (found, _) = Forest/hamt_lookup(root, att_id)
+;     if not found: return Pair{root, []}      ; idempotent
+;     return Forest/dissolve_rec(root, att_id) ; postorder walk
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "forest_dissolve_subtree_postorder"
+  :declared-caps (S-05/FOREST_RW)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      6
+  :code (
+    STORE   0                            ; locals[0] := root_h
+    STORE   1                            ; locals[1] := att_id
+
+    ;; Absent subtree ⇒ idempotent no-op: Pair{root, []}.
+    LOAD    0
+    LOAD    1
+    PUSH    "Forest/hamt_lookup"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → Pair{Bool, Hash}
+    FST
+    JMPZ    +dissolve_absent
+
+    ;; Present: hand off to the postorder recursion.
+    LOAD    0
+    LOAD    1
+    PUSH    "Forest/dissolve_rec"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → Pair{ForestRoot, Vec{AttId}}
+    RET
+
+    :dissolve_absent
+    LOAD    0
+    PUSH    0
+    MAKEVEC 0                            ; empty Vec{AttId}
+    MAKEPAIR
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/forest-rationale
+)
+
+; ============================================================
+; S-05/forest/deduct
+;
+; Reads the record at att_id, checks budget_remaining >= amount
+; (else EOVERBUDGET), produces a new record with
+; budget_remaining -= amount, re-inserts, returns the new root.
+;
+; Pseudocode:
+;
+;   deduct(root, att_id, amount):
+;     (found, rec_h) = Forest/hamt_lookup(root, att_id)
+;     if not found: trap EUNHELD
+;     rec = read(rec_h)
+;     if rec.budget_remaining < amount: trap EOVERBUDGET
+;     rec'   = AttentionRecord/with_budget_sub(rec, amount)
+;     rec_h' = Forest/seal_record(rec')
+;     return Forest/hamt_insert_record(root, att_id, rec_h')
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "forest_deduct"
+  :declared-caps (S-05/FOREST_RW)
+  :declared-traps (ETYPE EUNHELD EOVERBUDGET)
+  :arity         3
+  :locals-n      10
+  :code (
+    STORE   0                            ; locals[0] := root_h
+    STORE   1                            ; locals[1] := att_id
+    STORE   2                            ; locals[2] := amount (Nat)
+
+    LOAD    0
+    LOAD    1
+    PUSH    "Forest/hamt_lookup"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → Pair{Bool, Hash}
+    STORE   3
+    LOAD    3
+    FST
+    JMPZ    +deduct_absent
+    LOAD    3
+    SND
+    STORE   4                            ; locals[4] := rec_h
+    JMP     +deduct_present
+
+    :deduct_absent
+    TRAP    EUNHELD
+
+    :deduct_present
+    LOAD    4
+    READ
+    STORE   5                            ; locals[5] := rec bytes
+
+    ;; Budget guard.
+    LOAD    5
+    PUSH    "S-05/proj/budget_remaining"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → budget_remaining (Nat)
+    LOAD    2                            ; amount
+    LT                                   ; (budget < amount)?
+    JMPZ    +deduct_ok
+    TRAP    EOVERBUDGET
+
+    :deduct_ok
+    LOAD    5                            ; rec
+    LOAD    2                            ; amount
+    PUSH    "AttentionRecord/with_budget_sub"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → rec' bytes
+    PUSH    "Forest/seal_record"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → rec_h'
+    STORE   6
+    LOAD    0                            ; root
+    LOAD    1                            ; att_id
+    LOAD    6                            ; rec_h'
+    PUSH    "Forest/hamt_insert_record"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                     ; → new root
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/forest-rationale
+)
+
+; ============================================================
+; S-05/forest/mark_yielded
+;
+; Sets the leaf's yielded field to the continuation hash, and
+; updates the inner AttentionRecord so the two stay in sync (the
+; ForestLeaf duplicates yielded for cheap lookup, Forest.md
+; § ForestLeaf/v1). Traps EUNHELD if att_id is absent.
+;
+; Pseudocode:
+;
+;   mark_yielded(root, att_id, cont_h):
+;     (found, rec_h) = Forest/hamt_lookup(root, att_id)
+;     if not found: trap EUNHELD
+;     rec    = read(rec_h)
+;     rec'   = AttentionRecord/with_yielded(rec, cont_h)
+;     rec_h' = Forest/seal_record(rec')
+;     return Forest/hamt_insert_record(root, att_id, rec_h')
+;
+; hamt_insert_record rebuilds the ForestLeaf, which copies the
+; record's yielded into the leaf's yielded — keeping the two in
+; sync is the insert sub-helper's invariant, proven there.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "forest_mark_yielded"
+  :declared-caps (S-05/FOREST_RW)
+  :declared-traps (ETYPE EUNHELD)
+  :arity         3
+  :locals-n      10
+  :code (
+    STORE   0                            ; locals[0] := root_h
+    STORE   1                            ; locals[1] := att_id
+    STORE   2                            ; locals[2] := cont_h (Hash)
+
+    LOAD    0
+    LOAD    1
+    PUSH    "Forest/hamt_lookup"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → Pair{Bool, Hash}
+    STORE   3
+    LOAD    3
+    FST
+    JMPZ    +yield_absent
+    LOAD    3
+    SND
+    STORE   4                            ; locals[4] := rec_h
+    JMP     +yield_present
+
+    :yield_absent
+    TRAP    EUNHELD
+
+    :yield_present
+    LOAD    4
+    READ
+    STORE   5                            ; locals[5] := rec bytes
+
+    LOAD    5                            ; rec
+    LOAD    2                            ; cont_h
+    PUSH    "AttentionRecord/with_yielded"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → rec' bytes
+    PUSH    "Forest/seal_record"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → rec_h'
+    STORE   6
+    LOAD    0                            ; root
+    LOAD    1                            ; att_id
+    LOAD    6                            ; rec_h'
+    PUSH    "Forest/hamt_insert_record"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                     ; → new root
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/forest-rationale
+)
+
+; ============================================================
+; S-05/forest/set_deadline
+;
+; Reads the record, produces a new one with the new deadline,
+; re-inserts. Deadlines are weave-entry-count offsets; this helper
+; does no arithmetic on them (Forest.md § set_deadline).
+;
+; Pseudocode:
+;
+;   set_deadline(root, att_id, new_deadline):
+;     (found, rec_h) = Forest/hamt_lookup(root, att_id)
+;     if not found: trap EUNHELD
+;     rec    = read(rec_h)
+;     rec'   = AttentionRecord/with_deadline(rec, new_deadline)
+;     rec_h' = Forest/seal_record(rec')
+;     return Forest/hamt_insert_record(root, att_id, rec_h')
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "forest_set_deadline"
+  :declared-caps (S-05/FOREST_RW)
+  :declared-traps (ETYPE EUNHELD)
+  :arity         3
+  :locals-n      10
+  :code (
+    STORE   0                            ; locals[0] := root_h
+    STORE   1                            ; locals[1] := att_id
+    STORE   2                            ; locals[2] := new_deadline (Nat)
+
+    LOAD    0
+    LOAD    1
+    PUSH    "Forest/hamt_lookup"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → Pair{Bool, Hash}
+    STORE   3
+    LOAD    3
+    FST
+    JMPZ    +deadline_absent
+    LOAD    3
+    SND
+    STORE   4                            ; locals[4] := rec_h
+    JMP     +deadline_present
+
+    :deadline_absent
+    TRAP    EUNHELD
+
+    :deadline_present
+    LOAD    4
+    READ
+    STORE   5                            ; locals[5] := rec bytes
+
+    LOAD    5                            ; rec
+    LOAD    2                            ; new_deadline
+    PUSH    "AttentionRecord/with_deadline"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → rec' bytes
+    PUSH    "Forest/seal_record"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → rec_h'
+    STORE   6
+    LOAD    0                            ; root
+    LOAD    1                            ; att_id
+    LOAD    6                            ; rec_h'
+    PUSH    "Forest/hamt_insert_record"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                     ; → new root
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/forest-rationale
+)
+
+(exports
+  (forest_get                        (ForestRoot, AttId)                  → AttentionRecord)
+  (forest_new_child                  (AttId, Nat, CapId)                  → AttId)
+  (forest_atomic_split               (ForestRoot, AttId, Nat, AttId, Nat) → ForestRoot)
+  (forest_dissolve_subtree_postorder (ForestRoot, AttId)                  → Pair{ForestRoot, Vec{AttId}})
+  (forest_deduct                     (ForestRoot, AttId, Nat)             → ForestRoot)
+  (forest_mark_yielded               (ForestRoot, AttId, Hash)            → ForestRoot)
+  (forest_set_deadline               (ForestRoot, AttId, Nat)             → ForestRoot))
+
+; ============================================================
+; Pending sub-helpers introduced by this batch
+;
+; The bodies above delegate to fourteen new sub-helpers that
+; constitute the schema layer for the attention forest. They are
+; catalogued in STUBS.md as pending under the S-05 section and will
+; be encoded in the next v0.2.0-helpers batch (forest-schema.form):
+;
+;   Forest/hamt_lookup                       (ForestRoot, AttId) → Pair{Bool, Hash}
+;   Forest/hamt_insert_record                (ForestRoot, AttId, Hash) → ForestRoot
+;   Forest/hamt_remove                       (ForestRoot, AttId) → ForestRoot
+;   Forest/derive_att_id                     (AttId, Nat, CapId) → AttId
+;   Forest/seal_record                       (AttentionRecord) → Hash
+;   Forest/dissolve_rec                      (ForestRoot, AttId) → Pair{ForestRoot, Vec{AttId}}
+;   AttentionRecord/proj/children            (AttentionRecord) → Vec{AttId}
+;   AttentionRecord/proj/deadline            (AttentionRecord) → Nat
+;   AttentionRecord/proj/yielded             (AttentionRecord) → Hash
+;   AttentionRecord/construct_child          (AttId, AttentionRecord, Nat, Nat) → AttentionRecord
+;   AttentionRecord/with_budget_sub_and_child (AttentionRecord, Nat, AttId) → AttentionRecord
+;   AttentionRecord/with_budget_sub          (AttentionRecord, Nat) → AttentionRecord
+;   AttentionRecord/with_deadline            (AttentionRecord, Nat) → AttentionRecord
+;   AttentionRecord/with_yielded             (AttentionRecord, Hash) → AttentionRecord
+;
+; The Forest/hamt_* helpers are themselves layered: they share the
+; HAMT bitmap/popcount arithmetic with Trie/branch_* (Trie.md), but
+; parameterised on ForestLeaf/v1 leaves (att_id ‖ record ‖ yielded)
+; rather than TrieLeaf/v1. The forest-schema batch reuses the
+; trie-schema primitives wherever the node shape is identical and
+; only adds the ForestLeaf projections/constructors and the
+; budget_sum maintenance (Forest.md § ForestBranch/v1).
+;
+; Until those sub-helpers exist, the seven forest operations above
+; have pending leaves at every inner CALL, per the layered-encoding
+; convention. This file establishes the shape S-05's body sees and
+; the .proof artifacts compose against.
+; ============================================================
+
+; ============================================================
+; Proof obligations (drafted; full discharge in forest.proof)
+;
+; O1. Presence discipline. get / atomic_split / deduct /
+;     mark_yielded / set_deadline all begin with Forest/hamt_lookup
+;     and TRAP EUNHELD on the absent branch before any record is
+;     constructed. dissolve_subtree_postorder treats absence as the
+;     identity (idempotent, returns Pair{root, []}). There is no
+;     path that reads or rebuilds a record for an AttId the forest
+;     does not hold.
+;
+; O2. Budget safety (I6). atomic_split and deduct both guard with
+;     `budget_remaining < amount → TRAP EOVERBUDGET` BEFORE sealing
+;     any new record, and the only Nat subtraction happens inside
+;     AttentionRecord/with_budget_sub{,_and_child}, which is reached
+;     only after the guard passes. Therefore no operation drives a
+;     record's budget_remaining negative, and budget_sum at the root
+;     is non-increasing except across a mint (Forest.md § digest,
+;     self-test vector #4). Composes against the sub-helpers'
+;     "budget_sum = Σ leaf.budget_remaining" obligation.
+;
+; O3. Atomicity. atomic_split produces exactly one new ForestRoot
+;     observable to any caller: the two Forest/hamt_insert_record
+;     calls thread root → root' → root'' on the operand stack and
+;     locals, and neither input root substance is mutated (no WRITE,
+;     no MINT). A trap on either guard leaves the original root
+;     untouched. There is no public Form that returns root'.
+;
+; O4. Determinism / replayability. new_child derives the child
+;     AttId purely from (parent, index, focus) via Forest/derive_att_id
+;     — no RAND, no clock. Replaying the Split/Deduct/Dissolve weave
+;     entries against EMPTY_FOREST reproduces the same root hash
+;     (Forest.md self-test vector #3). Composes against derive_att_id's
+;     "tagged-hash is a function of its inputs" obligation.
+;
+; O5. Dissolution accounting. dissolve_subtree_postorder returns a
+;     Vec{AttId} whose length equals the number of records removed
+;     and whose order is postorder (children before parent). Proven
+;     by structural induction in Forest/dissolve_rec; this Form
+;     contributes the base case (empty subtree → empty vec) and the
+;     hand-off. Backs S-05 proof obligation #4.
+;
+; Discharge target: kernel/forms/helpers/forest.proof (non-exempt
+; per the helper exemption — sized above the threshold).
+; ============================================================

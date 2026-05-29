@@ -339,19 +339,39 @@ part of the S-08 inspection record.
 
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
-| `S-05/forest/get`               | `(ForestRoot, AttId) → AttentionRecord`    | pending  |
-| `S-05/forest/new_child`         | `(AttId, Nat, CapId) → AttId`              | pending  |
-| `S-05/forest/atomic_split`      | `(ForestRoot, AttId, Nat, AttId, Nat) → ForestRoot` | pending |
-| `S-05/forest/dissolve_subtree_postorder` | `(ForestRoot, AttId) → Pair{ForestRoot, Vec{AttId}}` | pending |
-| `S-05/forest/deduct`            | `(ForestRoot, AttId, Nat) → ForestRoot`    | pending  |
-| `S-05/forest/mark_yielded`      | `(ForestRoot, AttId, Hash) → ForestRoot`   | pending  |
-| `S-05/forest/set_deadline`      | `(ForestRoot, AttId, Nat) → ForestRoot`    | pending  |
+| `S-05/forest/get`               | `(ForestRoot, AttId) → AttentionRecord`    | encoded  |
+| `S-05/forest/new_child`         | `(AttId, Nat, CapId) → AttId`              | encoded  |
+| `S-05/forest/atomic_split`      | `(ForestRoot, AttId, Nat, AttId, Nat) → ForestRoot` | encoded |
+| `S-05/forest/dissolve_subtree_postorder` | `(ForestRoot, AttId) → Pair{ForestRoot, Vec{AttId}}` | encoded |
+| `S-05/forest/deduct`            | `(ForestRoot, AttId, Nat) → ForestRoot`    | encoded  |
+| `S-05/forest/mark_yielded`      | `(ForestRoot, AttId, Hash) → ForestRoot`   | encoded  |
+| `S-05/forest/set_deadline`      | `(ForestRoot, AttId, Nat) → ForestRoot`    | encoded  |
 
 The forest operations implement the persistent attention forest
 from `breakdown/S-05-attention-alloc.md` (Candidate A). Per-node
 layout, atomicity guarantees, and trap kinds are pinned in
 [`kernel/types/Forest.md`](../../types/Forest.md) (post-v0.1.1);
-the forest reuses the HAMT primitives from `Trie.md`.
+the forest reuses the HAMT primitives from `Trie.md`. The seven
+encoded Forms live in `kernel/forms/helpers/forest.form` and
+delegate to the forest schema sub-helper layer below (the same
+"pending leaf at the inner CALL" convention as `trie.form`).
+
+| Slot                            | Signature                                  | Status   |
+|---------------------------------|--------------------------------------------|----------|
+| `Forest/hamt_lookup`            | `(ForestRoot, AttId) → Pair{Bool, Hash}`   | pending  |
+| `Forest/hamt_insert_record`     | `(ForestRoot, AttId, Hash) → ForestRoot`   | pending  |
+| `Forest/hamt_remove`            | `(ForestRoot, AttId) → ForestRoot`         | pending  |
+| `Forest/derive_att_id`          | `(AttId, Nat, CapId) → AttId`              | pending  |
+| `Forest/seal_record`            | `(AttentionRecord) → Hash`                 | pending  |
+| `Forest/dissolve_rec`           | `(ForestRoot, AttId) → Pair{ForestRoot, Vec{AttId}}` | pending |
+| `AttentionRecord/proj/children` | `(AttentionRecord) → Vec{AttId}`           | pending  |
+| `AttentionRecord/proj/deadline` | `(AttentionRecord) → Nat`                  | pending  |
+| `AttentionRecord/proj/yielded`  | `(AttentionRecord) → Hash`                 | pending  |
+| `AttentionRecord/construct_child` | `(AttId, AttentionRecord, Nat, Nat) → AttentionRecord` | pending |
+| `AttentionRecord/with_budget_sub_and_child` | `(AttentionRecord, Nat, AttId) → AttentionRecord` | pending |
+| `AttentionRecord/with_budget_sub` | `(AttentionRecord, Nat) → AttentionRecord` | pending |
+| `AttentionRecord/with_deadline` | `(AttentionRecord, Nat) → AttentionRecord` | pending  |
+| `AttentionRecord/with_yielded`  | `(AttentionRecord, Hash) → AttentionRecord`| pending  |
 
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
@@ -486,8 +506,8 @@ operational form of the IL specification.
 
 | Category              | Count    |
 |-----------------------|----------|
-| Encoded helpers       | 140      |
-| Stub-only helpers     | ~43      |
+| Encoded helpers       | 147      |
+| Stub-only helpers     | ~57      |
 | Schema/* primitives   | 7 (encoded) |
 | Parser/* primitives   | 13 (encoded) |
 | Parser/* byte-arithmetic leaves | 20 (encoded) |
