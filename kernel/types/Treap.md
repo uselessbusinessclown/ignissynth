@@ -130,8 +130,11 @@ in `kernel/forms/helpers/treap.form`.
 ```
 
 - BST walk by `cap_id`; returns the stored `cap_entry` hash on hit.
-- On miss, traps `EUNHELD`. Callers that want a Maybe-style
-  result use `lookup_with_revocation` instead.
+- On miss, returns `BOTTOM_HASH`. This is a total function: it does
+  **not** trap. The frozen `S-02/attenuate` Form calls it and
+  immediately compares the result against `BOTTOM_HASH`
+  (`→ CapEntry or BOTTOM`), and its `declared-traps` is
+  `(ENOTHELD ETYPE)` — there is no `EUNHELD` to propagate.
 - Step cost: O(log n) expected, O(n) worst-case bounded by
   treap height.
 
@@ -141,20 +144,31 @@ in `kernel/forms/helpers/treap.form`.
 (TreapRoot, CapId) → CapEntry
 ```
 
-The contract `S-02/recognise` calls into:
+The contract `S-02/lookup` (and through it `S-02/holds`) calls
+into. It is a **total function** — it returns `BOTTOM_HASH`, never
+traps, because `S-02/lookup` wraps it with `declared-traps ()` and
+returns the result directly, and `S-02/holds` then compares against
+`BOTTOM_HASH`:
 
-1. BST-walk to find the leaf with `cap_id`; if none, trap
-   `EUNHELD`.
+1. BST-walk to find the node with `cap_id`; if none, return
+   `BOTTOM_HASH`.
 2. Walk up the cap's derivation chain (via `CapEntry.parent`)
    re-doing a `lookup` on each parent, comparing the stored
    `generation` against the value the child recorded at the
    time of attenuation.
 3. If any ancestor's stored generation is higher than the
-   recorded one, trap `EREVOKED`.
+   recorded one, the cap is revoked ⇒ return `BOTTOM_HASH`.
 4. Otherwise return the matched `cap_entry`.
 
 The walk is bounded by the cap's derivation depth, which `S-02`
 obligation 2 ("attenuation monotonicity") bounds.
+
+> **Note.** There is no `EREVOKED` trap kind. The IL trap
+> enumeration (`kernel/IL.md` § Trap kinds) is closed at eleven
+> kinds; revocation is signalled by the `BOTTOM_HASH` return value,
+> not by a trap. An earlier draft of this document named a
+> nonexistent `EREVOKED` trap — corrected when `treap.form` was
+> encoded against this spec.
 
 ### `S-02/treap/bump_generation`
 
@@ -168,9 +182,13 @@ obligation 2 ("attenuation monotonicity") bounds.
 - Returns the new root hash.
 - This is how `S-02/revoke` propagates revocation in O(log n):
   every descendant's next `lookup_with_revocation` will compare
-  its recorded generation against this bumped one and trap
-  `EREVOKED`.
-- Traps: `EUNHELD` if `cap_id` is not in the treap.
+  its recorded generation against this bumped one and return
+  `BOTTOM_HASH`.
+- Absent key: returns the root unchanged (the identity). The sole
+  caller `S-02/revoke` guards with `CAPHELD` and declares only
+  `(ENOTHELD)`, so a held cap is always present and the absent
+  branch is unreachable in practice; it is the identity rather than
+  a trap so no trap kind outside `revoke`'s declaration can escape.
 
 ## Canonicity proof sketch
 

@@ -1,0 +1,512 @@
+; S-02 persistent treap operations — kernel/forms/helpers/treap.form
+;
+; Implements the four treap helpers required by S-02/cap-registry,
+; per the spec in kernel/types/Treap.md (post-v0.1.1).
+;
+; Operations encoded here:
+;
+;   S-02/treap/lookup                  (TreapRoot, CapId)    → CapEntry | BOTTOM
+;   S-02/treap/insert                  (TreapRoot, CapEntry) → TreapRoot
+;   S-02/treap/lookup_with_revocation  (TreapRoot, CapId)    → CapEntry | BOTTOM
+;   S-02/treap/bump_generation         (TreapRoot, CapId)    → TreapRoot
+;
+; CONTRACT NOTE (load-bearing — read before changing trap kinds):
+;
+;   The four operations are TOTAL functions over a well-formed
+;   treap. They do NOT trap on a missing or revoked key. This is
+;   not a stylistic choice — it is forced by the frozen S-02 Forms
+;   that consume them:
+;
+;     * S-02/attenuate (S-02-cap-registry.form) calls treap/lookup
+;       and immediately compares the result against BOTTOM_HASH
+;       (`→ CapEntry or BOTTOM`). attenuate's declared-traps is
+;       (ENOTHELD ETYPE) — it cannot propagate an EUNHELD from
+;       lookup.
+;     * S-02/lookup wraps treap/lookup_with_revocation with
+;       declared-traps () and RETs the result directly; S-02/holds
+;       then compares it against BOTTOM_HASH. A revoked or absent
+;       cap must therefore surface as BOTTOM, never as a trap.
+;     * S-02/revoke calls treap/bump_generation behind a CAPHELD
+;       guard and declares only (ENOTHELD); a held cap is always in
+;       the treap, so bump_generation treats the (unreachable)
+;       absent branch as the identity rather than trapping.
+;
+;   kernel/types/Treap.md previously documented EUNHELD-on-miss and a
+;   `trap EREVOKED`. EREVOKED is NOT in the IL's closed trap
+;   enumeration (kernel/IL.md § Trap kinds — eleven exactly), and the
+;   EUNHELD claim contradicted the frozen S-02 body above. Treap.md
+;   has been corrected in the same commit that introduced this file;
+;   this file is the authority the proof artifacts compose against.
+;
+; Synthesis chain:
+;   provocation:  STUBS.md catalogues four S-02/treap/* helpers as
+;                 pending; PR #30 closed the Treap.md spec gap. The
+;                 encoding gap is the next step on the path to
+;                 v0.2.5-ignis0-store, alongside the trie (PR #32)
+;                 and forest (PR #33) batches.
+;   grounding:    A0.5 (energy is finite — O(log n) expected depth),
+;                 A1.1/A1.4 (content-addressed, shared by reference —
+;                 persistence is automatic), A2.3 (revocation cascades
+;                 — paid at lookup via the generation chain), A6.1
+;                 (code is substance). The canonicity property (two
+;                 treaps with the same (CapId → CapEntry) multiset
+;                 have the same root hash) is what S-02 obligation 4
+;                 ("lookup totality") composes against.
+;   approach:     BST on CapId (lexicographic on the 32 hash bytes,
+;                 via Treap/key_lt) + max-heap on a key-derived
+;                 priority (Treap/derive_priority). Each public Form
+;                 reads its TreapRoot, dispatches by type-tag
+;                 (Treap/type_tag_is_{empty,branch}), and either
+;                 returns (base case) or recurses / delegates the
+;                 rotate-up to the Treap/branch_* schema sub-helpers.
+;   composes_with:
+;                 - kernel/types/Treap.md (the layout spec)
+;                 - the encoded S-02/proj/* projections (holder,
+;                   generation) for the revocation chain
+;                 - the Treap/* and CapEntry/* schema sub-helpers
+;                   catalogued as pending in STUBS.md
+;
+; Helper exemption: each Form below exceeds the ~30-instruction
+; smallness threshold of synthesis/PROTOCOL.md § Helper exemption, so
+; each ships its own .proof obligation that S-08's walker recurses
+; into; this file's footer drafts those obligations. The .proof
+; artifact lands as a v0.2.0-helpers follow-up (ROADMAP action item 10),
+; the same track as trie.proof / forest.proof.
+;
+; Pending leaves: every body below delegates to Treap/* and
+; CapEntry/* schema sub-helpers that are NOT in this file — they are
+; catalogued in STUBS.md and encoded in a subsequent treap-schema
+; batch. Until then the treap operations have pending leaves at every
+; inner CALL, per the layered convention from trie.form / forest.form.
+
+; ============================================================
+; S-02/treap/lookup
+;
+; BST walk by cap_id. Returns the stored cap_entry hash on hit,
+; BOTTOM_HASH on miss (see CONTRACT NOTE).
+;
+; Pseudocode:
+;
+;   lookup(root_h, cap_id):
+;     node = read(root_h)
+;     if type(node) == "TreapEmpty/v1": return BOTTOM_HASH
+;     node_key = node.cap_id
+;     if node_key == cap_id: return node.cap_entry
+;     if cap_id < node_key:  return lookup(node.left,  cap_id)
+;     else:                  return lookup(node.right, cap_id)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "treap_lookup"
+  :declared-caps (S-02/TREAP_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      6
+  :code (
+    STORE   0                            ; locals[0] := root_h (TreapRoot)
+    STORE   1                            ; locals[1] := cap_id (CapId)
+
+    LOAD    0
+    READ
+    STORE   2                            ; locals[2] := node bytes
+
+    ;; Empty ⇒ miss.
+    LOAD    2
+    PUSH    "Treap/type_tag_is_empty"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    JMPZ    +lk_branch
+    PUSH    BOTTOM_HASH
+    RET
+
+    :lk_branch
+    LOAD    2
+    PUSH    "TreapBranch/proj/cap_id"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   3                            ; locals[3] := node_key
+
+    ;; Key match ⇒ return this node's cap_entry.
+    LOAD    3
+    LOAD    1
+    EQ
+    JMPZ    +lk_descend
+    LOAD    2
+    PUSH    "TreapBranch/proj/cap_entry"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    RET
+
+    :lk_descend
+    ;; cap_id < node_key ⇒ go left, else go right.
+    LOAD    1
+    LOAD    3
+    PUSH    "Treap/key_lt"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → (cap_id < node_key)?
+    JMPZ    +lk_right
+
+    LOAD    2
+    PUSH    "TreapBranch/proj/left"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → left subtree hash
+    LOAD    1
+    PUSH    "S-02/treap/lookup"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; tail call
+    RET
+
+    :lk_right
+    LOAD    2
+    PUSH    "TreapBranch/proj/right"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → right subtree hash
+    LOAD    1
+    PUSH    "S-02/treap/lookup"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; tail call
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/treap-rationale
+)
+
+; ============================================================
+; S-02/treap/insert
+;
+; BST-inserts (cap_id, cap_entry) by key, then rotates up until
+; the heap property is restored. At mint time cap_id == the
+; CapEntry's content hash, so the single Hash argument serves as
+; both the BST key and the initial value (Treap.md § insert; this
+; is exactly how S-02/attenuate calls it). If cap_id is already
+; present the new entry replaces the old one.
+;
+; Pseudocode:
+;
+;   insert(root_h, entry_h):
+;     prio = Treap/derive_priority(entry_h)
+;     node = read(root_h)
+;     if type(node) == "TreapEmpty/v1":
+;         return Treap/seal_leaf_branch(entry_h, prio, entry_h)
+;     ; Branch: BST descent + rotate-up handled by the sub-helper,
+;     ; which recurses through S-02/treap/insert on the chosen child.
+;     return Treap/branch_insert(node, entry_h)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "treap_insert"
+  :declared-caps (S-02/TREAP_RW)
+  :declared-traps (ETYPE EBADLOCAL)
+  :arity         2
+  :locals-n      6
+  :code (
+    STORE   0                            ; locals[0] := root_h
+    STORE   1                            ; locals[1] := entry_h (== cap_id at mint)
+
+    LOAD    0
+    READ
+    STORE   2                            ; locals[2] := node bytes
+
+    ;; Empty ⇒ seal a singleton branch (left = right = EMPTY_TREAP).
+    LOAD    2
+    PUSH    "Treap/type_tag_is_empty"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    JMPZ    +ins_branch
+
+    LOAD    1
+    PUSH    "Treap/derive_priority"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → priority (Nat)
+    STORE   3
+    LOAD    1                            ; entry_h (cap_id)
+    LOAD    3                            ; priority
+    LOAD    1                            ; cap_entry (== entry_h)
+    PUSH    "Treap/seal_leaf_branch"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                     ; → singleton TreapRoot
+    RET
+
+    :ins_branch
+    ;; Branch — Treap/branch_insert does the BST descent, recurses
+    ;; via S-02/treap/insert, and rotates up to restore the heap.
+    LOAD    2
+    LOAD    1
+    PUSH    "Treap/branch_insert"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → rebuilt TreapRoot
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/treap-rationale
+)
+
+; ============================================================
+; S-02/treap/lookup_with_revocation
+;
+; The contract S-02/lookup → S-02/holds composes against. First a
+; plain BST lookup; if that misses, BOTTOM. Otherwise walk the
+; cap's derivation chain (via CapEntry.parent) re-doing a lookup
+; on each ancestor and comparing the stored generation against the
+; value the child recorded at attenuation time. If any ancestor's
+; stored generation is higher than the recorded one the cap is
+; revoked ⇒ BOTTOM. Otherwise the matched cap_entry.
+;
+; The chain walk is bounded by the cap's derivation depth (S-02
+; obligation 2, "attenuation monotonicity") and lives in
+; Treap/check_revocation_chain, which returns the entry hash or
+; BOTTOM_HASH — never traps.
+;
+; Pseudocode:
+;
+;   lwr(root_h, cap_id):
+;     entry_h = lookup(root_h, cap_id)
+;     if entry_h == BOTTOM_HASH: return BOTTOM_HASH
+;     return Treap/check_revocation_chain(root_h, cap_id, entry_h)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "treap_lookup_with_revocation"
+  :declared-caps (S-02/TREAP_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      6
+  :code (
+    STORE   0                            ; locals[0] := root_h
+    STORE   1                            ; locals[1] := cap_id
+
+    LOAD    0
+    LOAD    1
+    PUSH    "S-02/treap/lookup"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → entry_h or BOTTOM
+    STORE   2
+
+    ;; Miss ⇒ BOTTOM.
+    LOAD    2
+    PUSH    BOTTOM_HASH
+    EQ
+    JMPZ    +lwr_chain
+    PUSH    BOTTOM_HASH
+    RET
+
+    :lwr_chain
+    ;; Present — verify no ancestor has revoked it.
+    LOAD    0
+    LOAD    1
+    LOAD    2
+    PUSH    "Treap/check_revocation_chain"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                     ; → entry_h (live) or BOTTOM (revoked)
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/treap-rationale
+)
+
+; ============================================================
+; S-02/treap/bump_generation
+;
+; Locates the entry for cap_id, produces a new CapEntry/v1 with
+; generation += 1, and re-inserts it over the old one (same cap_id,
+; in-place replacement preserving tree shape). Returns the new
+; root. This is how S-02/revoke propagates revocation in O(log n).
+;
+; Absent branch: the sole caller (S-02/revoke) guards with CAPHELD,
+; so a held cap is always present; the absent branch is the
+; identity (returns the root unchanged) rather than a trap — see
+; CONTRACT NOTE above.
+;
+; Pseudocode:
+;
+;   bump(root_h, cap_id):
+;     node = read(root_h)
+;     if type(node) == "TreapEmpty/v1": return root_h    ; unreachable for held cap
+;     node_key = node.cap_id
+;     if node_key == cap_id:
+;         new_entry   = CapEntry/with_generation_inc(read-via node.cap_entry)
+;         new_entry_h = Treap/seal_entry(new_entry)
+;         return Treap/branch_replace_entry(node, new_entry_h)
+;     if cap_id < node_key: return branch with left  := bump(node.left,  cap_id)
+;     else:                 return branch with right := bump(node.right, cap_id)
+;
+; The descent + rebuild for the recursive cases is delegated to
+; Treap/branch_bump_generation, which recurses through
+; S-02/treap/bump_generation on the chosen child.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "treap_bump_generation"
+  :declared-caps (S-02/TREAP_RW)
+  :declared-traps (ETYPE EBADLOCAL)
+  :arity         2
+  :locals-n      8
+  :code (
+    STORE   0                            ; locals[0] := root_h
+    STORE   1                            ; locals[1] := cap_id
+
+    LOAD    0
+    READ
+    STORE   2                            ; locals[2] := node bytes
+
+    ;; Empty ⇒ identity (caller guarantees presence).
+    LOAD    2
+    PUSH    "Treap/type_tag_is_empty"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    JMPZ    +bg_branch
+    LOAD    0
+    RET
+
+    :bg_branch
+    LOAD    2
+    PUSH    "TreapBranch/proj/cap_id"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   3                            ; locals[3] := node_key
+
+    ;; Key match ⇒ bump this node's entry generation in place.
+    LOAD    3
+    LOAD    1
+    EQ
+    JMPZ    +bg_descend
+
+    LOAD    2
+    PUSH    "TreapBranch/proj/cap_entry"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → old cap_entry hash
+    READ                                 ; → old CapEntry bytes
+    PUSH    "CapEntry/with_generation_inc"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → new CapEntry bytes
+    PUSH    "Treap/seal_entry"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → new cap_entry hash
+    STORE   4
+    LOAD    2
+    LOAD    4
+    PUSH    "Treap/branch_replace_entry"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → rebuilt TreapRoot
+    RET
+
+    :bg_descend
+    ;; Recursive case — Treap/branch_bump_generation descends the
+    ;; correct child (via key_lt), recurses through
+    ;; S-02/treap/bump_generation, and rebuilds the branch. The
+    ;; cap_id BST key is unchanged so no rotation is needed.
+    LOAD    2
+    LOAD    1
+    PUSH    "Treap/branch_bump_generation"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → rebuilt TreapRoot
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/treap-rationale
+)
+
+(exports
+  (treap_lookup                 (TreapRoot, CapId)    → CapEntry)
+  (treap_insert                 (TreapRoot, CapEntry) → TreapRoot)
+  (treap_lookup_with_revocation (TreapRoot, CapId)    → CapEntry)
+  (treap_bump_generation        (TreapRoot, CapId)    → TreapRoot))
+
+; ============================================================
+; Pending sub-helpers introduced by this batch
+;
+; The bodies above delegate to fifteen new sub-helpers that
+; constitute the schema layer for the treap. They are catalogued in
+; STUBS.md as pending under the S-02 section and will be encoded in
+; the next v0.2.0-helpers batch (treap-schema.form):
+;
+;   Treap/type_tag_is_empty          (Bytes) → Bool
+;   Treap/type_tag_is_branch         (Bytes) → Bool
+;   TreapBranch/proj/cap_id          (Bytes) → Hash
+;   TreapBranch/proj/cap_entry       (Bytes) → Hash
+;   TreapBranch/proj/left            (Bytes) → Hash
+;   TreapBranch/proj/right           (Bytes) → Hash
+;   Treap/key_lt                     (CapId, CapId) → Bool
+;   Treap/derive_priority            (CapId) → Nat
+;   Treap/seal_leaf_branch           (CapId, Nat, Hash) → TreapRoot
+;   Treap/branch_insert              (Bytes, Hash) → TreapRoot
+;   Treap/branch_bump_generation     (Bytes, CapId) → TreapRoot
+;   Treap/branch_replace_entry       (Bytes, Hash) → TreapRoot
+;   Treap/check_revocation_chain     (TreapRoot, CapId, Hash) → Hash
+;   CapEntry/with_generation_inc     (CapEntry) → CapEntry
+;   Treap/seal_entry                 (CapEntry) → Hash
+;
+; Treap/key_lt is the lexicographic comparison of two 32-byte hash
+; keys (the IL's LT is Nat-only); Treap/derive_priority recomputes
+; `first 8 bytes of BLAKE3(cap_id ‖ "treap-priority")` (Treap.md
+; § Priority derivation), and Treap/seal_leaf_branch /
+; Treap/branch_* enforce the BST + heap + priority invariants,
+; trapping EBADLOCAL on violation (Treap.md § TreapBranch/v1).
+; Treap/check_revocation_chain walks CapEntry.parent links using the
+; encoded S-02/proj/generation projection.
+;
+; Until those sub-helpers exist, the four treap operations above
+; have pending leaves at every inner CALL, per the layered-encoding
+; convention. This file establishes the shape S-02's body sees and
+; the .proof artifacts compose against.
+; ============================================================
+
+; ============================================================
+; Proof obligations (drafted; full discharge in treap.proof)
+;
+; O1. Totality. lookup / lookup_with_revocation return BOTTOM_HASH
+;     (never trap) on a missing or revoked key; bump_generation is
+;     the identity on the absent branch. The only declared traps are
+;     ETYPE (malformed node bytes) and EBADLOCAL (BST/heap/priority
+;     invariant violation, raised inside the Treap/branch_* and
+;     Treap/seal_* sub-helpers). This is exactly the contract the
+;     frozen S-02 Forms compose against (see CONTRACT NOTE), and it
+;     backs S-02 obligation 4 ("lookup totality").
+;
+; O2. Persistence. No operation mutates an input node substance.
+;     Every modification goes through Treap/seal_* (via
+;     seal_leaf_branch / seal_entry / branch_*). There is no WRITE or
+;     MINT in any body, so a returned root either equals the input
+;     root (idempotent / absent branches) or is a freshly sealed
+;     tree sharing all untouched subtrees by reference (A1.4).
+;
+; O3. Canonicity. The treap's shape is fully determined by its key
+;     set plus the key-derived priorities (Treap.md § Canonicity
+;     proof sketch). insert restores the heap by rotate-up and
+;     derive_priority is a pure function of the key, so two treaps
+;     holding the same (cap_id → cap_entry) multiset have the same
+;     root hash regardless of insertion order. Composes against
+;     Treap/branch_insert's "rotate-up restores the max-heap
+;     property" obligation.
+;
+; O4. Revocation monotonicity. bump_generation only ever increases a
+;     CapEntry's generation (CapEntry/with_generation_inc adds 1, no
+;     other path writes generation) and preserves the cap_id BST key,
+;     so the tree shape is unchanged and check_revocation_chain's
+;     "stored generation ≥ recorded generation ⇒ revoked" test is
+;     monotone in revocation events (A2.3). Backs S-02 obligation 2.
+;
+; Discharge target: kernel/forms/helpers/treap.proof (non-exempt
+; per the helper exemption — sized above the threshold).
+; ============================================================

@@ -303,15 +303,39 @@ independently of the body.
 
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
-| `S-02/treap/insert`             | `(TreapRoot, CapEntry) → TreapRoot`        | pending  |
-| `S-02/treap/lookup`             | `(TreapRoot, CapId) → CapEntry`            | pending  |
-| `S-02/treap/lookup_with_revocation` | `(TreapRoot, CapId) → CapEntry`        | pending  |
-| `S-02/treap/bump_generation`    | `(TreapRoot, CapId) → TreapRoot`           | pending  |
+| `S-02/treap/insert`             | `(TreapRoot, CapEntry) → TreapRoot`        | encoded  |
+| `S-02/treap/lookup`             | `(TreapRoot, CapId) → CapEntry`            | encoded  |
+| `S-02/treap/lookup_with_revocation` | `(TreapRoot, CapId) → CapEntry`        | encoded  |
+| `S-02/treap/bump_generation`    | `(TreapRoot, CapId) → TreapRoot`           | encoded  |
 
 The treap operations implement the persistent treap chosen as
 Candidate A in `breakdown/S-02-cap-registry.md`. Per-node layout,
 priority derivation, and trap kinds are pinned in
-[`kernel/types/Treap.md`](../../types/Treap.md) (post-v0.1.1).
+[`kernel/types/Treap.md`](../../types/Treap.md) (post-v0.1.1). The
+four encoded Forms live in `kernel/forms/helpers/treap.form` and are
+**total** — `lookup`/`lookup_with_revocation` return `BOTTOM_HASH` on
+miss/revoked (matching the frozen `S-02/attenuate`/`lookup`/`holds`
+contract), never trapping `EUNHELD`/`EREVOKED`. They delegate to the
+treap schema sub-helper layer below (the "pending leaf at the inner
+CALL" convention from `trie.form`).
+
+| Slot                            | Signature                                  | Status   |
+|---------------------------------|--------------------------------------------|----------|
+| `Treap/type_tag_is_empty`       | `(Bytes) → Bool`                           | pending  |
+| `Treap/type_tag_is_branch`      | `(Bytes) → Bool`                           | pending  |
+| `TreapBranch/proj/cap_id`       | `(Bytes) → Hash`                           | pending  |
+| `TreapBranch/proj/cap_entry`    | `(Bytes) → Hash`                           | pending  |
+| `TreapBranch/proj/left`         | `(Bytes) → Hash`                           | pending  |
+| `TreapBranch/proj/right`        | `(Bytes) → Hash`                           | pending  |
+| `Treap/key_lt`                  | `(CapId, CapId) → Bool`                    | pending  |
+| `Treap/derive_priority`         | `(CapId) → Nat`                            | pending  |
+| `Treap/seal_leaf_branch`        | `(CapId, Nat, Hash) → TreapRoot`           | pending  |
+| `Treap/branch_insert`           | `(Bytes, Hash) → TreapRoot`                | pending  |
+| `Treap/branch_bump_generation`  | `(Bytes, CapId) → TreapRoot`               | pending  |
+| `Treap/branch_replace_entry`    | `(Bytes, Hash) → TreapRoot`                | pending  |
+| `Treap/check_revocation_chain`  | `(TreapRoot, CapId, Hash) → Hash`          | pending  |
+| `CapEntry/with_generation_inc`  | `(CapEntry) → CapEntry`                    | pending  |
+| `Treap/seal_entry`              | `(CapEntry) → Hash`                        | pending  |
 
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
@@ -506,8 +530,8 @@ operational form of the IL specification.
 
 | Category              | Count    |
 |-----------------------|----------|
-| Encoded helpers       | 147      |
-| Stub-only helpers     | ~57      |
+| Encoded helpers       | 151      |
+| Stub-only helpers     | ~72      |
 | Schema/* primitives   | 7 (encoded) |
 | Parser/* primitives   | 13 (encoded) |
 | Parser/* byte-arithmetic leaves | 20 (encoded) |
