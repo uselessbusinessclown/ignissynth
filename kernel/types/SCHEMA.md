@@ -124,21 +124,36 @@ are specified in sister documents under `kernel/types/`:
   (`TreapEmpty/v1`, `TreapBranch/v1`).
 - **`Forest.md`** — persistent attention forest for `S-05/attention-alloc`
   (`ForestEmpty/v1`, `ForestBranch/v1`, `ForestLeaf/v1`).
+- **`Records.md`** — application-level record layouts the upper Forms
+  (S-06..S-11) construct, seal, and parse back from wire bytes
+  (`Intent/v1`, `MatchResult/v1`, `ExecState/v1`, `Claim/v1`,
+  `Proof/v1`, `ProofNode/v1`, `RuleSpec/v1`, `Provocation/v1`,
+  `BridgeRequest/v1`). This is the layout reference the six wire
+  parsers (`S-06/parse_intent`, `S-07/parse_exec_state`,
+  `S-08/parse_proof`, `S-08/parse_claim`, `S-09/parse_provocation`,
+  `S-11/parse_surface`) are encoded against.
 
-These three documents are the v0.2.0-helpers layout reference
+The first three documents are the v0.2.0-helpers layout reference
 for the `S-03/trie/*`, `S-02/treap/*`, and `S-05/forest/*` helper
 families. They are also the spec `ignis0`'s `v0.2.5-ignis0-store`
 milestone implements (replacing the HashMap-backed
-`SubstanceStore` with a real persistent HAMT).
+`SubstanceStore` with a real persistent HAMT). `Records.md` is the
+layout reference for the wire parsers and the upper-Form projections.
 
 ## Status
 
 This document is the v0.2.0-helpers layout reference for the
 schema helpers and the records the persistent data structures
 above carry. It is sufficient for the schema helpers to be
-encoded against. Additional substance types (`Intent`,
-`Provocation`, `Stage1Record` through `Stage8Record`, `Receipt`,
-`Continuation`, `ParsedForm`, `ProofTree`, `ProofNode`, `Claim`,
-`Term`, `RuleSpec`, `TrialRecord`, `Hypothesis`, `Verdict`) will
-gain layout entries in subsequent v0.2.0 batches as the helpers
-that need them are encoded.
+encoded against.
+
+The application-level records the upper Forms parse and project —
+`Intent`, `MatchResult`, `ExecState`, `Claim`, `Proof`,
+`ProofNode`, `RuleSpec`, `Provocation`, `BridgeRequest` — are now
+pinned in the companion `Records.md` (the layout reference for the
+six wire parsers). The remaining substance types (`Stage1Record`
+through `Stage8Record`, `Receipt`, `Continuation`, `Term`,
+`TrialRecord`, `Hypothesis`, `Verdict`) will gain layout entries in
+subsequent v0.2.0 batches as the helpers that need them are
+encoded. (`ParsedForm` is pinned inline in
+`kernel/forms/helpers/parser.form`.)
