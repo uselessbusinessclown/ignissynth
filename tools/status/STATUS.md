@@ -3,8 +3,8 @@
 > **Generated artifact.** Do not edit by hand. Regenerate with:
 > `bash tools/status/build-status.sh`
 >
-> Generated at: `2026-05-30T19:56:30Z`
-> From commit:  `783c383`
+> Generated at: `2026-05-31T09:23:58Z`
+> From commit:  `0f3dbbb`
 >
 > This page is the single source for repo status numbers. Other
 > docs (READMEs, ROADMAP narrative) should link here rather than
