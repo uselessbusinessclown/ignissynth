@@ -82,6 +82,33 @@ is a fixed-table entry). Their layouts are pinned here anyway because
 their **projections are already encoded** and the projections fix the
 offsets.
 
+### Parser totality contracts (read off the call sites)
+
+A parser's behavior on malformed input is **not** uniform — it is
+fixed by what its caller does with the result. The contracts below are
+read directly off each calling Form (not assumed), and each parser is
+encoded to exactly its contract. Getting this wrong is a soundness bug:
+a parser that traps where its caller expects `BOTTOM` would crash a
+synthesis act that the design intends to *reject gracefully*.
+
+| Parser                  | On malformed input | Caller's handling (verified at the call site)                         |
+|-------------------------|--------------------|-----------------------------------------------------------------------|
+| `S-06/parse_intent`     | return `BOTTOM_HASH`| S-06 `JMPZ` on `== BOTTOM_HASH` → its own `EILLFORMED` trap            |
+| `S-11/parse_surface`    | return `BOTTOM_HASH`| S-11 `JMPZ` on `== BOTTOM_HASH` → seals a `Rejected{EILLFORMED}` Receipt|
+| `S-08/parse_proof`      | return `BOTTOM_HASH`| S-08 is total (`declared-traps ()`) → wraps into a `Reject` result     |
+| `S-08/parse_claim`      | return `BOTTOM_HASH`| S-08 is total (`declared-traps ()`) → wraps into a `Reject` result     |
+| `S-07/parse_exec_state` | **trap `ETYPE`**   | S-07 `resume` consumes the result directly, no `BOTTOM` check (trusted)|
+| `S-09/parse_provocation`| **trap `ETYPE`**   | S-09 consumes the result directly; the empty-`author` (`EANONYMOUS`) check is a *separate* semantic check on a well-formed record |
+
+The four total parsers never trap: they validate the fixed layout and
+return `BOTTOM_HASH` on any deviation. The two trapping parsers trap
+`ETYPE` (the only kind a parser may emit — it is in the closed
+enumeration; no new trap kind is introduced). Either way the parser is
+a **total function over its input bytes** in the operational sense —
+it always terminates with a defined result (a record hash, `BOTTOM`, or
+a single well-defined trap). This is the same total-function discipline
+the treap helpers follow (`Treap.md` § contract note).
+
 ---
 
 ## `Intent`
@@ -114,12 +141,15 @@ reads `acceptance_form` @17. Both offsets are fixed above.
 `acceptance_form_hash`; the encoded projection names it
 `acceptance_form`. They are the same field — a `Hash` to the acceptance
 Form. This document uses the projection's name (the projection is the
-operative artifact). `S-06/parse_intent` traps `EILLFORMED` on a
-malformed intent, per the breakdown's step 1 — note `EILLFORMED` is a
-caller-facing condition surfaced by S-06, **not** a new trap kind in
-the IL's closed enumeration; the parser itself traps `ETYPE` (the same
-discipline as `parse_form`), and S-06 maps that to its `EILLFORMED`
-verdict.
+operative artifact). **`S-06/parse_intent` is total: it returns the
+`Intent` hash on success and `BOTTOM_HASH` on any malformed input — it
+does not trap.** S-06's body `JMPZ`s on `result == BOTTOM_HASH` and
+raises its *own* `EILLFORMED` trap (step 1 of the breakdown).
+`EILLFORMED` is a caller-facing S-06 condition, not a new IL trap kind
+and not something the parser emits. (This differs from `parse_form`,
+which *does* trap `ETYPE`, because `parse_form`'s caller — the runtime
+loader — trusts its input; `parse_intent`'s caller deliberately wants a
+graceful reject. See § Parser totality contracts.)
 
 ## `MatchResult`
 
@@ -198,7 +228,10 @@ form_hash_after, env }`. Type tag `"Claim/v1"`.
 
 Total size: 108 bytes.
 
-`S-08/parse_claim` parses these four fields. The checker compares
+`S-08/parse_claim` parses these four fields and is **total**: it
+returns the `Claim` hash on success and `BOTTOM_HASH` on malformed
+input (S-08 is `declared-traps ()` — the checker never traps; a parse
+failure becomes a `Reject` result). The checker compares
 `form_hash_before`/`form_hash_after` against the conclusion of the
 proof's root `ProofNode` and rejects with `ClaimMismatch` on
 disagreement (breakdown self-test 3) — a `Reject` verdict, not a trap.
@@ -219,11 +252,13 @@ claim it discharges. The two names denote the same sealed substance.)
 
 Total size: 72 bytes.
 
-`S-08/parse_proof` parses these two fields, then `check` walks the
-`rule_tree` top-down (one `ProofNode` per node) verifying each rule
-application. `check(proof, claim)` is **total**: it returns
-`Accept` or `Reject{reason}`, never traps and never diverges
-(breakdown constraint 1). The walker projects fields out of each
+`S-08/parse_proof` parses these two fields and is **total**: it returns
+the `Proof` hash on success and `BOTTOM_HASH` on malformed input.
+`check` then walks the `rule_tree` top-down (one `ProofNode` per node)
+verifying each rule application. `check(proof, claim)` is **total**: it
+returns `Accept` or `Reject{reason}`, never traps and never diverges
+(breakdown constraint 1) — so neither it nor the parsers it calls may
+trap. The walker projects fields out of each
 `ProofNode` via the encoded `S-08/proj/*` helpers.
 
 ## `ProofNode`
@@ -337,8 +372,14 @@ inventing a field. If a future batch shows Stage 5 needs a distinct
 field, adding it is an I9 synthesis act (tag bump + re-seal).
 
 Stage 1 traps `EANONYMOUS` if `author` is empty — a caller-facing S-09
-condition, not an IL trap kind; `S-09/parse_provocation` itself traps
-only `ETYPE`, like every parser.
+condition, not an IL trap kind, and a *semantic* check on an
+already-well-formed record (S-09 projects `author` and compares it to
+`EMPTY_HASH`, which is distinct from a `BOTTOM_HASH` parse failure).
+`S-09/parse_provocation` itself is one of the two **trapping** parsers:
+S-09 consumes its result directly with no `BOTTOM` check, so the parser
+traps `ETYPE` on malformed wire bytes (see § Parser totality
+contracts). This is unlike `parse_intent`/`parse_surface`, which are
+total and return `BOTTOM`.
 
 ## `BridgeRequest`
 
@@ -364,14 +405,21 @@ Projection (`s11-projections.form`): `S-11/proj/acceptance_form` reads
 `acceptance_form` @24.
 
 `S-11/parse_surface` is the deserialiser of step 1: it parses the
-surface-language wire bytes into a `BridgeRequest`. A request that
-fails the surface grammar yields a `Receipt` with verdict
-`Rejected{EILLFORMED}` and **no** `BridgeIn` entry (the request never
-became a substance) — again a bridge verdict, not an IL trap; the
-parser traps `ETYPE` on malformed wire bytes and S-11 maps that to the
-`EILLFORMED` verdict. The `acceptance_form` not being held by the
-bridge yields `Rejected{EUNHELDFORM}` *after* a `BridgeIn` entry — that
-check is S-11's, performed after a successful parse, not the parser's.
+surface-language wire bytes into a `BridgeRequest`. **It is total:** on
+a request that fails the surface grammar it returns `BOTTOM_HASH` (it
+does not trap). S-11's body `JMPZ`s on `result == BOTTOM_HASH` and
+seals a `Receipt` with verdict `Rejected{EILLFORMED}` and **no**
+`BridgeIn` entry (the request never became a substance). `EILLFORMED`
+is a bridge verdict, not an IL trap kind. The `acceptance_form` not
+being held by the bridge yields `Rejected{EUNHELDFORM}` *after* a
+`BridgeIn` entry — that check is S-11's, performed after a successful
+parse, not the parser's.
+
+`parse_surface` is also the one parser whose input is a distinct
+**surface grammar** rather than the fixed binary layout above: it is a
+textual recursive descent (closer to `parse_form`'s shape) that emits a
+`BridgeRequest` in the layout pinned here. The other five parsers
+validate fixed-offset binary substance bytes.
 
 ## Status
 
