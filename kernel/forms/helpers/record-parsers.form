@@ -1,0 +1,258 @@
+; Record wire parsers — kernel/forms/helpers/record-parsers.form
+;
+; The application-level record parsers named in STUBS.md. Each reads
+; the raw bytes of a sealed substance and validates them against the
+; fixed-offset layout pinned in kernel/types/Records.md, producing the
+; trusted typed record (or signalling malformation).
+;
+; This batch (A) encodes the two simplest, structurally-identical
+; binary parsers — both TOTAL functions that return BOTTOM_HASH on
+; malformed input:
+;
+;   S-06/parse_intent : (Bytes) → Intent or BOTTOM
+;   S-08/parse_claim  : (Bytes) → Claim  or BOTTOM
+;
+; Their callers (S-06/match, S-08/check) JMPZ on `== BOTTOM_HASH` and
+; map the failure into their own verdict (S-06's EILLFORMED trap;
+; S-08's Reject result). Per kernel/types/Records.md § Parser totality
+; contracts, NEITHER parser traps — getting this wrong would crash an
+; act the design intends to reject gracefully.
+;
+; Wire model. Unlike S-07/parse_form (which parses canonical
+; s-expression *text* into a ParsedForm), these records are sealed
+; substances with the fixed binary layout of Records.md. "Parsing"
+; here means: validate untrusted bytes against that layout, then
+; extract each fixed-offset field and re-seal the trusted record. A
+; deviation in length or type-tag prefix yields BOTTOM_HASH; a
+; well-formed prefix guarantees every subsequent offset read is
+; in-bounds, so the field reads never trap.
+;
+; Synthesis chain:
+;   provocation:  STUBS.md catalogues S-06/parse_intent and
+;                 S-08/parse_claim as pending. S-06/match and
+;                 S-08/check READSLOT + CALL them on the bytes
+;                 returned by READ of the intent / claim substance.
+;   grounding:    A1.2 (type is intrinsic — the parser trusts and
+;                 verifies the type tag), A6.1 (a unit of code is a
+;                 substance), A0.7 (totality — the parser returns a
+;                 defined result on every input, never diverges),
+;                 A0.6 (code is thought, content-addressed).
+;   approach:     fixed-offset binary validation. A shared header
+;                 check (Parser/check_record_header) gates the field
+;                 reads; the field reads (Parser/read_nat{4,8}_at,
+;                 Parser/read_hash_at) are constant-offset slices.
+;   composes_with:
+;                 - S-03/ROOT_RO for the caller's READ (the parser
+;                   itself takes already-read bytes; it holds
+;                   S-03/ROOT_RO only to match the helper family's
+;                   declared cap, and performs no READ of its own).
+;                 - the four binary-field leaves, catalogued pending
+;                   in STUBS.md (same layered convention as
+;                   parser.form's Parser/* leaves).
+;
+; Totality note (load-bearing, mirrors Treap.md's contract note):
+; check_record_header returning false is the ONLY path to BOTTOM, and
+; the field-read leaves are total over an in-bounds (offset, len)
+; — guaranteed in-bounds by a true header check. Therefore parse_intent
+; and parse_claim are total and trap-free, exactly as their call sites
+; require.
+
+; ============================================================
+; S-06/parse_intent — (Bytes) → Intent or BOTTOM
+;
+; Layout (Records.md § Intent, "Intent/v1", 177 bytes):
+;   budget          Nat(8) @9
+;   acceptance_form Hash   @17
+;   goal            Hash   @49
+;   parent          Hash   @81
+;   inputs          Hash   @113   (sealed Vec{Hash})
+;   constraints     Hash   @145   (sealed Vec{Hash})
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "parse_intent"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps ()
+  :arity         1
+  :locals-n      7
+  :code (
+    STORE   0                       ; locals[0] := input bytes
+
+    ;; Validate length (177) and type-tag prefix ("Intent/v1").
+    LOAD    0
+    PUSH    "Intent/v1"
+    PUSH    177
+    PUSH    "Parser/check_record_header"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                ; → Bool (well-formed prefix + length)
+    JMPZ    +bad                    ; malformed → BOTTOM_HASH
+
+    ;; Extract each field at its fixed offset.
+    LOAD    0
+    PUSH    9
+    PUSH    "Parser/read_nat8_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → budget
+
+    LOAD    0
+    PUSH    17
+    PUSH    "Parser/read_hash_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → acceptance_form
+
+    LOAD    0
+    PUSH    49
+    PUSH    "Parser/read_hash_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → goal
+
+    LOAD    0
+    PUSH    81
+    PUSH    "Parser/read_hash_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → parent
+
+    LOAD    0
+    PUSH    113
+    PUSH    "Parser/read_hash_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → inputs
+
+    LOAD    0
+    PUSH    145
+    PUSH    "Parser/read_hash_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → constraints
+
+    MAKEVEC 6                       ; [budget, acceptance_form, goal, parent, inputs, constraints]
+    SEAL    Intent
+    RET
+
+    :bad
+    PUSH    BOTTOM_HASH
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/record-parsers-rationale
+)
+
+; ============================================================
+; S-08/parse_claim — (Bytes) → Claim or BOTTOM
+;
+; Layout (Records.md § Claim, "Claim/v1", 108 bytes):
+;   invariant_id     Nat(4) @8
+;   form_hash_before Hash   @12
+;   form_hash_after  Hash   @44
+;   env              Hash   @76
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "parse_claim"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps ()
+  :arity         1
+  :locals-n      5
+  :code (
+    STORE   0                       ; locals[0] := input bytes
+
+    LOAD    0
+    PUSH    "Claim/v1"
+    PUSH    108
+    PUSH    "Parser/check_record_header"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    JMPZ    +bad
+
+    LOAD    0
+    PUSH    8
+    PUSH    "Parser/read_nat4_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → invariant_id
+
+    LOAD    0
+    PUSH    12
+    PUSH    "Parser/read_hash_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → form_hash_before
+
+    LOAD    0
+    PUSH    44
+    PUSH    "Parser/read_hash_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → form_hash_after
+
+    LOAD    0
+    PUSH    76
+    PUSH    "Parser/read_hash_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → env
+
+    MAKEVEC 4                       ; [invariant_id, form_hash_before, form_hash_after, env]
+    SEAL    Claim
+    RET
+
+    :bad
+    PUSH    BOTTOM_HASH
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/record-parsers-rationale
+)
+
+(exports
+  (parse_intent (Bytes) → Hash)    ; → Intent hash, or BOTTOM_HASH on malformed
+  (parse_claim  (Bytes) → Hash))   ; → Claim hash,  or BOTTOM_HASH on malformed
+
+; ============================================================
+; Pending sub-helpers (binary-field leaves)
+;
+; Shared by every fixed-offset binary record parser (this batch and
+; the parse_proof / parse_exec_state / parse_provocation batches to
+; follow). Each is small and total over its inputs; catalogued in
+; STUBS.md as pending and encoded in a sibling batch, the same layered
+; convention parser.form uses for its Parser/* leaves.
+;
+;   - Parser/check_record_header (Bytes, Bytes tag, Nat len) → Bool
+;       true iff len(bytes) == len AND bytes start with the tag literal.
+;       The single gate to BOTTOM; a true result guarantees every
+;       field offset below is in-bounds.
+;   - Parser/read_hash_at  (Bytes, Nat offset) → Hash
+;       slice the 32 bytes at offset and SEAL Hash.
+;   - Parser/read_nat4_at  (Bytes, Nat offset) → Nat
+;       decode the 4 big-endian bytes at offset.
+;   - Parser/read_nat8_at  (Bytes, Nat offset) → Nat
+;       decode the 8 big-endian bytes at offset.
+;
+; These three readers are total over an in-bounds (bytes, offset)
+; — and in-boundedness is exactly what a true check_record_header
+; guarantees — so parse_intent / parse_claim never trap.
+;
+; Proof obligations. parse_intent's body is ~49 IL instructions and
+; parse_claim's ~33 — both over the ~30-instruction smallness threshold
+; of synthesis/PROTOCOL.md § Helper exemption, so this file is NOT
+; exempt and its .proof artifact (kernel/forms/helpers/record-parsers.proof)
+; is a tracked follow-up, the same status as parser.form / trie.form /
+; forest.form / treap.form (obligations listed inline now, artifact
+; deferred; tracked in STUBS.md § Non-exempt helpers requiring proofs).
+; The obligations:
+;   1. Total: parse_intent / parse_claim return a sealed record hash
+;      or BOTTOM_HASH; never trap, never diverge. (Structural: the only
+;      non-linear control is the single JMPZ to a PUSH BOTTOM_HASH; RET.)
+;   2. Layout-faithful: the offsets read match Records.md row-for-row
+;      (177-byte Intent / 108-byte Claim).
+;   3. Reject-on-deviation: any input whose length or type-tag prefix
+;      differs from the layout yields BOTTOM_HASH (via check_record_header).
+; ============================================================
+</content>

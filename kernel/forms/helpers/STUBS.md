@@ -175,6 +175,22 @@ is 2-8 instructions.
 | `Vec/append`                    | `(Vec, T) → Vec`                           | encoded  |
 | `OpcodeSpec/proj/schema`        | `(OpcodeSpec) → Bytes`                     | encoded  |
 
+### Parser/* binary-field leaves (record parsers)
+
+The fixed-offset readers the binary record parsers in
+`record-parsers.form` delegate to. Each validates or slices a
+fixed-width field of a sealed substance's bytes; shared by
+`parse_intent`, `parse_claim`, and the forthcoming `parse_proof`,
+`parse_exec_state`, `parse_provocation` batches. Each is 3-10
+instructions.
+
+| Slot                            | Signature                                  | Status   |
+|---------------------------------|--------------------------------------------|----------|
+| `Parser/check_record_header`    | `(Bytes, Bytes, Nat) → Bool`               | pending  |
+| `Parser/read_hash_at`           | `(Bytes, Nat) → Hash`                      | pending  |
+| `Parser/read_nat4_at`           | `(Bytes, Nat) → Nat`                       | pending  |
+| `Parser/read_nat8_at`           | `(Bytes, Nat) → Nat`                       | pending  |
+
 ### Third-generation intrinsics (kernel-level Bytes/Nat/Vec ops)
 
 The absolute bottom of the helper graph. These are smaller still
@@ -215,6 +231,7 @@ from primary-Form proofs because they live under `helpers/`.
 | `parser.form`                   | `parser.proof`                        | pending — drafted in parser.form footer; obligations 1-5 listed |
 | `canon-normalise.form`          | `canon-normalise.proof`               | pending |
 | (trie/treap/forest helpers when encoded) | per-helper                  | pending |
+| `record-parsers.form`           | `record-parsers.proof`                | pending — obligations 1-3 listed in record-parsers.form footer |
 
 ## Schema/* primitives (referenced by `schema-helpers.form`)
 
@@ -414,7 +431,7 @@ forest chosen as Candidate A in `breakdown/S-05-attention-alloc.md`.
 
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
-| `S-06/parse_intent`             | `(Bytes) → Intent`                         | pending  |
+| `S-06/parse_intent`             | `(Bytes) → Intent`                         | encoded (in record-parsers.form) |
 | `S-06/parent_chain_intersect`   | `(Intent, Hash) → Vec{Hash}`               | pending  |
 | `S-06/enumerate_via_cap`        | `(CapId, Hash) → Vec{Hash}`                | pending  |
 | `S-06/vec_intersect`            | `(Vec{T}, Vec{T}) → Vec{T}`                | pending  |
@@ -465,7 +482,7 @@ operational form of the IL specification.
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
 | `S-08/parse_proof`              | `(Bytes) → ProofTree`                      | pending  |
-| `S-08/parse_claim`              | `(Bytes) → Claim`                          | pending  |
+| `S-08/parse_claim`              | `(Bytes) → Claim`                          | encoded (in record-parsers.form) |
 | `S-08/walker/visit`             | `(ProofNode, Hash) → Result`               | encoded (in S-08-proof-checker.form) |
 | `S-08/walker/check_all_premises`| `(Vec{ProofNode}, Hash) → Result`          | pending  |
 | `S-08/rules/lookup`             | `(RuleId, Hash) → RuleSpec`                | pending  |
@@ -530,7 +547,7 @@ operational form of the IL specification.
 
 | Category              | Count    |
 |-----------------------|----------|
-| Encoded helpers       | 151      |
+| Encoded helpers       | 153      |
 | Stub-only helpers     | ~72      |
 | Schema/* primitives   | 7 (encoded) |
 | Parser/* primitives   | 13 (encoded) |
