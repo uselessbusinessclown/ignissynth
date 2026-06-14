@@ -211,18 +211,183 @@
   :rationale-hash $$BLAKE3$$/record-parsers-rationale
 )
 
+; ============================================================
+; S-08/parse_proof — (Bytes) → Proof or BOTTOM
+;
+; Layout (Records.md § Proof, "Proof/v1", 72 bytes):
+;   claim_hash Hash @8
+;   rule_tree  Hash @40   (root ProofNode hash)
+;
+; TOTAL: S-08/check is declared-traps () — a parse failure becomes a
+; Reject result, so this parser returns BOTTOM_HASH on malformed input
+; and never traps. (Records.md § Parser totality contracts.)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "parse_proof"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps ()
+  :arity         1
+  :locals-n      3
+  :code (
+    STORE   0                       ; locals[0] := input bytes
+
+    LOAD    0
+    PUSH    "Proof/v1"
+    PUSH    72
+    PUSH    "Parser/check_record_header"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    JMPZ    +bad
+
+    LOAD    0
+    PUSH    8
+    PUSH    "Parser/read_hash_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → claim_hash
+
+    LOAD    0
+    PUSH    40
+    PUSH    "Parser/read_hash_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → rule_tree
+
+    MAKEVEC 2                       ; [claim_hash, rule_tree]
+    SEAL    Proof
+    RET
+
+    :bad
+    PUSH    BOTTOM_HASH
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/record-parsers-rationale
+)
+
+; ============================================================
+; S-07/parse_exec_state — (Bytes) → ExecState  (TRAPS ETYPE)
+;
+; Layout (Records.md § ExecState, "ExecState/v1", 240 bytes); field
+; order fixed by S-07-form-runtime.form's MAKEVEC 8:
+;   form_hash    Hash   @12
+;   pc           Nat(4) @44
+;   locals       Hash   @48    (sealed Vec{Hash})
+;   stack        Hash   @80    (sealed Vec{Hash})
+;   cap_view     Hash   @112   (sealed Vec{CapId})
+;   weave_prev   Hash   @144
+;   inputs_hash  Hash   @176
+;   attention_id Hash   @208
+;
+; UNLIKE the other binary parsers, this one TRAPS ETYPE on malformed
+; input rather than returning BOTTOM. S-07/resume consumes the result
+; directly (no BOTTOM check) — it restores a continuation it sealed
+; itself, so a malformed continuation is a genuine integrity fault,
+; not a graceful-reject case. (Records.md § Parser totality contracts.)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "parse_exec_state"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      9
+  :code (
+    STORE   0                       ; locals[0] := input bytes
+
+    LOAD    0
+    PUSH    "ExecState/v1"
+    PUSH    240
+    PUSH    "Parser/check_record_header"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    JMPZ    +trap_bad               ; malformed → TRAP ETYPE
+
+    LOAD    0
+    PUSH    12
+    PUSH    "Parser/read_hash_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → form_hash
+
+    LOAD    0
+    PUSH    44
+    PUSH    "Parser/read_nat4_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → pc
+
+    LOAD    0
+    PUSH    48
+    PUSH    "Parser/read_hash_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → locals
+
+    LOAD    0
+    PUSH    80
+    PUSH    "Parser/read_hash_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → stack
+
+    LOAD    0
+    PUSH    112
+    PUSH    "Parser/read_hash_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → cap_view
+
+    LOAD    0
+    PUSH    144
+    PUSH    "Parser/read_hash_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → weave_prev
+
+    LOAD    0
+    PUSH    176
+    PUSH    "Parser/read_hash_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → inputs_hash
+
+    LOAD    0
+    PUSH    208
+    PUSH    "Parser/read_hash_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                ; → attention_id
+
+    MAKEVEC 8                       ; [form_hash, pc, locals, stack, cap_view, weave_prev, inputs_hash, attention_id]
+    SEAL    ExecState
+    RET
+
+    :trap_bad
+    TRAP    ETYPE
+  )
+  :rationale-hash $$BLAKE3$$/record-parsers-rationale
+)
+
 (exports
-  (parse_intent (Bytes) → Hash)    ; → Intent hash, or BOTTOM_HASH on malformed
-  (parse_claim  (Bytes) → Hash))   ; → Claim hash,  or BOTTOM_HASH on malformed
+  (parse_intent     (Bytes) → Hash)    ; → Intent hash,    or BOTTOM_HASH on malformed
+  (parse_claim      (Bytes) → Hash)    ; → Claim hash,     or BOTTOM_HASH on malformed
+  (parse_proof      (Bytes) → Hash)    ; → Proof hash,     or BOTTOM_HASH on malformed
+  (parse_exec_state (Bytes) → Hash))   ; → ExecState hash, or TRAP ETYPE on malformed
 
 ; ============================================================
 ; Pending sub-helpers (binary-field leaves)
 ;
-; Shared by every fixed-offset binary record parser (this batch and
-; the parse_proof / parse_exec_state / parse_provocation batches to
-; follow). Each is small and total over its inputs; catalogued in
-; STUBS.md as pending and encoded in a sibling batch, the same layered
-; convention parser.form uses for its Parser/* leaves.
+; Shared by every fixed-offset binary record parser — parse_intent,
+; parse_claim, parse_proof, parse_exec_state (this file), and the
+; parse_provocation batch to follow. Each is small and total over its
+; inputs; catalogued in STUBS.md as pending and encoded in a sibling
+; batch, the same layered convention parser.form uses for its Parser/*
+; leaves.
 ;
 ;   - Parser/check_record_header (Bytes, Bytes tag, Nat len) → Bool
 ;       true iff len(bytes) == len AND bytes start with the tag literal.
@@ -237,22 +402,28 @@
 ;
 ; These three readers are total over an in-bounds (bytes, offset)
 ; — and in-boundedness is exactly what a true check_record_header
-; guarantees — so parse_intent / parse_claim never trap.
+; guarantees — so the three total parsers never trap, and
+; parse_exec_state's only trap is the explicit TRAP ETYPE on a false
+; header check (its declared trap, matching its call site's trust model).
 ;
-; Proof obligations. parse_intent's body is ~49 IL instructions and
-; parse_claim's ~33 — both over the ~30-instruction smallness threshold
-; of synthesis/PROTOCOL.md § Helper exemption, so this file is NOT
-; exempt and its .proof artifact (kernel/forms/helpers/record-parsers.proof)
+; Proof obligations. The parser bodies range from ~25 (parse_proof) to
+; ~85 (parse_exec_state, 8 fields) IL instructions — over the
+; ~30-instruction smallness threshold of synthesis/PROTOCOL.md § Helper
+; exemption, so this file is NOT exempt and its .proof artifact
+; (kernel/forms/helpers/record-parsers.proof)
 ; is a tracked follow-up, the same status as parser.form / trie.form /
 ; forest.form / treap.form (obligations listed inline now, artifact
 ; deferred; tracked in STUBS.md § Non-exempt helpers requiring proofs).
 ; The obligations:
-;   1. Total: parse_intent / parse_claim return a sealed record hash
-;      or BOTTOM_HASH; never trap, never diverge. (Structural: the only
-;      non-linear control is the single JMPZ to a PUSH BOTTOM_HASH; RET.)
+;   1. Total: every parser terminates with a defined result — a sealed
+;      record hash, BOTTOM_HASH (parse_intent/claim/proof), or the single
+;      TRAP ETYPE (parse_exec_state); never diverges. (Structural: the
+;      only non-linear control is the single JMPZ to a PUSH BOTTOM_HASH;
+;      RET, or — for parse_exec_state — to TRAP ETYPE.)
 ;   2. Layout-faithful: the offsets read match Records.md row-for-row
-;      (177-byte Intent / 108-byte Claim).
+;      (177-byte Intent / 108-byte Claim / 72-byte Proof /
+;      240-byte ExecState).
 ;   3. Reject-on-deviation: any input whose length or type-tag prefix
-;      differs from the layout yields BOTTOM_HASH (via check_record_header).
+;      differs from the layout yields BOTTOM_HASH (the three total
+;      parsers) or TRAP ETYPE (parse_exec_state), via check_record_header.
 ; ============================================================
-</content>
