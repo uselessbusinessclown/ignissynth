@@ -455,7 +455,7 @@ ordering.
 |---------------------------------|--------------------------------------------|----------|
 | `S-07/parse_form`               | `(Bytes) → ParsedForm`                     | encoded (parser.form; depends on Parser/* primitives) |
 | `S-07/interp/run`               | `(ExecState) → Pair{Verdict, ExecState}`   | pending  |
-| `S-07/parse_exec_state`         | `(Bytes) → ExecState`                      | pending  |
+| `S-07/parse_exec_state`         | `(Bytes) → ExecState`                      | encoded (in record-parsers.form) |
 | `S-07/finalise_invocation`      | `(Pair{Verdict, ExecState}) → InvocationResult` | pending |
 | `S-07/canon/opcode_fold`        | `(ParsedForm) → ParsedForm`                | pending  |
 | `S-07/canon/sort_blocks`        | `(ParsedForm) → ParsedForm`                | pending  |
@@ -481,7 +481,7 @@ operational form of the IL specification.
 
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
-| `S-08/parse_proof`              | `(Bytes) → ProofTree`                      | pending  |
+| `S-08/parse_proof`              | `(Bytes) → ProofTree`                      | encoded (in record-parsers.form) |
 | `S-08/parse_claim`              | `(Bytes) → Claim`                          | encoded (in record-parsers.form) |
 | `S-08/walker/visit`             | `(ProofNode, Hash) → Result`               | encoded (in S-08-proof-checker.form) |
 | `S-08/walker/check_all_premises`| `(Vec{ProofNode}, Hash) → Result`          | pending  |
@@ -547,7 +547,7 @@ operational form of the IL specification.
 
 | Category              | Count    |
 |-----------------------|----------|
-| Encoded helpers       | 153      |
+| Encoded helpers       | 155      |
 | Stub-only helpers     | ~72      |
 | Schema/* primitives   | 7 (encoded) |
 | Parser/* primitives   | 13 (encoded) |
