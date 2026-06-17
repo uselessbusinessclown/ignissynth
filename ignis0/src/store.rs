@@ -114,7 +114,7 @@ impl SubstanceStore {
         self.cells
             .get(h)
             .map(|c| c.value.clone())
-            .ok_or_else(|| TrapKind::EUnheld(format!("no cell at {}", h.short())))
+            .ok_or_else(|| absent(h))
     }
 
     /// Pin a cell (increment pin_count).
@@ -218,7 +218,10 @@ enum Node {
     Leaf { key: Hash, cell: Cell },
     /// `TrieBranch/v1`: up to 32 children, one per set bit of `bitmap`.
     /// The child for slot `b` lives at `children[popcount(bitmap & ((1<<b)-1))]`.
-    Branch { bitmap: u32, children: Vec<Rc<Node>> },
+    Branch {
+        bitmap: u32,
+        children: Vec<Rc<Node>>,
+    },
 }
 
 /// Persistent-HAMT-backed substance store with a substitutive digest.
@@ -246,6 +249,12 @@ fn chunk(key: &Hash, depth: usize) -> usize {
         v = (v << 1) | bit as usize;
     }
     v
+}
+
+/// `EUNHELD` for a key with no live cell. Shared by the [`TrieStore`]
+/// read/pin/unpin paths so each call site stays a single short line.
+fn absent(key: &Hash) -> TrapKind {
+    TrapKind::EUnheld(format!("no cell at {}", key.short()))
 }
 
 impl TrieStore {
@@ -368,13 +377,9 @@ impl TrieStore {
 
     /// Decrement the pin count of `key`. Returns `(new_node, removed_key)`
     /// where `removed_key` is true iff the leaf hit zero and was reclaimed.
-    fn unpin_node(
-        node: &Rc<Node>,
-        key: &Hash,
-        depth: usize,
-    ) -> Result<(Rc<Node>, bool), TrapKind> {
+    fn unpin_node(node: &Rc<Node>, key: &Hash, depth: usize) -> Result<(Rc<Node>, bool), TrapKind> {
         match &**node {
-            Node::Empty => Err(TrapKind::EUnheld(format!("unpin: no cell at {}", key.short()))),
+            Node::Empty => Err(absent(key)),
             Node::Leaf { key: k, cell } => {
                 if k == key {
                     if cell.pin_count == 0 {
@@ -389,14 +394,14 @@ impl TrieStore {
                         Ok((Rc::new(Node::Leaf { key: *k, cell: nc }), false))
                     }
                 } else {
-                    Err(TrapKind::EUnheld(format!("unpin: no cell at {}", key.short())))
+                    Err(absent(key))
                 }
             }
             Node::Branch { bitmap, children } => {
                 let s = chunk(key, depth);
                 let bit = 1u32 << s;
                 if bitmap & bit == 0 {
-                    return Err(TrapKind::EUnheld(format!("unpin: no cell at {}", key.short())));
+                    return Err(absent(key));
                 }
                 let idx = (bitmap & (bit - 1)).count_ones() as usize;
                 let (new_child, removed) = TrieStore::unpin_node(&children[idx], key, depth + 1)?;
@@ -422,21 +427,21 @@ impl TrieStore {
     /// Increment the pin count of an existing `key`; `EUNHELD` if absent.
     fn pin_node(node: &Rc<Node>, key: &Hash, depth: usize) -> Result<Rc<Node>, TrapKind> {
         match &**node {
-            Node::Empty => Err(TrapKind::EUnheld(format!("pin: no cell at {}", key.short()))),
+            Node::Empty => Err(absent(key)),
             Node::Leaf { key: k, cell } => {
                 if k == key {
                     let mut nc = cell.clone();
                     nc.pin_count += 1;
                     Ok(Rc::new(Node::Leaf { key: *k, cell: nc }))
                 } else {
-                    Err(TrapKind::EUnheld(format!("pin: no cell at {}", key.short())))
+                    Err(absent(key))
                 }
             }
             Node::Branch { bitmap, children } => {
                 let s = chunk(key, depth);
                 let bit = 1u32 << s;
                 if bitmap & bit == 0 {
-                    return Err(TrapKind::EUnheld(format!("pin: no cell at {}", key.short())));
+                    return Err(absent(key));
                 }
                 let idx = (bitmap & (bit - 1)).count_ones() as usize;
                 let new_child = TrieStore::pin_node(&children[idx], key, depth + 1)?;
@@ -517,19 +522,19 @@ impl Store for TrieStore {
         let mut depth = 0usize;
         loop {
             match &**node {
-                Node::Empty => return Err(TrapKind::EUnheld(format!("no cell at {}", h.short()))),
+                Node::Empty => return Err(absent(h)),
                 Node::Leaf { key, cell } => {
                     return if key == h {
                         Ok(cell.value.clone())
                     } else {
-                        Err(TrapKind::EUnheld(format!("no cell at {}", h.short())))
+                        Err(absent(h))
                     };
                 }
                 Node::Branch { bitmap, children } => {
                     let s = chunk(h, depth);
                     let bit = 1u32 << s;
                     if bitmap & bit == 0 {
-                        return Err(TrapKind::EUnheld(format!("no cell at {}", h.short())));
+                        return Err(absent(h));
                     }
                     let idx = (bitmap & (bit - 1)).count_ones() as usize;
                     node = &children[idx];
