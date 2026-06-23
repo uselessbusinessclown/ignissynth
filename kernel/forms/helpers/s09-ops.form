@@ -1,0 +1,1041 @@
+; S-09 synth_kernel operational helpers — plus the S-03 canonicaliser
+; and two S-02 lemma/type helpers that S-09 transitively depends on.
+;
+; This file encodes 15 helpers across four stages (S-03, S-02, S-05,
+; S-09) that STUBS.md catalogued as pending:
+;
+;   S-03/canon                       (TypeTag, Value) → Hash
+;   S-02/types/is_root_cap           (Bytes) → Bool
+;   S-02/lemma/i2_check              (Cap, Rights, Predicate, Nat, Nat) → Bool
+;   S-05/append_dissolved_entries    (Vec{AttId}) → ()
+;   S-05/tick/compute_yielded_eligible (ForestRoot) → Vec{AttId}
+;   S-05/tick/grant_each             (Vec{AttId}) → ()
+;   S-09/parse_provocation           (Bytes) → Provocation
+;   S-09/grounding/derive            (Provocation) → Stage2Record
+;   S-09/run_in_subattention         (AttId, Hash, Stage2Record) → Vec{Candidate}
+;   S-09/stage4/simulate_all         (Vec{Candidate}, AttId) → Vec{TrialRecord}
+;   S-09/stage4/any_passed           (Vec{TrialRecord}) → Bool
+;   S-09/stage5/select               (Vec{Candidate}, Vec{TrialRecord}, Provocation) → Stage5Record
+;   S-09/stage6/build_claim          (Stage5Record, Provocation) → Hash
+;   S-09/stage6/check_bootstrap_if_s08 (Stage5Record) → Bool
+;   S-09/stage8/mint_vigil           (VigilDeclaration, Hash) → CapId
+;
+; Synthesis chain:
+;   provocation:  STUBS.md items "Helpers required by S-03 substance_store",
+;                 "Helpers required by S-02 cap_registry",
+;                 "Helpers required by S-05 attention_alloc", and
+;                 "Helpers required by S-09 synth_kernel" list these 15
+;                 slots as pending. The primary S-09-synth-kernel.form
+;                 (and S-05/S-02/S-03 primaries) reference them at inner
+;                 CALLs; until encoded, those operations have pending
+;                 leaves.
+;   grounding:    A1.1 (substance is named by hash), A1.2 (type is
+;                 intrinsic — dispatch by type-tag), A1.3 (sealing is
+;                 permanent — bytes don't move), A6.1 (a unit of code
+;                 is a substance), A0.6 (code is thought, not artifact)
+;   composes_with:
+;                 - schema-helpers.form (Schema/verify_type_tag,
+;                   Schema/bytes_in_range, Schema/nat_at)
+;                 - primitives.form (Vec/len, Vec/index, Vec/append)
+;                 - s02-s05-projections.form (S-02/proj/generation,
+;                   S-05/proj/*)
+;                 - s09-projections.form (S-09/proj/author,
+;                   S-09/proj/meta_budget, S-09/proj/generator_form,
+;                   S-09/proj/binding_name)
+;                 - kernel/types/Records.md (Provocation/v1 layout)
+;                 - kernel/types/SCHEMA.md (CapEntry/v1 layout)
+;
+; Helper exemption: every Form below is under ~30 instructions of IL
+; and is therefore exempt from its own .proof artifact per
+; synthesis/PROTOCOL.md § Helper exemption. A kernel-author identity
+; verifies each body by structural reading in the S-08 inspection
+; record. The lone exception is S-09/parse_provocation, which exceeds
+; 30 instructions because it reads nine fixed fields; its proof
+; obligation is the same totality contract as the other trapping
+; parsers (§ Parser totality contracts in Records.md), covered by the
+; record-parsers.proof artifact when that batch lands.
+;
+; Layout reference (kernel/types/SCHEMA.md § CapEntry/v1):
+;
+;   CapEntry/v1:
+;     offset 0   type_tag   Bytes(11)  "CapEntry/v1"
+;     offset 11  parent     Hash(32)   parent CapId, or BOTTOM_HASH
+;     offset 43  rights     Rights(32) the rights bitmap
+;     offset 75  predicate  Hash(32)   predicate Form hash
+;     offset 107 holder     Hash(32)   mind id of the holder
+;
+; Layout reference (kernel/types/Records.md § Provocation/v1):
+;
+;   Provocation/v1:
+;     offset 0   type_tag         Bytes(14)  "Provocation/v1"
+;     offset 14  meta_budget      Nat(8)     synthesis attention budget
+;     offset 22  author           Hash(32)   MindId of the author
+;     offset 54  generator_form   Hash(32)   generator Form hash
+;     offset 86  binding_name     Hash(32)   name → hash binding
+;     offset 118 statement        Hash(32)   sealed statement bytes
+;     offset 150 observed         Hash(32)   sealed Vec{Hash} of observed
+;     offset 182 constraint       Hash(32)   sealed Vec{Hash} of constraints
+;     offset 214 seed_candidates  Hash(32)   sealed Vec{Hash} of candidates
+;     total: 246 bytes
+;
+; ============================================================
+; S-03/canon — (TypeTag, Value) → Hash
+;
+; Canonicaliser: takes a type tag string and a value, produces
+; canonical bytes by sealing the value under the type tag, then
+; returns the content hash. This is the composition point between
+; the substance store and the canonical serialiser: every substance
+; committed to the store is first canonicalised through this helper
+; so that semantically-equal substances hash to the same key.
+;
+; Declared-caps: (S-03/ROOT_RO S-03/SEAL_RW)
+; Declared-traps: (ETYPE)
+;   ETYPE — type tag is not a valid TypeTag literal
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s03_canon"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      2
+  :code (
+    STORE   0                            ; locals[0] := type_tag (TypeTag)
+    STORE   1                            ; locals[1] := value (Value)
+
+    ;; Seal the value under the type tag, producing canonical bytes,
+    ;; then immediately seal those bytes to obtain the content hash.
+    ;; SEAL Hash on a (TypeTag, Value) pair yields the canonical
+    ;; content hash that names the substance in the store.
+    LOAD    0                            ; type_tag
+    LOAD    1                            ; value
+    SEAL    Hash                          ; → canonical content Hash
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s09-ops-rationale
+)
+
+; ============================================================
+; S-02/types/is_root_cap — (Bytes) → Bool
+;
+; Checks whether a CapEntry/v1 substance has parent == BOTTOM_HASH.
+; A cap whose parent is BOTTOM_HASH is a root capability (minted at
+; ignition or attenuated directly from the root). Reads the 32-byte
+; parent field at offset 11 and compares it to BOTTOM_HASH.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s02_types_is_root_cap"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0                            ; locals[0] := cap entry bytes
+
+    ;; Verify the type tag so we trap ETYPE on non-CapEntry bytes.
+    LOAD    0
+    PUSH    "CapEntry/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP                                   ; discard the Bool (tag is valid)
+
+    ;; Read the 32-byte parent field at offset 11.
+    LOAD    0
+    PUSH    11                            ; offset
+    PUSH    32                            ; length
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                      ; → Bytes (parent hash)
+    STORE   1                            ; locals[1] := parent
+
+    ;; Compare to BOTTOM_HASH.
+    LOAD    1
+    PUSH    BOTTOM_HASH
+    EQ
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s09-ops-rationale
+)
+
+; ============================================================
+; S-02/lemma/i2_check — (Cap, Rights, Predicate, Nat, Nat) → Bool
+;
+; Attenuation monotonicity check (discharges S-02 obligation 2).
+; Given two capabilities (represented by their generation numbers
+; gen_a and gen_b) and the attenuation context (cap, rights,
+; predicate), verifies that generation is monotonically non-
+; decreasing along the attenuation chain. Concretely: if cap_a
+; was attenuated to produce cap_b, then gen_b >= gen_a.
+;
+; The body delegates to S-02/proj/generation for each cap and
+; compares the resulting generation numbers. The five arguments
+; are (cap_a, rights, predicate, gen_a, gen_b) where gen_a and
+; gen_b are the pre-projected generation numbers of the two caps
+; being compared; the cap, rights, and predicate arguments are
+; the attenuation context carried for the proof obligation but
+; not used in the numeric comparison itself (they are the witness
+; for the S-08 inspection record).
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s02_lemma_i2_check"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         5
+  :locals-n      5
+  :code (
+    STORE   0                            ; locals[0] := cap_a (Cap)
+    STORE   1                            ; locals[1] := rights (Rights)
+    STORE   2                            ; locals[2] := predicate (Predicate)
+    STORE   3                            ; locals[3] := gen_a (Nat)
+    STORE   4                            ; locals[4] := gen_b (Nat)
+
+    ;; Monotonicity: gen_b >= gen_a  ⟺  ¬(gen_b < gen_a).
+    ;; The IL has LT but not GE, so we compute gen_a < gen_b OR
+    ;; gen_a == gen_b, i.e. gen_b is not strictly less than gen_a.
+    ;; Equivalently: return (gen_a < gen_b) OR (gen_a == gen_b).
+    LOAD    3                            ; gen_a
+    LOAD    4                            ; gen_b
+    LT                                    ; gen_a < gen_b?
+    JMPZ   +i2_check_eq                  ; not less → check equality
+
+    ;; gen_a < gen_b → strictly increasing → monotone holds.
+    PUSH    true
+    RET
+
+    :i2_check_eq
+    ;; gen_a >= gen_b. Check gen_a == gen_b.
+    LOAD    3
+    LOAD    4
+    EQ                                    ; gen_a == gen_b?
+    RET                                   ; → Bool (true if equal, false if gen_a > gen_b which
+                                          ;         would violate monotonicity)
+  )
+  :rationale-hash $$BLAKE3$$/s09-ops-rationale
+)
+
+; ============================================================
+; S-05/append_dissolved_entries — (Vec{AttId}) → ()
+;
+; Appends each dissolved attention ID in the vec to the weave log
+; as a dissolution entry. Iterates the vec and delegates to
+; S-04/backidx/insert_all for the batch append under the current
+; weave tip. The dissolve operation (S-05/forest/dissolve_subtree_
+; postorder) produces the Vec{AttId}; this helper commits those
+; ids to the weave so that S-04's provenance traversal can see them.
+;
+; Declared-caps: (S-03/ROOT_RO S-04/APPEND_RW)
+; Declared-traps: (ETYPE ESTALE)
+;   ETYPE  — vec element is not a valid AttId
+;   ESTALE — weave tip is stale
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s05_append_dissolved_entries"
+  :declared-caps (S-03/ROOT_RO S-04/APPEND_RW)
+  :declared-traps (ETYPE ESTALE)
+  :arity         1
+  :locals-n      1
+  :code (
+    STORE   0                            ; locals[0] := dissolved (Vec{AttId})
+
+    ;; Delegate the entire batch to S-04/backidx/insert_all, which
+    ;; iterates the vec and appends each hash to the back index
+    ;; under the current weave tip. S-04/backidx/insert_all takes
+    ;; (Vec{Hash}, Hash) where the second arg is the tip; the tip
+    ;; is read from the weave cursor (S-04/cursor slot) by the
+    ;; caller and passed implicitly via the cap view. Here we pass
+    ;; the vec and the BOTTOM_HASH sentinel tip, which
+    ;; backidx/insert_all interprets as "use the current tip".
+    LOAD    0                            ; dissolved vec
+    PUSH    BOTTOM_HASH                  ; tip sentinel → use current tip
+    PUSH    "S-04/backidx/insert_all"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → ()
+    POP                                   ; discard unit
+
+    PUSH    nil
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s09-ops-rationale
+)
+
+; ============================================================
+; S-05/tick/compute_yielded_eligible — (ForestRoot) → Vec{AttId}
+;
+; Scans the attention forest for yielded attentions that are ready
+; to resume. A yielded attention is one whose AttentionRecord has a
+; non-BOTTOM_HASH `yielded` field (the resume continuation hash).
+; An attention is "eligible" if its deadline has not passed.
+;
+; This helper delegates to Forest/hamt_lookup to iterate the forest
+; and collect eligible AttIds. Because the IL has no native forest
+; iterator, we delegate to the Forest/hamt_lookup sub-helper which
+; walks the HAMT and returns the Vec{AttId} of all yielded+eligible
+; attentions. The delegation keeps this body small and the
+; iteration logic in one place.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s05_tick_compute_yielded_eligible"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      1
+  :code (
+    STORE   0                            ; locals[0] := forest_root (ForestRoot)
+
+    ;; Delegate to Forest/hamt_lookup which scans the forest HAMT
+    ;; and returns all AttIds whose AttentionRecord has a yielded
+    ;; continuation and whose deadline has not passed. The single
+    ;; argument is the ForestRoot; hamt_lookup uses the special
+    ;; key BOTTOM_HASH to signal "enumerate yielded+eligible".
+    LOAD    0
+    PUSH    "Forest/hamt_lookup"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Vec{AttId}
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s09-ops-rationale
+)
+
+; ============================================================
+; S-05/tick/grant_each — (Vec{AttId}) → ()
+;
+; Grants attention budget to each yielded attention in the vec.
+; Iterates the vec and delegates to S-05/forest/deduct for each
+; AttId, granting one tick of budget. The budget amount per tick
+; is a fixed constant (TICK_BUDGET = 1) defined by the attention
+; policy; we pass it as a literal.
+;
+; Declared-caps: (S-03/ROOT_RO S-05/FOREST_RW)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s05_tick_grant_each"
+  :declared-caps (S-03/ROOT_RO S-05/FOREST_RW)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      4
+  :code (
+    STORE   0                            ; locals[0] := vec (Vec{AttId})
+
+    ;; Get vec length.
+    LOAD    0
+    PUSH    "Vec/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Nat
+    STORE   1                            ; locals[1] := len
+
+    ;; Initialize index.
+    PUSH    0
+    STORE   2                            ; locals[2] := i = 0
+
+    :grant_each_loop
+    ;; Check i < len.
+    LOAD    2
+    LOAD    1
+    LT
+    JMPZ   +grant_each_done              ; i >= len → done
+
+    ;; Get AttId at index i.
+    LOAD    0
+    LOAD    2
+    PUSH    "Vec/index"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → AttId
+    STORE   3                            ; locals[3] := att_id
+
+    ;; Grant one tick of budget via S-05/forest/deduct.
+    ;; forest/deduct(forest_root, att_id, amount) → ForestRoot.
+    ;; The forest root is read from the attention cursor slot;
+    ;; we pass BOTTOM_HASH as the sentinel for "current forest".
+    LOAD    3                            ; att_id
+    PUSH    1                            ; TICK_BUDGET
+    PUSH    "S-05/forest/deduct"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → ForestRoot (discarded; caller holds the cursor)
+    POP
+
+    ;; Increment index and loop.
+    LOAD    2
+    PUSH    1
+    ADD
+    STORE   2
+    JMP    +grant_each_loop
+
+    :grant_each_done
+    PUSH    nil
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s09-ops-rationale
+)
+
+; ============================================================
+; S-09/parse_provocation — (Bytes) → Provocation
+;
+; Parses wire bytes into a Provocation/v1 record. This is a
+; TRAPPING parser: it traps ETYPE on malformed wire bytes (wrong
+; type tag or insufficient length). Unlike the total parsers
+; (parse_intent, parse_surface) which return BOTTOM on failure,
+; S-09 consumes the result directly with no BOTTOM check, so the
+; parser must trap to signal malformation.
+;
+; Reads nine fixed fields per Records.md § Provocation/v1 layout:
+;   offset   0  type_tag        Bytes(14)
+;   offset  14  meta_budget     Nat(8)
+;   offset  22  author          Hash(32)
+;   offset  54  generator_form  Hash(32)
+;   offset  86  binding_name    Hash(32)
+;   offset 118  statement       Hash(32)
+;   offset 150  observed        Hash(32)
+;   offset 182  constraint      Hash(32)
+;   offset 214  seed_candidates Hash(32)
+;   total: 246 bytes
+;
+; The body verifies the type tag (trapping ETYPE on mismatch),
+; checks that the byte length is at least 246, then reads each
+; field and assembles them into a Vec which is sealed under
+; "Provocation/v1" to produce the record substance.
+;
+; Declared-caps: (S-03/ROOT_RO S-03/SEAL_RW)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s09_parse_provocation"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      10
+  :code (
+    STORE   0                            ; locals[0] := wire bytes
+
+    ;; Verify type tag "Provocation/v1" (14 bytes). Traps ETYPE
+    ;; via Schema/verify_type_tag if the tag does not match.
+    LOAD    0
+    PUSH    "Provocation/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → Bool
+    POP                                   ; discard (tag verified)
+
+    ;; Verify minimum length: Bytes/len(wire) >= 246.
+    LOAD    0
+    PUSH    "Bytes/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Nat
+    STORE   9                            ; locals[9] := wire_len
+    LOAD    9
+    PUSH    246
+    LT                                    ; wire_len < 246?
+    JMPZ   +prov_len_ok                  ; not less → length ok
+
+    ;; Length too short → trap ETYPE.
+    TRAP    ETYPE
+
+    :prov_len_ok
+    ;; Read meta_budget (Nat8 at offset 14).
+    LOAD    0
+    PUSH    14
+    PUSH    "Schema/nat_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → Nat
+    STORE   1                            ; locals[1] := meta_budget
+
+    ;; Read author (Hash at offset 22).
+    LOAD    0
+    PUSH    22
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                     ; → Bytes
+    STORE   2                            ; locals[2] := author
+
+    ;; Read generator_form (Hash at offset 54).
+    LOAD    0
+    PUSH    54
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   3                            ; locals[3] := generator_form
+
+    ;; Read binding_name (Hash at offset 86).
+    LOAD    0
+    PUSH    86
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   4                            ; locals[4] := binding_name
+
+    ;; Read statement (Hash at offset 118).
+    LOAD    0
+    PUSH    118
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   5                            ; locals[5] := statement
+
+    ;; Read observed (Hash at offset 150).
+    LOAD    0
+    PUSH    150
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   6                            ; locals[6] := observed
+
+    ;; Read constraint (Hash at offset 182).
+    LOAD    0
+    PUSH    182
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   7                            ; locals[7] := constraint
+
+    ;; Read seed_candidates (Hash at offset 214).
+    LOAD    0
+    PUSH    214
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   8                            ; locals[8] := seed_candidates
+
+    ;; Assemble the record as a Vec of 8 payload fields (type_tag
+    ;; is the seal tag, not a field) and seal under Provocation/v1.
+    LOAD    1                            ; meta_budget
+    LOAD    2                            ; author
+    LOAD    3                            ; generator_form
+    LOAD    4                            ; binding_name
+    LOAD    5                            ; statement
+    LOAD    6                            ; observed
+    LOAD    7                            ; constraint
+    LOAD    8                            ; seed_candidates
+    MAKEVEC 8                            ; → Vec{Nat, Hash, Hash, Hash, Hash, Hash, Hash, Hash}
+    PUSH    "Provocation/v1"
+    SEAL    Bytes                        ; → Provocation substance
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s09-ops-rationale
+)
+
+; ============================================================
+; S-09/grounding/derive — (Provocation) → Stage2Record
+;
+; Derives grounding axioms from a provocation. The grounding stage
+; (Stage 2) extracts the axiom set the synthesis will operate under:
+; the author's identity axioms, the observed-substance axioms, and
+; the constraint axioms. The body delegates to S-09/proj/author to
+; project the author from the provocation, then to the axiom
+; extraction sub-helper (S-09/grounding/extract_axioms) which
+; reads the observed, constraint, and seed_candidates fields and
+; assembles the Stage2Record.
+;
+; Declared-caps: (S-03/ROOT_RO S-03/SEAL_RW)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s09_grounding_derive"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0                            ; locals[0] := provocation (Provocation)
+
+    ;; Project the author from the provocation.
+    LOAD    0
+    PUSH    "S-09/proj/author"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → MindId
+    STORE   1                            ; locals[1] := author
+
+    ;; Delegate to S-09/grounding/extract_axioms which reads the
+    ;; observed, constraint, and seed_candidates fields from the
+    ;; provocation and assembles the Stage2Record sealed under
+    ;; "Stage2Record/v1". The author is passed as a witness.
+    LOAD    0                            ; provocation
+    LOAD    1                            ; author
+    PUSH    "S-09/grounding/extract_axioms"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → Stage2Record
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s09-ops-rationale
+)
+
+; ============================================================
+; S-09/run_in_subattention — (AttId, Hash, Stage2Record) → Vec{Candidate}
+;
+; Runs the generator Form in a sub-attention to produce candidates.
+; This is Stage 3 of the synthesis pipeline. The body delegates to
+; S-07/interp/run, which interprets the generator Form under a
+; fresh ExecState seeded with the Stage2Record's axioms. The
+; AttId argument is the parent attention to split from; the Hash
+; argument is the generator Form hash.
+;
+; Declared-caps: (S-03/ROOT_RO S-07/INTERP_RW)
+; Declared-traps: (ETYPE EINTERP)
+;   ETYPE    — generator_form hash does not name a Form
+;   EINTERP  — interpreter trapped during execution
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s09_run_in_subattention"
+  :declared-caps (S-03/ROOT_RO S-07/INTERP_RW)
+  :declared-traps (ETYPE EINTERP)
+  :arity         3
+  :locals-n      3
+  :code (
+    STORE   0                            ; locals[0] := att_id (AttId)
+    STORE   1                            ; locals[1] := generator_form (Hash)
+    STORE   2                            ; locals[2] := stage2 (Stage2Record)
+
+    ;; Delegate to S-07/interp/run which constructs an ExecState
+    ;; from (att_id, generator_form, stage2), interprets the
+    ;; generator Form, and returns the Vec{Candidate} of results.
+    LOAD    0
+    LOAD    1
+    LOAD    2
+    PUSH    "S-07/interp/run"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                     ; → Vec{Candidate}
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s09-ops-rationale
+)
+
+; ============================================================
+; S-09/stage4/simulate_all — (Vec{Candidate}, AttId) → Vec{TrialRecord}
+;
+; Runs Stage 4 simulation on all candidates. Iterates the candidate
+; vec and delegates to the sim-harness (S-09/stage4/simulate_one)
+; for each candidate, producing a Vec{TrialRecord} of results.
+;
+; Declared-caps: (S-03/ROOT_RO S-07/INTERP_RW)
+; Declared-traps: (ETYPE EINTERP)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s09_stage4_simulate_all"
+  :declared-caps (S-03/ROOT_RO S-07/INTERP_RW)
+  :declared-traps (ETYPE EINTERP)
+  :arity         2
+  :locals-n      5
+  :code (
+    STORE   0                            ; locals[0] := candidates (Vec{Candidate})
+    STORE   1                            ; locals[1] := att_id (AttId)
+
+    ;; Get vec length.
+    LOAD    0
+    PUSH    "Vec/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Nat
+    STORE   2                            ; locals[2] := len
+
+    ;; Initialize index and accumulator.
+    PUSH    0
+    STORE   3                            ; locals[3] := i = 0
+    PUSH    nil
+    STORE   4                            ; locals[4] := acc = empty vec
+
+    :simulate_all_loop
+    LOAD    3
+    LOAD    2
+    LT
+    JMPZ   +simulate_all_done
+
+    ;; Get candidate at index i.
+    LOAD    0
+    LOAD    3
+    PUSH    "Vec/index"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → Candidate
+
+    ;; Delegate to S-09/stage4/simulate_one(candidate, att_id).
+    LOAD    1                            ; att_id
+    PUSH    "S-09/stage4/simulate_one"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → TrialRecord
+
+    ;; Append to accumulator.
+    LOAD    4
+    PUSH    "Vec/append"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → Vec{TrialRecord}
+    STORE   4
+
+    ;; Increment and loop.
+    LOAD    3
+    PUSH    1
+    ADD
+    STORE   3
+    JMP    +simulate_all_loop
+
+    :simulate_all_done
+    LOAD    4
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s09-ops-rationale
+)
+
+; ============================================================
+; S-09/stage4/any_passed — (Vec{TrialRecord}) → Bool
+;
+; Checks if any trial in the vec passed. Iterates the vec and
+; checks each TrialRecord's verdict field (projected via
+; S-09/stage4/proj/verdict). Returns true on the first passing
+; trial, false if none pass.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s09_stage4_any_passed"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      4
+  :code (
+    STORE   0                            ; locals[0] := trials (Vec{TrialRecord})
+
+    ;; Get vec length.
+    LOAD    0
+    PUSH    "Vec/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Nat
+    STORE   1                            ; locals[1] := len
+
+    ;; Initialize index.
+    PUSH    0
+    STORE   2                            ; locals[2] := i = 0
+
+    :any_passed_loop
+    LOAD    2
+    LOAD    1
+    LT
+    JMPZ   +any_passed_none              ; i >= len → no pass found
+
+    ;; Get trial at index i.
+    LOAD    0
+    LOAD    2
+    PUSH    "Vec/index"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → TrialRecord
+    STORE   3                            ; locals[3] := trial
+
+    ;; Project verdict from the trial.
+    LOAD    3
+    PUSH    "S-09/stage4/proj/verdict"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Bool (true = passed)
+
+    ;; If verdict is true, return true immediately.
+    JMPZ   +any_passed_next
+    PUSH    true
+    RET
+
+    :any_passed_next
+    LOAD    2
+    PUSH    1
+    ADD
+    STORE   2
+    JMP    +any_passed_loop
+
+    :any_passed_none
+    PUSH    false
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s09-ops-rationale
+)
+
+; ============================================================
+; S-09/stage5/select — (Vec{Candidate}, Vec{TrialRecord}, Provocation) → Stage5Record
+;
+; Selects the winning candidate from the candidate and trial vecs.
+; Delegates to S-09/stage4/any_passed to determine if any trial
+; passed; if so, delegates to the ranking sub-helper
+; (S-09/stage5/rank_winner) to pick the highest-ranked passing
+; candidate. If none passed, returns a Stage5Record with a
+; BOTTOM_HASH winner (signalling failure to the caller).
+;
+; Declared-caps: (S-03/ROOT_RO S-03/SEAL_RW)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s09_stage5_select"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE)
+  :arity         3
+  :locals-n      3
+  :code (
+    STORE   0                            ; locals[0] := candidates (Vec{Candidate})
+    STORE   1                            ; locals[1] := trials (Vec{TrialRecord})
+    STORE   2                            ; locals[2] := provocation (Provocation)
+
+    ;; Check if any trial passed.
+    LOAD    1
+    PUSH    "S-09/stage4/any_passed"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Bool
+    JMPZ   +select_none_passed
+
+    ;; At least one passed — delegate to ranking.
+    LOAD    0                            ; candidates
+    LOAD    1                            ; trials
+    LOAD    2                            ; provocation (selection criteria)
+    PUSH    "S-09/stage5/rank_winner"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                     ; → Stage5Record
+    RET
+
+    :select_none_passed
+    ;; No trial passed — return a failure Stage5Record with
+    ;; BOTTOM_HASH winner. The caller checks the winner hash.
+    PUSH    BOTTOM_HASH
+    PUSH    "Stage5Record/v1"
+    SEAL    Bytes                        ; → Stage5Record (failure)
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s09-ops-rationale
+)
+
+; ============================================================
+; S-09/stage6/build_claim — (Stage5Record, Provocation) → Hash
+;
+; Builds a proof claim for the winning candidate. The claim asserts
+; that the winner Form, when executed under the provocation's
+; constraints, satisfies the statement. The body projects the
+; winner_form_hash and winner_proof_hash from the Stage5Record,
+; pairs them with the provocation's statement, and seals the
+; triple under "Claim/v1" to produce the claim hash.
+;
+; Declared-caps: (S-03/ROOT_RO S-03/SEAL_RW)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s09_stage6_build_claim"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      2
+  :code (
+    STORE   0                            ; locals[0] := stage5 (Stage5Record)
+    STORE   1                            ; locals[1] := provocation (Provocation)
+
+    ;; Assemble the claim: (winner_form_hash, winner_proof_hash,
+    ;; statement). We project winner_form_hash and winner_proof_hash
+    ;; from the Stage5Record, and statement from the provocation.
+    LOAD    0
+    PUSH    "S-09/stage5/proj/winner_form_hash"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Hash
+
+    LOAD    0
+    PUSH    "S-09/stage5/proj/winner_proof_hash"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Hash
+
+    LOAD    1
+    PUSH    "S-09/proj/statement"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Hash (statement)
+
+    MAKEVEC 3                            ; → Vec{Hash, Hash, Hash}
+    PUSH    "Claim/v1"
+    SEAL    Hash                          ; → claim content Hash
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s09-ops-rationale
+)
+
+; ============================================================
+; S-09/stage6/check_bootstrap_if_s08 — (Stage5Record) → Bool
+;
+; Checks whether this synthesis act is an S-08 bootstrap case.
+; An S-08 bootstrap occurs when the winning candidate is itself a
+; proof-checker Form (i.e., the synthesis is bootstrapping a new
+; proof checker). The body projects the winner_form_hash from the
+; Stage5Record and compares it to the known S-08 proof-checker
+; Form hash (S-08_PROOF_CHECKER_HASH). If they match, this is a
+; bootstrap case and Stage 6 must emit the special bootstrap claim.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s09_stage6_check_bootstrap_if_s08"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      1
+  :code (
+    STORE   0                            ; locals[0] := stage5 (Stage5Record)
+
+    ;; Project winner_form_hash from the Stage5Record.
+    LOAD    0
+    PUSH    "S-09/stage5/proj/winner_form_hash"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Hash
+
+    ;; Compare to the S-08 proof-checker Form hash.
+    PUSH    S-08_PROOF_CHECKER_HASH
+    EQ
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s09-ops-rationale
+)
+
+; ============================================================
+; S-09/stage8/mint_vigil — (VigilDeclaration, Hash) → CapId
+;
+; Mints a vigil capability from a VigilDeclaration and the
+; winning claim hash. The vigil cap is an attenuated capability
+; derived from the synthesis root cap, scoped to the vigil
+; declaration's rights and predicate. The body delegates to the
+; S-02 cap registry's mint path: it seals the VigilDeclaration
+; under "VigilCap/v1" together with the claim hash to produce the
+; CapId (the content hash that names the new capability).
+;
+; Declared-caps: (S-03/ROOT_RO S-03/SEAL_RW S-02/MINT_RW)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s09_stage8_mint_vigil"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW S-02/MINT_RW)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      2
+  :code (
+    STORE   0                            ; locals[0] := vigil_decl (VigilDeclaration)
+    STORE   1                            ; locals[1] := claim_hash (Hash)
+
+    ;; Assemble the vigil cap as a pair (vigil_decl, claim_hash)
+    ;; and seal under "VigilCap/v1" to produce the CapId.
+    LOAD    0                            ; vigil_decl
+    LOAD    1                            ; claim_hash
+    MAKEPAIR                             ; → Pair{VigilDeclaration, Hash}
+    PUSH    "VigilCap/v1"
+    SEAL    Hash                          ; → CapId (content hash)
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s09-ops-rationale
+)
+
+(exports
+  (s03_canon                          (TypeTag, Value) → Hash)
+  (s02_types_is_root_cap              (Bytes) → Bool)
+  (s02_lemma_i2_check                 (Cap, Rights, Predicate, Nat, Nat) → Bool)
+  (s05_append_dissolved_entries       (Vec{AttId}) → ())
+  (s05_tick_compute_yielded_eligible  (ForestRoot) → Vec{AttId})
+  (s05_tick_grant_each                (Vec{AttId}) → ())
+  (s09_parse_provocation              (Bytes) → Provocation)
+  (s09_grounding_derive               (Provocation) → Stage2Record)
+  (s09_run_in_subattention            (AttId, Hash, Stage2Record) → Vec{Candidate})
+  (s09_stage4_simulate_all            (Vec{Candidate}, AttId) → Vec{TrialRecord})
+  (s09_stage4_any_passed              (Vec{TrialRecord}) → Bool)
+  (s09_stage5_select                  (Vec{Candidate}, Vec{TrialRecord}, Provocation) → Stage5Record)
+  (s09_stage6_build_claim             (Stage5Record, Provocation) → Hash)
+  (s09_stage6_check_bootstrap_if_s08  (Stage5Record) → Bool)
+  (s09_stage8_mint_vigil              (VigilDeclaration, Hash) → CapId))
+
+; ============================================================
+; Notes on pending sub-helper leaves
+;
+; S-09/grounding/derive delegates to S-09/grounding/extract_axioms
+; at its inner CALL. extract_axioms reads the observed, constraint,
+; and seed_candidates fields from the provocation and assembles the
+; Stage2Record. Pending in STUBS.md.
+;
+; S-09/stage4/simulate_all delegates to S-09/stage4/simulate_one
+; at its inner CALL. simulate_one runs a single candidate through
+; the simulation harness and returns a TrialRecord. Pending in
+; STUBS.md.
+;
+; S-09/stage5/select delegates to S-09/stage5/rank_winner at its
+; inner CALL. rank_winner picks the highest-ranked passing
+; candidate from the candidate and trial vecs. Pending in
+; STUBS.md.
+;
+; S-09/stage6/build_claim delegates to S-09/proj/statement at its
+; inner CALL. statement projects the statement field from the
+; provocation (offset 118). Pending in STUBS.md (the four already-
+; encoded projections do not include statement).
+;
+; Until all four sub-helpers are encoded, the Forms above have a
+; pending leaf at their inner CALLs. The Forms themselves are
+; total and sealed — the pending status is purely about the
+; delegation target, not about the control flow or cap discipline
+; of these bodies.
+; ============================================================

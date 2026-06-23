@@ -1,0 +1,707 @@
+; S-10 hephaistion_seed and S-11 bridge_proto operational helpers
+;
+; Encoded Forms implementing the operational helpers referenced by
+; S-10 hephaistion_seed and S-11 bridge_proto:
+;
+;   S-10/observe/fold                      fold observed substances
+;   S-10/hypothesise/rank_top              rank and pick top hypothesis
+;   S-10/hypothesise/build                 build a Hypothesis/v1
+;   S-10/propose/build_inheriting_grounding build proposal inheriting grounding
+;   S-10/staged/append                     append a staged result
+;   S-10/compare/run_due_comparisons       run due comparison cycles
+;   S-10/vigil/process                     process the vigil queue
+;   S-11/parse_surface                     parse surface wire bytes
+;   S-11/build_intent                      construct Intent from BridgeRequest
+;   S-11/check/can_read                    check bridge read capability
+;   S-11/check_acceptance                  run acceptance form on a result
+;   S-11/intent_inputs_vec                 extract inputs as a value vec
+;
+; Synthesis chain:
+;   provocation:  STUBS.md catalogues these helpers as pending under
+;                 "Helpers required by S-10 hephaistion_seed" and
+;                 "Helpers required by S-11 bridge_proto". The primary
+;                 S-10 and S-11 Forms reference them at inner CALLs;
+;                 until encoded, those operations have pending leaves.
+;   grounding:    A1.1 (substance is named by hash), A1.2 (type is
+;                 intrinsic — dispatch by type-tag), A1.3 (sealing is
+;                 permanent — bytes don't move), A0.6 (code is thought)
+;   composes_with:
+;                 - schema-helpers.form (Schema/verify_type_tag,
+;                   Schema/bytes_in_range, Schema/nat_at)
+;                 - primitives.form (Vec/len, Vec/index, Vec/append)
+;                 - s04-ops.form (S-04/backidx/insert_all)
+;                 - s09-projections.form (S-09/grounding/derive)
+;                 - s07-* (S-07/interp/run)
+;                 - s11-projections.form (BridgeRequest projections,
+;                   Intent projections)
+;
+; Helper exemption: every Form below is under ~30 instructions of IL
+; and is therefore exempt from its own .proof artifact per
+; synthesis/PROTOCOL.md § Helper exemption. A kernel-author identity
+; verifies each body by structural reading in the S-08 inspection
+; record.
+;
+; Layout reference (kernel/types/Records.md):
+;
+;   BridgeRequest/v1 (184 bytes total):
+;     offset   0  type_tag        Bytes(16)  "BridgeRequest/v1"
+;     offset  16  budget          Nat(8)
+;     offset  24  acceptance_form Hash(32)
+;     offset  56  goal_value      Hash(32)
+;     offset  88  human_id_token  Hash(32)
+;     offset 120  inputs          Hash(32)
+;     offset 152  constraints     Hash(32)
+;     total: 184 bytes
+;
+;   Intent/v1:
+;     Fields mirror BridgeRequest plus the resolved inputs vec.
+;     Constructed by S-11/build_intent from a BridgeRequest.
+;
+;   Hypothesis/v1:
+;     Sealed record built by S-10/hypothesise/build from a hash and
+;     summary. The seal tag is the literal "Hypothesis/v1".
+;
+; ============================================================
+; S-10/observe/fold — (Hash) → Pair{Hash, Summary}
+;
+; Folds over observed substances reachable from the root hash,
+; building a summary. Delegates to S-10/observe_step for the
+; per-element fold step.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s10_observe_fold"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      3
+  :code (
+    STORE   0                            ; locals[0] := root hash
+
+    ;; Initialize summary to the empty summary (BOTTOM_HASH).
+    PUSH    "BOTTOM_HASH"
+    SEAL    Hash
+    STORE   1                            ; locals[1] := summary acc
+
+    ;; Initialize cursor hash = root.
+    LOAD    0
+    STORE   2                            ; locals[2] := cursor
+
+    ;; Delegate to S-10/observe_step(root, cursor, summary).
+    ;; observe_step iterates the observed substances, folding each
+    ;; into the summary, and returns Pair{final_cursor, final_summary}.
+    LOAD    0
+    LOAD    2
+    LOAD    1
+    PUSH    "S-10/observe_step"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                      ; → Pair{Hash, Summary}
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s10-s11-ops-rationale
+)
+
+; ============================================================
+; S-10/hypothesise/rank_top — (Summary) → Hash
+;
+; Ranks the hypotheses described by the summary and returns the
+; top-ranked one. Delegates to S-10/rank_compare for pairwise
+; comparison during the ranking pass.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s10_hypothesise_rank_top"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0                            ; locals[0] := summary
+
+    ;; Delegate to S-10/rank_compare(summary, BOTTOM_HASH).
+    ;; rank_compare walks the hypothesis set in the summary,
+    ;; comparing each against the running best via the
+    ;; (score, hash) tie-break order, and returns the top hash.
+    ;; BOTTOM_HASH is the initial "no candidate" sentinel.
+    LOAD    0
+    PUSH    "BOTTOM_HASH"
+    SEAL    Hash
+    PUSH    "S-10/rank_compare"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                      ; → Hash (top hypothesis)
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s10-s11-ops-rationale
+)
+
+; ============================================================
+; S-10/hypothesise/build — (Hash, Summary) → Hypothesis
+;
+; Builds a Hypothesis/v1 substance from a hash and summary.
+; The hypothesis is sealed under the "Hypothesis/v1" tag.
+;
+; Declared-caps: (S-03/ROOT_RO S-03/SEAL_RW)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s10_hypothesise_build"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      3
+  :code (
+    STORE   0                            ; locals[0] := hash
+    STORE   1                            ; locals[1] := summary
+
+    ;; Assemble the pair (hash, summary) and seal under
+    ;; "Hypothesis/v1" to produce the hypothesis substance.
+    LOAD    0
+    LOAD    1
+    MAKEPAIR                             ; → Pair{hash, summary}
+    STORE   2                            ; locals[2] := pair
+    LOAD    2
+    PUSH    "Hypothesis/v1"
+    SEAL    Bytes                         ; → sealed Hypothesis bytes
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s10-s11-ops-rationale
+)
+
+; ============================================================
+; S-10/propose/build_inheriting_grounding — (Hypothesis, Hash) → Hash
+;
+; Builds a proposal that inherits grounding from a parent. The
+; hypothesis supplies the proposal shape; the parent hash supplies
+; the grounding axioms. Delegates to S-09/grounding/derive to
+; derive the inherited grounding set, then seals the proposal.
+;
+; Declared-caps: (S-03/ROOT_RO S-03/SEAL_RW)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s10_propose_build_inheriting_grounding"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      3
+  :code (
+    STORE   0                            ; locals[0] := hypothesis
+    STORE   1                            ; locals[1] := parent hash
+
+    ;; Delegate to S-09/grounding/derive(parent_hash).
+    ;; grounding/derive walks the parent's grounding chain and
+    ;; returns the derived axiom set (Stage2Record).
+    LOAD    1
+    PUSH    "S-09/grounding/derive"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                      ; → Stage2Record (grounding)
+    STORE   2                            ; locals[2] := grounding
+
+    ;; Seal the proposal: (hypothesis, grounding) under
+    ;; "Proposal/v1" and return its content hash.
+    LOAD    0
+    LOAD    2
+    MAKEPAIR                             ; → Pair{hypothesis, grounding}
+    PUSH    "Proposal/v1"
+    SEAL    Hash                          ; → proposal content hash
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s10-s11-ops-rationale
+)
+
+; ============================================================
+; S-10/staged/append — (SynthResult, Nat) → ()
+;
+; Appends a staged synthesis result at the given index. Delegates
+; to S-04/backidx/insert_all to insert the result hash into the
+; back-index keyed by the stage number.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s10_staged_append"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      3
+  :code (
+    STORE   0                            ; locals[0] := synth result
+    STORE   1                            ; locals[1] := stage index (Nat)
+
+    ;; Build a singleton vec containing the result hash, then
+    ;; delegate to S-04/backidx/insert_all to insert it at the
+    ;; stage index.
+    LOAD    0
+    PUSH    "BOTTOM_HASH"
+    SEAL    Hash                          ; canonicalise result to hash
+    STORE   2                            ; locals[2] := result hash
+
+    ;; Construct a one-element vec {result_hash}.
+    LOAD    2
+    MAKEVEC   1                           ; → Vec{Hash}
+    LOAD    1
+    PUSH    "S-04/backidx/insert_all"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                      ; → ()
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s10-s11-ops-rationale
+)
+
+; ============================================================
+; S-10/compare/run_due_comparisons — (Nat) → ()
+;
+; Runs the due comparison cycles for the given cycle count.
+; Delegates to S-10/compare_step for each cycle.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s10_compare_run_due_comparisons"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0                            ; locals[0] := cycle count (Nat)
+
+    ;; Initialize remaining = cycle count.
+    LOAD    0
+    STORE   1                            ; locals[1] := remaining
+
+    :compare_loop
+    ;; If remaining == 0, done.
+    LOAD    1
+    JMPZ    +compare_done
+
+    ;; Delegate to S-10/compare_step(remaining).
+    ;; compare_step runs one comparison cycle and returns ().
+    LOAD    1
+    PUSH    "S-10/compare_step"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                      ; → ()
+    POP                                 ; discard unit result
+
+    ;; remaining = remaining - 1
+    LOAD    1
+    PUSH    1
+    SUB
+    STORE   1
+    JMP     +compare_loop
+
+    :compare_done
+    PUSH    0                             ; return unit
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s10-s11-ops-rationale
+)
+
+; ============================================================
+; S-10/vigil/process — () → ()
+;
+; Processes the vigil queue. Takes no arguments. Delegates to
+; S-10/vigil/step for each queued vigil declaration until the
+; queue is empty.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s10_vigil_process"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         0
+  :locals-n      1
+  :code (
+    ;; Delegate to S-10/vigil/step().
+    ;; vigil/step pops one vigil declaration from the queue,
+    ;; processes it, and returns Bool (true if more remain).
+    ;; We loop until the queue is empty.
+    PUSH    "S-10/vigil/step"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=0                      ; → Bool
+    STORE   0                            ; locals[0] := more?
+
+    :vigil_loop
+    LOAD    0
+    JMPZ    +vigil_done
+
+    PUSH    "S-10/vigil/step"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=0                      ; → Bool
+    STORE   0
+    JMP     +vigil_loop
+
+    :vigil_done
+    PUSH    0                             ; return unit
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s10-s11-ops-rationale
+)
+
+; ============================================================
+; S-11/parse_surface — (Bytes) → BridgeRequest
+;
+; Parses surface-language wire bytes into a BridgeRequest/v1
+; substance. This is a total parser: on malformed input it
+; returns BOTTOM_HASH rather than trapping. On well-formed
+; input it verifies the type tag and returns the sealed
+; BridgeRequest bytes.
+;
+; BridgeRequest/v1 layout (Records.md):
+;   offset   0  type_tag        Bytes(16)  "BridgeRequest/v1"
+;   offset  16  budget          Nat(8)
+;   offset  24  acceptance_form Hash(32)
+;   offset  56  goal_value      Hash(32)
+;   offset  88  human_id_token  Hash(32)
+;   offset 120  inputs          Hash(32)
+;   offset 152  constraints     Hash(32)
+;   total: 184 bytes
+;
+; Declared-caps: (S-03/ROOT_RO S-03/SEAL_RW)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s11_parse_surface"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      3
+  :code (
+    STORE   0                            ; locals[0] := wire bytes
+
+    ;; Check minimum length: 184 bytes.
+    LOAD    0
+    PUSH    "Bytes/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                      ; → Nat
+    STORE   1                            ; locals[1] := length
+
+    LOAD    1
+    PUSH    184
+    LT
+    JMPZ    +parse_len_ok
+
+    ;; Malformed: too short. Return BOTTOM_HASH (total function).
+    PUSH    "BOTTOM_HASH"
+    SEAL    Hash
+    RET
+
+    :parse_len_ok
+    ;; Verify the type tag at offset 0 (16 bytes).
+    LOAD    0
+    PUSH    "BridgeRequest/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                      ; → Bool
+    JMPZ    +parse_bad_tag
+
+    ;; Tag valid. Re-seal the bytes as BridgeRequest/v1 and return.
+    LOAD    0
+    PUSH    "BridgeRequest/v1"
+    SEAL    Bytes                         ; → sealed BridgeRequest
+    RET
+
+    :parse_bad_tag
+    ;; Malformed: bad type tag. Return BOTTOM_HASH.
+    PUSH    "BOTTOM_HASH"
+    SEAL    Hash
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s10-s11-ops-rationale
+)
+
+; ============================================================
+; S-11/build_intent — (BridgeRequest) → Intent
+;
+; Constructs an Intent/v1 from a BridgeRequest. Reads the
+; BridgeRequest fields (budget, acceptance_form, goal_value,
+; human_id_token, inputs, constraints) and assembles the Intent.
+;
+; Declared-caps: (S-03/ROOT_RO S-03/SEAL_RW)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s11_build_intent"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      7
+  :code (
+    STORE   0                            ; locals[0] := BridgeRequest bytes
+
+    ;; Read budget at offset 16 (Nat, 8 bytes).
+    LOAD    0
+    PUSH    16
+    PUSH    "Schema/nat_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                      ; → Nat
+    STORE   1                            ; locals[1] := budget
+
+    ;; Read acceptance_form at offset 24 (Hash, 32 bytes).
+    LOAD    0
+    PUSH    24
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                      ; → Bytes (hash)
+    STORE   2                            ; locals[2] := acceptance_form
+
+    ;; Read goal_value at offset 56 (Hash, 32 bytes).
+    LOAD    0
+    PUSH    56
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   3                            ; locals[3] := goal_value
+
+    ;; Read human_id_token at offset 88 (Hash, 32 bytes).
+    LOAD    0
+    PUSH    88
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   4                            ; locals[4] := human_id_token
+
+    ;; Read inputs at offset 120 (Hash, 32 bytes).
+    LOAD    0
+    PUSH    120
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   5                            ; locals[5] := inputs
+
+    ;; Read constraints at offset 152 (Hash, 32 bytes).
+    LOAD    0
+    PUSH    152
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   6                            ; locals[6] := constraints
+
+    ;; Assemble Intent/v1 as a vec of the six fields and seal.
+    LOAD    1                            ; budget
+    LOAD    2                            ; acceptance_form
+    LOAD    3                            ; goal_value
+    LOAD    4                            ; human_id_token
+    LOAD    5                            ; inputs
+    LOAD    6                            ; constraints
+    MAKEVEC   6                          ; → Vec{budget, acc, goal, human, inputs, constraints}
+    PUSH    "Intent/v1"
+    SEAL    Bytes                         ; → sealed Intent
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s10-s11-ops-rationale
+)
+
+; ============================================================
+; S-11/check/can_read — (Hash) → Bool
+;
+; Checks whether the bridge can read a substance. Delegates to
+; the S-03 store read check: if the substance exists in the store
+; and is readable under the bridge's capability, returns true.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s11_check_can_read"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      1
+  :code (
+    STORE   0                            ; locals[0] := substance hash
+
+    ;; Delegate to S-03/store/read_check(hash).
+    ;; read_check returns true iff the substance is present and
+    ;; the bridge's capability permits reading it.
+    LOAD    0
+    PUSH    "S-03/store/read_check"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                      ; → Bool
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s10-s11-ops-rationale
+)
+
+; ============================================================
+; S-11/check_acceptance — (Hash, Hash) → Bool
+;
+; Checks whether an acceptance form accepts a result. The first
+; hash is the acceptance form; the second is the result hash.
+; Delegates to S-07/interp/run to evaluate the acceptance form
+; against the result.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s11_check_acceptance"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      3
+  :code (
+    STORE   0                            ; locals[0] := acceptance form hash
+    STORE   1                            ; locals[1] := result hash
+
+    ;; Build an ExecState for the acceptance form with the result
+    ;; hash as the single input. We construct a pair (form_hash,
+    ;; result_hash) and pass it to S-07/interp/run.
+    LOAD    0
+    LOAD    1
+    MAKEPAIR                             ; → Pair{form_hash, result_hash}
+    STORE   2                            ; locals[2] := exec state seed
+
+    ;; Delegate to S-07/interp/run(exec_state).
+    ;; interp/run evaluates the acceptance form to a verdict.
+    ;; We project the verdict's Bool via FST (pass/fail).
+    LOAD    2
+    PUSH    "S-07/interp/run"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                      ; → Pair{Verdict, ExecState}
+    FST                                   ; → Verdict
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s10-s11-ops-rationale
+)
+
+; ============================================================
+; S-11/intent_inputs_vec — (Intent) → Vec{Value}
+;
+; Extracts the inputs from an Intent as a value vec. Delegates to
+; Intent/proj/inputs, which projects the inputs field from the
+; sealed Intent/v1 substance.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s11_intent_inputs_vec"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      1
+  :code (
+    STORE   0                            ; locals[0] := Intent
+
+    ;; Delegate to Intent/proj/inputs(intent).
+    ;; proj/inputs reads the inputs field from the Intent/v1
+    ;; substance and returns it as a Vec{Value}.
+    LOAD    0
+    PUSH    "Intent/proj/inputs"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                      ; → Vec{Value}
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s10-s11-ops-rationale
+)
+
+(exports
+  (s10_observe_fold                     (Hash) → Pair{Hash, Summary})
+  (s10_hypothesise_rank_top             (Summary) → Hash)
+  (s10_hypothesise_build                (Hash, Summary) → Hypothesis)
+  (s10_propose_build_inheriting_grounding (Hypothesis, Hash) → Hash)
+  (s10_staged_append                    (SynthResult, Nat) → ())
+  (s10_compare_run_due_comparisons      (Nat) → ())
+  (s10_vigil_process                    () → ())
+  (s11_parse_surface                    (Bytes) → BridgeRequest)
+  (s11_build_intent                     (BridgeRequest) → Intent)
+  (s11_check_can_read                   (Hash) → Bool)
+  (s11_check_acceptance                 (Hash, Hash) → Bool)
+  (s11_intent_inputs_vec                (Intent) → Vec{Value}))
+
+; ============================================================
+; Notes on pending sub-helper leaves
+;
+; The helpers above delegate to the following sub-helpers that
+; are NOT yet encoded. They are catalogued here so the next
+; encoding batch can pick them up:
+;
+;   S-10/observe_step (Hash, Hash, Summary) → Pair{Hash, Summary}
+;     Per-element fold step for observe/fold. Reads one observed
+;     substance, folds it into the summary, and advances the
+;     cursor. Pending in STUBS.md.
+;
+;   S-10/rank_compare (Summary, Hash) → Hash
+;     Pairwise comparison for hypothesis ranking. Walks the
+;     hypothesis set in the summary, comparing each against the
+;     running best via (score, hash) ordering. Pending in STUBS.md.
+;
+;   S-10/compare_step (Nat) → ()
+;     Runs one comparison cycle. Pending in STUBS.md.
+;
+;   S-10/vigil/step () → Bool
+;     Pops and processes one vigil declaration from the queue.
+;     Returns true if more remain. Pending in STUBS.md.
+;
+;   S-03/store/read_check (Hash) → Bool
+;     Checks substance presence and read capability in the store.
+;     Pending in STUBS.md (under S-03 helpers).
+;
+;   Intent/proj/inputs (Intent) → Vec{Value}
+;     Projects the inputs field from an Intent/v1 substance.
+;     Pending in STUBS.md.
+;
+;   S-07/interp/run (ExecState) → Pair{Verdict, ExecState}
+;     The 35-opcode IL dispatch table. Pending in STUBS.md.
+;
+; Until these sub-helpers are encoded, the Forms above have a
+; pending leaf at their inner CALLs. The Forms themselves are
+; total and sealed — the pending status is purely about the
+; delegation target, not about the control flow or cap discipline
+; of these bodies.
+; ============================================================

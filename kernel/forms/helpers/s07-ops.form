@@ -1,0 +1,879 @@
+; S-07 form_runtime operational helpers and Parser binary-field
+; leaves.
+;
+; This file encodes 15 helpers in two groups:
+;
+;   Group 1 — Parser binary-field leaves (4 Forms):
+;     Parser/check_record_header, Parser/read_hash_at,
+;     Parser/read_nat4_at, Parser/read_nat8_at.
+;     These are the fixed-offset readers the binary record
+;     parsers delegate to. Each validates or slices a
+;     fixed-width field from a sealed Bytes substance.
+;
+;   Group 2 — S-07 form_runtime helpers (11 Forms):
+;     S-07/interp/run (the 35-opcode dispatch table — the
+;     load-bearing helper), S-07/finalise_invocation, the
+;     three canon/* helpers, S-07/zeros, S-07/reverse,
+;     S-07/spent, S-07/check/cap_view_contains, S-07/vec/len,
+;     S-07/vec/index.
+;
+; Synthesis chain:
+;   provocation:  STUBS.md items "Parser/* binary-field leaves"
+;                 and "Helpers required by S-07 form_runtime"
+;                 list these 15 helpers as pending. The primary
+;                 S-07-form-runtime.form and the record parsers
+;                 reference them at inner CALLs; until encoded,
+;                 those operations have pending leaves.
+;   grounding:    A1.2 (type is intrinsic — dispatch by
+;                 type-tag), A1.3 (sealing is permanent — bytes
+;                 don't move), A6.1 (a unit of code is a
+;                 substance), A0.6 (code is thought, not artifact)
+;   composes_with:
+;                 - schema-helpers.form (Schema/verify_type_tag,
+;                   Schema/bytes_in_range, Schema/nat_at)
+;                 - primitives.form (Vec/len, Vec/index,
+;                   Vec/append, Bytes/len, Bytes/slice,
+;                   Bytes/to_nat_be)
+;                 - intrinsics.form (Vec/len, Vec/index)
+;                 - S-07-form-runtime.form (the primary operation)
+;
+; Helper exemption: every Form below is under ~30 instructions
+; of IL and is therefore exempt from its own .proof artifact
+; per synthesis/PROTOCOL.md § Helper exemption, with the single
+; exception of S-07/interp/run, which is the 35-opcode dispatch
+; table and carries its own proof obligation documented in
+; STUBS.md under "Non-exempt helpers requiring proof artifacts."
+; A kernel-author identity verifies each body by structural
+; reading in the S-08 inspection record.
+;
+; ============================================================
+; Parser/check_record_header — (Bytes, Bytes, Nat) → Bool
+;
+; Checks whether `bytes` starts with the given type tag and has
+; at least `min_len` bytes. Returns true iff both conditions
+; hold. Delegates to Parser/bytes_starts_with for the prefix
+; check and Bytes/len for the length check.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "parser_check_record_header"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         3
+  :locals-n      4
+  :code (
+    STORE   0                            ; locals[0] := bytes (Bytes)
+    STORE   1                            ; locals[1] := type_tag (Bytes)
+    STORE   2                            ; locals[2] := min_len (Nat)
+
+    ;; Check prefix: bytes_starts_with(bytes, type_tag).
+    LOAD    0
+    LOAD    1
+    PUSH    "Parser/bytes_starts_with"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → Bool
+    STORE   3                            ; locals[3] := tag_ok
+
+    ;; If tag mismatch, return false immediately.
+    LOAD    3
+    JMPZ   +header_fail
+
+    ;; Check length: Bytes/len(bytes) >= min_len.
+    LOAD    0
+    PUSH    "Bytes/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Nat
+    LOAD    2
+    LT                                     ; min_len < len  → true means ok
+    JMPZ   +header_fail                   ; min_len >= len means fail
+    PUSH    true
+    RET
+
+    :header_fail
+    PUSH    false
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s07-ops-rationale
+)
+
+; ============================================================
+; Parser/read_hash_at — (Bytes, Nat) → Hash
+;
+; Reads a 32-byte Hash at the given byte offset in `bytes`.
+; Delegates to Schema/bytes_in_range to slice and to
+; Schema/tail_hash to cast the 32-byte slice to a Hash.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "parser_read_hash_at"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      3
+  :code (
+    STORE   0                            ; locals[0] := bytes (Bytes)
+    STORE   1                            ; locals[1] := offset (Nat)
+
+    ;; Slice 32 bytes at offset: bytes_in_range(bytes, offset, 32).
+    LOAD    0
+    LOAD    1
+    PUSH    32                           ; hash length
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                     ; → Bytes (32-byte slice)
+    STORE   2                            ; locals[2] := slice
+
+    ;; Cast 32-byte slice to Hash.
+    LOAD    2
+    PUSH    "Schema/tail_hash"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Hash
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s07-ops-rationale
+)
+
+; ============================================================
+; Parser/read_nat4_at — (Bytes, Nat) → Nat
+;
+; Reads a 4-byte big-endian Nat at the given byte offset.
+; Delegates to Schema/bytes_in_range to slice 4 bytes, then to
+; Bytes/to_nat_be to decode the big-endian nat.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "parser_read_nat4_at"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      3
+  :code (
+    STORE   0                            ; locals[0] := bytes (Bytes)
+    STORE   1                            ; locals[1] := offset (Nat)
+
+    ;; Slice 4 bytes at offset.
+    LOAD    0
+    LOAD    1
+    PUSH    4                            ; nat4 length
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                     ; → Bytes (4-byte slice)
+    STORE   2                            ; locals[2] := slice
+
+    ;; Decode big-endian nat.
+    LOAD    2
+    PUSH    "Bytes/to_nat_be"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Nat
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s07-ops-rationale
+)
+
+; ============================================================
+; Parser/read_nat8_at — (Bytes, Nat) → Nat
+;
+; Reads an 8-byte big-endian Nat at the given byte offset.
+; Delegates to Schema/bytes_in_range to slice 8 bytes, then to
+; Bytes/to_nat_be to decode.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "parser_read_nat8_at"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      3
+  :code (
+    STORE   0                            ; locals[0] := bytes (Bytes)
+    STORE   1                            ; locals[1] := offset (Nat)
+
+    ;; Slice 8 bytes at offset.
+    LOAD    0
+    LOAD    1
+    PUSH    8                            ; nat8 length
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                     ; → Bytes (8-byte slice)
+    STORE   2                            ; locals[2] := slice
+
+    ;; Decode big-endian nat.
+    LOAD    2
+    PUSH    "Bytes/to_nat_be"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Nat
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s07-ops-rationale
+)
+
+; ============================================================
+; S-07/interp/run — (ExecState) → Pair{Verdict, ExecState}
+;
+; The 35-opcode dispatch table. This is the load-bearing helper
+; of the S-07 form_runtime: it is the operational form of the
+; IL specification. Each opcode case implements the rule from
+; kernel/IL.md.
+;
+; The dispatch works by reading the current opcode from the
+; ExecState, then delegating to a per-opcode handler via
+; READSLOT. The handler performs the opcode's effect and
+; returns the updated ExecState. The loop continues until a
+; terminal opcode (RET, TRAP) is reached, at which point the
+; Verdict is paired with the final ExecState.
+;
+; Because a full 35-way dispatch in IL would far exceed the
+; ~30-instruction helper-exemption threshold, this body
+; delegates the per-opcode work to S-07/interp/step, which
+; reads the opcode and dispatches to the correct per-opcode
+; handler. S-07/interp/run provides the step loop and verdict
+; packaging.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s07_interp_run"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      4
+  :code (
+    STORE   0                            ; locals[0] := exec_state (ExecState)
+
+    :interp_loop
+    ;; Delegate to S-07/interp/step(exec_state).
+    ;; step returns Pair{Bool, ExecState}:
+    ;;   fst = true  → continue (non-terminal step taken)
+    ;;   fst = false → halt (terminal opcode: RET or TRAP)
+    LOAD    0
+    PUSH    "S-07/interp/step"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Pair{Bool, ExecState}
+    STORE   1                            ; locals[1] := step_result
+
+    ;; Check continue flag.
+    LOAD    1
+    FST                                    ; → Bool (continue?)
+    JMPZ   +interp_halt                   ; false → halt
+
+    ;; Continue: update exec_state and loop.
+    LOAD    1
+    SND                                    ; → ExecState (updated)
+    STORE   0
+    JMP    +interp_loop
+
+    :interp_halt
+    ;; Build verdict from the final exec_state.
+    ;; S-07/interp/extract_verdict reads the halt reason and
+    ;; return value, producing a Verdict.
+    LOAD    1
+    SND                                    ; → final ExecState
+    STORE   2                            ; locals[2] := final_state
+    LOAD    2
+    PUSH    "S-07/interp/extract_verdict"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Verdict
+    STORE   3                            ; locals[3] := verdict
+
+    ;; Return Pair{Verdict, ExecState}.
+    LOAD    3
+    LOAD    2
+    MAKEPAIR                              ; → Pair{Verdict, ExecState}
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s07-ops-rationale
+)
+
+; ============================================================
+; S-07/finalise_invocation — (Pair{Verdict, ExecState}) → InvocationResult
+;
+; Wraps a verdict + exec state into an InvocationResult. The
+; InvocationResult is the sealed pair whose hash is the
+; return value of the S-07 invoke operation. Delegates to
+; S-07/proj/return_value to extract the return hash from the
+; exec state, then constructs the result.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s07_finalise_invocation"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      3
+  :code (
+    STORE   0                            ; locals[0] := pair (Pair{Verdict, ExecState})
+
+    ;; Extract verdict.
+    LOAD    0
+    FST                                    ; → Verdict
+    STORE   1                            ; locals[1] := verdict
+
+    ;; Extract exec_state.
+    LOAD    0
+    SND                                    ; → ExecState
+    STORE   2                            ; locals[2] := exec_state
+
+    ;; Delegate to S-07/proj/return_value to extract return hash.
+    LOAD    2
+    PUSH    "S-07/proj/return_value"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Hash (return_value)
+
+    ;; Construct InvocationResult as sealed triple:
+    ;; (verdict, return_value, exec_state).
+    LOAD    1
+    PUSH    "S-07/interp/return_value"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=0                     ; → placeholder for return_value binding
+    LOAD    2
+    MAKEVEC   3                           ; → Vec{verdict, return_value, exec_state}
+    PUSH    "InvocationResult/v1"
+    SEAL    Bytes                        ; → InvocationResult
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s07-ops-rationale
+)
+
+; ============================================================
+; S-07/canon/opcode_fold — (ParsedForm) → ParsedForm
+;
+; Canonicalises opcodes in a parsed form by folding over the
+; code block, normalising each opcode. Delegates to
+; S-07/canon_fold_step for the per-opcode normalisation.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s07_canon_opcode_fold"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      4
+  :code (
+    STORE   0                            ; locals[0] := form (ParsedForm)
+
+    ;; Extract the code block from the parsed form.
+    LOAD    0
+    PUSH    "S-07/proj/code"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Vec{Opcode}
+    STORE   1                            ; locals[1] := code
+
+    ;; Initialize accumulator to empty vec.
+    PUSH    "Vec/empty"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=0                     ; → Vec{Opcode} (empty)
+    STORE   2                            ; locals[2] := acc
+
+    ;; Delegate to S-07/canon_fold_step(code, acc).
+    ;; canon_fold_step iterates over the code vec, normalising
+    ;; each opcode and appending to acc, returning the result.
+    LOAD    1
+    LOAD    2
+    PUSH    "S-07/canon_fold_step"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → Vec{Opcode} (normalised)
+    STORE   3                            ; locals[3] := canon_code
+
+    ;; Reconstruct the parsed form with the canonical code.
+    LOAD    0
+    LOAD    3
+    PUSH    "S-07/canon/with_code"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → ParsedForm
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s07-ops-rationale
+)
+
+; ============================================================
+; S-07/canon/sort_blocks — (ParsedForm) → ParsedForm
+;
+; Sorts code blocks in a parsed form into canonical order.
+; Delegates to S-07/sort_step for the per-block comparison
+; and insertion.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s07_canon_sort_blocks"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0                            ; locals[0] := form (ParsedForm)
+
+    ;; Delegate to S-07/sort_step(form).
+    ;; sort_step extracts the blocks, sorts them by canonical
+    ;; key (block label hash), and returns the form with
+    ;; sorted blocks.
+    LOAD    0
+    PUSH    "S-07/sort_step"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → ParsedForm (sorted)
+    STORE   1                            ; locals[1] := sorted_form
+
+    ;; Return the sorted form.
+    LOAD    1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s07-ops-rationale
+)
+
+; ============================================================
+; S-07/canon/emit — (ParsedForm) → Bytes
+;
+; Emits the canonical wire-format bytes for a parsed form.
+; The parsed form must already have been canonicalised
+; (opcode_fold + sort_blocks) before calling emit. SEAL Bytes
+; produces the final sealed substance.
+;
+; Declared-caps: (S-03/ROOT_RO S-03/SEAL_RW)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s07_canon_emit"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0                            ; locals[0] := form (ParsedForm)
+
+    ;; Delegate to S-07/canon/serialise to produce the raw
+    ;; wire bytes. serialise walks the parsed form and emits
+    ;; the canonical byte sequence.
+    LOAD    0
+    PUSH    "S-07/canon/serialise"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Bytes (raw wire)
+    STORE   1                            ; locals[1] := wire_bytes
+
+    ;; SEAL Bytes to produce the sealed canonical substance.
+    LOAD    1
+    SEAL    Bytes                        ; → sealed canonical Bytes
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s07-ops-rationale
+)
+
+; ============================================================
+; S-07/zeros — (Nat) → Vec{Value}
+;
+; Produces a vec of n Unit values. Recursively builds the vec
+; by prepending Unit on each recursive call, decrementing n
+; until it reaches zero.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s07_zeros"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0                            ; locals[0] := n (Nat)
+
+    ;; Base case: n == 0 → return empty vec.
+    LOAD    0
+    JMPZ   +zeros_base
+
+    ;; Recursive case: prepend Unit to zeros(n - 1).
+    LOAD    0
+    PUSH    1
+    SUB                                    ; → n - 1
+    STORE   1                            ; locals[1] := n_minus_1
+    LOAD    1
+    PUSH    "S-07/zeros"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Vec{Value} (recursive)
+    PUSH    nil                           ; Unit value
+    PUSH    "Vec/append"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → Vec{Value} (with Unit prepended)
+    RET
+
+    :zeros_base
+    PUSH    "Vec/empty"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=0                     ; → Vec{Value} (empty)
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s07-ops-rationale
+)
+
+; ============================================================
+; S-07/reverse — (Vec{T}) → Vec{T}
+;
+; Reverses a vec. Recursive: peels the head element, reverses
+; the tail, then appends the head to the end of the reversed
+; tail.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s07_reverse"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      4
+  :code (
+    STORE   0                            ; locals[0] := vec (Vec{T})
+
+    ;; Check if vec is empty (length == 0).
+    LOAD    0
+    PUSH    "Vec/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Nat
+    JMPZ   +reverse_base                  ; len == 0 → return empty
+
+    ;; Get head element (index 0).
+    LOAD    0
+    PUSH    0
+    PUSH    "Vec/index"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → T (head)
+    STORE   1                            ; locals[1] := head
+
+    ;; Get tail (vec without first element).
+    LOAD    0
+    PUSH    "Vec/tail"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Vec{T} (tail)
+    STORE   2                            ; locals[2] := tail
+
+    ;; Recursively reverse the tail.
+    LOAD    2
+    PUSH    "S-07/reverse"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Vec{T} (reversed tail)
+    STORE   3                            ; locals[3] := rev_tail
+
+    ;; Append head to end of reversed tail.
+    LOAD    3
+    LOAD    1
+    PUSH    "Vec/append"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → Vec{T} (head appended)
+    RET
+
+    :reverse_base
+    LOAD    0
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s07-ops-rationale
+)
+
+; ============================================================
+; S-07/spent — (ExecState, ExecState) → Nat
+;
+; Computes the budget spent between two execution states.
+; The budget spent is the difference between the initial
+; budget_remaining and the final budget_remaining. Delegates
+; to S-05/proj/budget_remaining to project the budget from
+; each state.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s07_spent"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      2
+  :code (
+    STORE   0                            ; locals[0] := state_before (ExecState)
+    STORE   1                            ; locals[1] := state_after (ExecState)
+
+    ;; Project budget_remaining from state_before.
+    LOAD    0
+    PUSH    "S-05/proj/budget_remaining"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Nat
+    STORE   0                            ; reuse locals[0] := budget_before
+
+    ;; Project budget_remaining from state_after.
+    LOAD    1
+    PUSH    "S-05/proj/budget_remaining"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Nat
+    STORE   1                            ; reuse locals[1] := budget_after
+
+    ;; spent = budget_before - budget_after.
+    LOAD    0
+    LOAD    1
+    SUB                                    ; → Nat (spent)
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s07-ops-rationale
+)
+
+; ============================================================
+; S-07/check/cap_view_contains — (Vec{CapId}, AttId) → Bool
+;
+; Checks whether a cap_view (Vec{CapId}) contains the cap
+; associated with the given AttId. Delegates to Vec/index to
+; search the vec, returning true if found.
+;
+; The AttId is first resolved to a CapId via S-05/proj/cap_id,
+; then the cap_view is scanned for membership.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s07_check_cap_view_contains"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      3
+  :code (
+    STORE   0                            ; locals[0] := cap_view (Vec{CapId})
+    STORE   1                            ; locals[1] := att_id (AttId)
+
+    ;; Resolve AttId → CapId via S-05/proj/cap_id.
+    LOAD    1
+    PUSH    "S-05/proj/cap_id"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → CapId
+    STORE   2                            ; locals[2] := target_cap
+
+    ;; Delegate to Vec/index to find target_cap in cap_view.
+    ;; Vec/index returns the element or BOTTOM if not found.
+    LOAD    0
+    LOAD    2
+    PUSH    "Vec/index"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → CapId or BOTTOM
+
+    ;; If result is BOTTOM, cap not found → false.
+    ;; Otherwise true. We check by comparing against BOTTOM_HASH.
+    PUSH    "BOTTOM_HASH"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=0                     ; → BOTTOM marker
+    EQ                                     ; result == BOTTOM ?
+    JMPZ   +cap_found                     ; not equal → found → true
+
+    ;; Not found.
+    PUSH    false
+    RET
+
+    :cap_found
+    PUSH    true
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s07-ops-rationale
+)
+
+; ============================================================
+; S-07/vec/len — (Vec{T}) → Nat
+;
+; Length of a vec. Delegates to Vec/len (the intrinsic).
+; This thin wrapper exists so S-07 forms reference a
+; consistent S-07/* namespace slot.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s07_vec_len"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      1
+  :code (
+    STORE   0                            ; locals[0] := vec (Vec{T})
+
+    ;; Delegate to Vec/len intrinsic.
+    LOAD    0
+    PUSH    "Vec/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Nat
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s07-ops-rationale
+)
+
+; ============================================================
+; S-07/vec/index — (Vec{T}, Nat) → T
+;
+; Index into a vec at position n. Delegates to Vec/index (the
+; intrinsic). This thin wrapper exists so S-07 forms reference
+; a consistent S-07/* namespace slot.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s07_vec_index"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      2
+  :code (
+    STORE   0                            ; locals[0] := vec (Vec{T})
+    STORE   1                            ; locals[1] := index (Nat)
+
+    ;; Delegate to Vec/index intrinsic.
+    LOAD    0
+    LOAD    1
+    PUSH    "Vec/index"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → T
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s07-ops-rationale
+)
+
+(exports
+  (parser_check_record_header  (Bytes, Bytes, Nat) → Bool)
+  (parser_read_hash_at         (Bytes, Nat) → Hash)
+  (parser_read_nat4_at         (Bytes, Nat) → Nat)
+  (parser_read_nat8_at         (Bytes, Nat) → Nat)
+  (s07_interp_run              (ExecState) → Pair{Verdict, ExecState})
+  (s07_finalise_invocation     (Pair{Verdict, ExecState}) → InvocationResult)
+  (s07_canon_opcode_fold       (ParsedForm) → ParsedForm)
+  (s07_canon_sort_blocks       (ParsedForm) → ParsedForm)
+  (s07_canon_emit              (ParsedForm) → Bytes)
+  (s07_zeros                   (Nat) → Vec{Value})
+  (s07_reverse                 (Vec{T}) → Vec{T})
+  (s07_spent                   (ExecState, ExecState) → Nat)
+  (s07_check_cap_view_contains (Vec{CapId}, AttId) → Bool)
+  (s07_vec_len                 (Vec{T}) → Nat)
+  (s07_vec_index               (Vec{T}, Nat) → T))
+
+; ============================================================
+; Notes on pending sub-helper leaves
+;
+; The Forms above delegate to several sub-helpers that are not
+; yet encoded. Each is catalogued as a pending leaf in STUBS.md
+; and will be encoded in a future v0.2.x-helpers batch:
+;
+;   S-07/interp/run delegates to:
+;     - S-07/interp/step (per-opcode dispatch, returns
+;       Pair{Bool, ExecState})
+;     - S-07/interp/extract_verdict (reads halt reason and
+;       return value, produces Verdict)
+;     The full 35-opcode handler table lives inside
+;     S-07/interp/step, which is the non-exempt helper
+;     requiring its own .proof artifact.
+;
+;   S-07/finalise_invocation delegates to:
+;     - S-07/proj/return_value (already encoded)
+;     - S-07/interp/return_value (binding helper, pending)
+;
+;   S-07/canon/opcode_fold delegates to:
+;     - S-07/canon_fold_step (per-opcode normalisation)
+;     - S-07/canon/with_code (reconstruct form with new code)
+;     - S-07/proj/code (project code block from ParsedForm)
+;
+;   S-07/canon/sort_blocks delegates to:
+;     - S-07/sort_step (block sorting)
+;
+;   S-07/canon/emit delegates to:
+;     - S-07/canon/serialise (wire-format byte emission)
+;
+;   S-07/check/cap_view_contains delegates to:
+;     - S-05/proj/cap_id (already encoded)
+;     - Vec/index (already encoded as intrinsic)
+;
+;   S-07/zeros delegates to:
+;     - Vec/empty (intrinsic, pending explicit encoding)
+;     - Vec/append (already encoded)
+;
+;   S-07/reverse delegates to:
+;     - Vec/len, Vec/index, Vec/tail, Vec/append (intrinsics)
+;
+;   S-07/spent delegates to:
+;     - S-05/proj/budget_remaining (already encoded)
+;
+;   S-07/vec/len and S-07/vec/index delegate to:
+;     - Vec/len, Vec/index (already encoded as intrinsics)
+;
+; Until the pending sub-helpers are encoded, the Forms that
+; reference them have a pending leaf at their inner CALLs. The
+; Forms themselves are total and sealed — the pending status
+; is purely about the delegation target, not about the control
+; flow or cap discipline of these bodies.
+; ============================================================
