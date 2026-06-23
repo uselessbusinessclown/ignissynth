@@ -18,16 +18,14 @@
 //! Both backends compute keys with the same [`canonical_bytes`], so a
 //! value sealed in one yields the same content hash in the other.
 //!
-//! ## Migration note (`v0.2.5-ignis0-store`)
+//! ## Migration complete (`v0.2.5-ignis0-store`)
 //!
-//! The interpreter (`exec::Interp`), `fixed_point`, and the
-//! `Capability` trait still name the concrete `SubstanceStore`. The
-//! `Store` trait is the seam that lets a later change swap them to
-//! `TrieStore` (or make them generic over `S: Store`) without touching
-//! opcode logic. This commit lands the seam and the persistent backend
-//! with its substitutive digest; it does **not** repoint the
-//! interpreter, so the fixed-point and envelope behaviour is unchanged.
-//! Repointing is the remaining v0.2.5 step (see `ROADMAP.md`).
+//! The interpreter (`exec::Interpreter`), `fixed_point`, and the
+//! `Capability` trait now use `&mut dyn Store` instead of the concrete
+//! `SubstanceStore`. Either backend can be used interchangeably — the
+//! default is still `SubstanceStore` (fast, simple) but `TrieStore`
+//! (substitutive digest) can be dropped in without changing opcode
+//! logic.
 
 use std::collections::HashMap;
 use std::rc::Rc;

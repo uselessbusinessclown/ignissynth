@@ -12,7 +12,7 @@ use ignis0::fixed_point::{FixedPointCheck, FixedPointVerdict};
 use ignis0::opcode::Opcode;
 use ignis0::parser::parse_form_lines;
 use ignis0::registry::{FormRegistry, LoadedForm};
-use ignis0::store::SubstanceStore;
+use ignis0::store::{Store, SubstanceStore};
 use ignis0::value::{Hash, TrapKind, Value};
 
 /// The canonical F from IGNITION-BOOTSTRAP.md § Step 2 must
@@ -382,7 +382,7 @@ impl CapabilityInvoker for DoubleCapability {
         &self,
         _cap_id: Hash,
         args: Vec<Value>,
-        _store: &mut SubstanceStore,
+        _store: &mut dyn Store,
     ) -> Result<Value, ignis0::value::TrapKind> {
         match args.as_slice() {
             [Value::Nat(n)] => Ok(Value::Nat(n * 2)),
