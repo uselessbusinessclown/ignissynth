@@ -44,7 +44,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::store::SubstanceStore;
+use crate::store::Store;
 use crate::value::{Hash, TrapKind, Value};
 
 // ── Trait ────────────────────────────────────────────────────────────
@@ -66,7 +66,7 @@ pub trait CapabilityInvoker: Send + Sync {
         &self,
         cap_id: Hash,
         args: Vec<Value>,
-        store: &mut SubstanceStore,
+        store: &mut dyn Store,
     ) -> Result<Value, TrapKind>;
 }
 
@@ -101,7 +101,7 @@ impl CapabilityRegistry {
         &self,
         cap_id: Hash,
         args: Vec<Value>,
-        store: &mut SubstanceStore,
+        store: &mut dyn Store,
     ) -> Result<Value, TrapKind> {
         match self.invokers.get(&cap_id) {
             Some(invoker) => invoker.invoke(cap_id, args, store),
@@ -327,7 +327,7 @@ impl CapabilityInvoker for InferenceCapability {
         &self,
         _cap_id: Hash,
         args: Vec<Value>,
-        store: &mut SubstanceStore,
+        store: &mut dyn Store,
     ) -> Result<Value, TrapKind> {
         // args[0] = prompt_hash, args[1] = params_hash (or BOTTOM_HASH)
         if args.is_empty() {
@@ -626,7 +626,7 @@ impl CapabilityInvoker for GpuComputeCapability {
         &self,
         _cap_id: Hash,
         args: Vec<Value>,
-        store: &mut SubstanceStore,
+        store: &mut dyn Store,
     ) -> Result<Value, TrapKind> {
         // args[0] = shader_hash (Bytes/v1 of WGSL source)
         // args[1] = input_hash  (Bytes/v1 of input bytes)
@@ -699,7 +699,7 @@ impl CapabilityInvoker for InferenceCapability {
     fn name(&self) -> &str {
         "Synthesis/infer/v1 (disabled — compile with --features infer)"
     }
-    fn invoke(&self, _: Hash, _: Vec<Value>, _: &mut SubstanceStore) -> Result<Value, TrapKind> {
+    fn invoke(&self, _: Hash, _: Vec<Value>, _: &mut dyn Store) -> Result<Value, TrapKind> {
         Err(TrapKind::NotImplemented(
             "Synthesis/infer: not compiled in; rebuild ignis0 with --features infer".into(),
         ))
@@ -722,7 +722,7 @@ impl CapabilityInvoker for GpuComputeCapability {
     fn name(&self) -> &str {
         "Compute/gpu/v1 (disabled — compile with --features gpu)"
     }
-    fn invoke(&self, _: Hash, _: Vec<Value>, _: &mut SubstanceStore) -> Result<Value, TrapKind> {
+    fn invoke(&self, _: Hash, _: Vec<Value>, _: &mut dyn Store) -> Result<Value, TrapKind> {
         Err(TrapKind::NotImplemented(
             "Compute/gpu: not compiled in; rebuild ignis0 with --features gpu".into(),
         ))

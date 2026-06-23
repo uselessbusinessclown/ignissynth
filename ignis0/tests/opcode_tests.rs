@@ -14,7 +14,7 @@ use ignis0::{
     exec::{ExecState, ExecVerdict, Interpreter},
     opcode::Opcode,
     registry::{FormRegistry, LoadedForm},
-    store::SubstanceStore,
+    store::{Store, SubstanceStore},
     value::{Hash, TrapKind, Value},
     wire::{encode_form, Form},
 };
@@ -32,14 +32,14 @@ impl CapabilityInvoker for StubCap {
         &self,
         _cap_id: Hash,
         _args: Vec<Value>,
-        _store: &mut SubstanceStore,
+        _store: &mut dyn Store,
     ) -> Result<Value, TrapKind> {
         Ok(Value::Unit)
     }
 }
 
 /// Build a single-opcode Form + RET and run it to verdict.
-fn run_single(op: Opcode, stack_inputs: Vec<Value>, store: &mut SubstanceStore) -> ExecVerdict {
+fn run_single(op: Opcode, stack_inputs: Vec<Value>, store: &mut dyn Store) -> ExecVerdict {
     // Build: push inputs in argument order then execute the opcode.
     // ExecState::new reverses inputs so first input ends up on top —
     // that's arg0 on top, which is what single-arg opcodes expect.
@@ -54,7 +54,7 @@ fn run_single(op: Opcode, stack_inputs: Vec<Value>, store: &mut SubstanceStore) 
 fn run_with_registry<'a>(
     op: Opcode,
     stack_inputs: Vec<Value>,
-    store: &'a mut SubstanceStore,
+    store: &'a mut dyn Store,
     reg: &'a FormRegistry,
 ) -> ExecVerdict {
     let code = vec![op, Opcode::Ret];
@@ -67,7 +67,7 @@ fn run_with_registry<'a>(
 fn run_with_capreg(
     op: Opcode,
     stack_inputs: Vec<Value>,
-    store: &mut SubstanceStore,
+    store: &mut dyn Store,
     cap_reg: Arc<CapabilityRegistry>,
 ) -> ExecVerdict {
     let code = vec![op, Opcode::Ret];

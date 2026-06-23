@@ -3,8 +3,8 @@
 > **Generated artifact.** Do not edit by hand. Regenerate with:
 > `bash tools/status/build-status.sh`
 >
-> Generated at: `2026-06-14T16:59:58Z`
-> From commit:  `9ca1ce5`
+> Generated at: `2026-06-23T19:06:05Z`
+> From commit:  `8db9b93`
 >
 > This page is the single source for repo status numbers. Other
 > docs (READMEs, ROADMAP narrative) should link here rather than
@@ -91,12 +91,12 @@ Total invariants in `synthesis/INVARIANTS.md`: **12**
 | `v0.2.2-ignis0-wire` | ✓ done (`8353185` + post-merge iteration) |
 | `v0.2.3-ignis0-fp` | ✓ done |
 | `v0.2.4-ignis0-cap` | ✓ done |
-| `v0.2.5-ignis0-store` | **in progress** — `Store` trait + persistent `TrieStore` HAMT backend landed in `ignis0/src/store.rs` (Bagwell layout, collapse rule, substitutive digest proven by permutation/removal-order tests). Remaining: repoint `exec::Interp` / `fixed_point` / `Capability` from the concrete `SubstanceStore` to the trait (or `TrieStore`) and re-baseline the fixed-point digest |
+| `v0.2.5-ignis0-store` | ✓ done — `Store` trait + persistent `TrieStore` HAMT backend landed; interpreter, `fixed_point`, and `Capability` repointed from concrete `SubstanceStore` to `&mut dyn Store` so either backend can be used interchangeably |
 | `v0.3.0-compute` | ✓ done (`d28b466`) — landed out of order; schedule above is corrected |
 | `v0.3.0-envelope+ci` | ✓ done (`e954a27`) |
 | `v0.3.0-build-int` | ✓ done (`a130590`) |
 
-**Milestone summary:** 8 done · 0 blocked · 1 other
+**Milestone summary:** 9 done · 0 blocked · 0 other
 
 ## Drift detected
 

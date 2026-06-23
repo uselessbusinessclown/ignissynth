@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-06-14T16:59:58Z",
-  "generated_from_commit": "9ca1ce5",
+  "generated_at": "2026-06-23T19:06:05Z",
+  "generated_from_commit": "8db9b93",
   "seed": {
     "version": "0.1.1-pre-ignition"
   },
@@ -133,8 +133,8 @@
       },
       {
         "tag": "v0.2.5-ignis0-store",
-        "status": "unknown",
-        "raw": "**in progress** — `Store` trait + persistent `TrieStore` HAMT backend landed in `ignis0/src/store.rs` (Bagwell layout, collapse rule, substitutive digest proven by permutation/removal-order tests). Remaining: repoint `exec::Interp` / `fixed_point` / `Capability` from the concrete `SubstanceStore` to the trait (or `TrieStore`) and re-baseline the fixed-point digest"
+        "status": "done",
+        "raw": "✓ done — `Store` trait + persistent `TrieStore` HAMT backend landed; interpreter, `fixed_point`, and `Capability` repointed from concrete `SubstanceStore` to `&mut dyn Store` so either backend can be used interchangeably"
       },
       {
         "tag": "v0.3.0-compute",
@@ -152,9 +152,9 @@
         "raw": "✓ done (`a130590`)"
       }
     ],
-    "done": 8,
+    "done": 9,
     "blocked": 0,
-    "other": 1
+    "other": 0
   },
   "drift": []
 }

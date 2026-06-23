@@ -29,9 +29,9 @@
 //!
 //! ## Design notes
 //!
-//! - The interpreter borrows the `SubstanceStore` mutably. The
-//!   alternative (ExecState owns the store) would prevent sharing
-//!   a store across invocations, which is exactly what the
+//! - The interpreter borrows the store mutably through the `Store`
+//!   trait. The alternative (ExecState owns the store) would prevent
+//!   sharing a store across invocations, which is exactly what the
 //!   fixed-point check's indirect cases need.
 //!
 //! - `locals_n` is per-Form. IL.md's Form layout carries a
@@ -48,7 +48,7 @@ use std::sync::Arc;
 use crate::capability::CapabilityRegistry;
 use crate::opcode::Opcode;
 use crate::registry::FormRegistry;
-use crate::store::SubstanceStore;
+use crate::store::Store;
 use crate::value::{Hash, TrapKind, Value};
 
 /// A single activation frame. Each CALL pushes one of these;
@@ -134,9 +134,12 @@ pub enum ExecVerdict {
 }
 
 /// The interpreter. Holds a mutable reference to a store so
-/// opcodes like SEAL and READ can reach it.
+/// opcodes like SEAL and READ can reach it. The store is accessed
+/// through the `Store` trait so the interpreter works with either
+/// the scaffold `SubstanceStore` or the persistent `TrieStore`
+/// (or any future cold-weave backend).
 pub struct Interpreter<'a> {
-    pub store: &'a mut SubstanceStore,
+    pub store: &'a mut dyn Store,
     pub registry: Option<&'a FormRegistry>,
     /// Capability registry for INVOKE dispatch. `None` means every
     /// INVOKE traps `ENotHeld`.
@@ -147,7 +150,7 @@ pub struct Interpreter<'a> {
 }
 
 impl<'a> Interpreter<'a> {
-    pub fn new(store: &'a mut SubstanceStore) -> Self {
+    pub fn new(store: &'a mut dyn Store) -> Self {
         Self {
             store,
             registry: None,
