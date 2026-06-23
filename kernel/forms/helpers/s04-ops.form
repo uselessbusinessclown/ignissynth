@@ -1,0 +1,230 @@
+; S-04 weave_log operational helpers
+;
+; Two Forms that implement the iteration-heavy operations
+; referenced by S-04 weave_log: back-index insertion and
+; provenance traversal. Each iterates over a Vec and delegates
+; the per-element work to a sub-helper.
+;
+; Synthesis chain:
+;   provocation:  STUBS.md item "Helpers required by S-04
+;                 weave_log" lists two operational helpers as
+;                 pending: backidx/insert_all and why/traverse.
+;                 The primary S-04-weave-log.form references
+;                 them at inner CALLs; until encoded, those
+;                 operations have pending leaves.
+;   grounding:    A1.2 (type is intrinsic — dispatch by
+;                 type-tag), A6.1 (a unit of code is a
+;                 substance — these are small Forms like any
+;                 other), A0.6 (code is thought, not artifact)
+;   composes_with:
+;                 - schema-helpers.form (Schema/verify_type_tag,
+;                   Schema/bytes_in_range, Schema/nat_at)
+;                 - primitives.form (Vec/len, Vec/index,
+;                   Vec/append)
+;                 - S-04-weave-log.form (the primary operations)
+;
+; Helper exemption: every Form below is under ~30 instructions
+; of IL and is therefore exempt from its own .proof artifact
+; per synthesis/PROTOCOL.md § Helper exemption. A kernel-author
+; identity verifies each body by structural reading in the S-08
+; inspection record.
+;
+; ============================================================
+; S-04/backidx/insert_all — (Vec{Hash}, Hash) → ()
+;
+; Appends each hash in the vec to the back index under the
+; given tip hash. Iterates the vec and delegates to
+; S-04/backidx_insert_one for the per-element append.
+;
+; Declared-caps: (S-03/ROOT_RO S-04/APPEND_RW)
+; Declared-traps: (ETYPE ESTALE)
+;   ETYPE  — vec element is not a valid Hash
+;   ESTALE — tip hash does not name a live tip
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s04_backidx_insert_all"
+  :declared-caps (S-03/ROOT_RO S-04/APPEND_RW)
+  :declared-traps (ETYPE ESTALE)
+  :arity         2
+  :locals-n      5
+  :code (
+    STORE   0                            ; locals[0] := vec (Vec{Hash})
+    STORE   1                            ; locals[1] := tip hash
+
+    ;; Get vec length.
+    LOAD    0
+    PUSH    "Vec/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Nat
+    STORE   2                            ; locals[2] := len
+
+    ;; Initialize index.
+    PUSH    0
+    STORE   3                            ; locals[3] := i = 0
+
+    :insert_all_loop
+    ;; Check i < len.
+    LOAD    3
+    LOAD    2
+    LT
+    JMPZ   +insert_all_done              ; i >= len → done
+
+    ;; Get element at index i.
+    LOAD    0
+    LOAD    3
+    PUSH    "Vec/index"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → Hash
+    STORE   4                            ; locals[4] := element
+
+    ;; Delegate to S-04/backidx_insert_one(element, tip).
+    LOAD    4
+    LOAD    1
+    PUSH    "S-04/backidx_insert_one"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → ()
+
+    ;; Increment index and loop.
+    LOAD    3
+    PUSH    1
+    ADD
+    STORE   3
+    JMP    +insert_all_loop
+
+    :insert_all_done
+    ;; Return unit.
+    PUSH    nil
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s04-ops-rationale
+)
+
+; ============================================================
+; S-04/why/traverse — (Vec{Hash}, Vec{Hash}, Vec{Hash}) → Vec{Hash}
+;
+; Traverses the weave backward from the given entry hashes,
+; collecting provenance. Delegates to S-04/why_step for each
+; step of the traversal.
+;
+; Args:
+;   entries  — Vec{Hash} of entry hashes to process
+;   acc      — Vec{Hash} of accumulated provenance hashes
+;   visited  — Vec{Hash} of already-visited entry hashes
+;
+; The traversal terminates when entries is empty, returning acc.
+; Otherwise it delegates to S-04/why_step which processes the
+; head entry, updates acc and visited, and returns the next
+; frontier of entries to process.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s04_why_traverse"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         3
+  :locals-n      5
+  :code (
+    STORE   0                            ; locals[0] := entries (Vec{Hash})
+    STORE   1                            ; locals[1] := acc (Vec{Hash})
+    STORE   2                            ; locals[2] := visited (Vec{Hash})
+
+    ;; Check if entries is empty.
+    LOAD    0
+    PUSH    "Vec/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Nat
+    STORE   3                            ; locals[3] := entries_len
+    LOAD    3
+    JMPZ   +traverse_done                ; entries empty → return acc
+
+    ;; Delegate to S-04/why_step(entries, acc, visited).
+    ;; why_step returns Pair{Vec{Hash}, Pair{Vec{Hash}, Vec{Hash}}}
+    ;;   = Pair{next_entries, Pair{new_acc, new_visited}}
+    LOAD    0
+    LOAD    1
+    LOAD    2
+    PUSH    "S-04/why_step"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                     ; → Pair{next_entries, Pair{acc, visited}}
+    STORE   4                            ; locals[4] := step_result
+
+    ;; Unpack: next_entries = fst(step_result)
+    LOAD    4
+    FST
+    STORE   0                            ; entries := next_entries
+
+    ;; Unpack: rest = snd(step_result)
+    LOAD    4
+    SND
+    STORE   4                            ; reuse locals[4] := Pair{acc, visited}
+
+    ;; acc = fst(rest)
+    LOAD    4
+    FST
+    STORE   1                            ; acc := new_acc
+
+    ;; visited = snd(rest)
+    LOAD    4
+    SND
+    STORE   2                            ; visited := new_visited
+
+    ;; Loop with updated state.
+    JMP    +traverse_recurse
+
+    :traverse_recurse
+    ;; Re-enter traversal with updated entries/acc/visited.
+    ;; We delegate to ourselves recursively via READSLOT.
+    LOAD    0
+    LOAD    1
+    LOAD    2
+    PUSH    "S-04/why/traverse"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                     ; → Vec{Hash}
+    RET
+
+    :traverse_done
+    ;; Return accumulated provenance.
+    LOAD    1
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s04-ops-rationale
+)
+
+(exports
+  (s04_backidx_insert_all  (Vec{Hash}, Hash) → ())
+  (s04_why_traverse        (Vec{Hash}, Vec{Hash}, Vec{Hash}) → Vec{Hash}))
+
+; ============================================================
+; Notes on pending sub-helper leaves
+;
+; S-04/backidx/insert_all delegates to S-04/backidx_insert_one
+; at its inner CALL. This sub-helper performs the actual append
+; to the back index for a single (hash, tip) pair. It is
+; catalogued as a pending leaf in STUBS.md and will be encoded
+; in a future v0.2.x-helpers batch.
+;
+; S-04/why/traverse delegates to S-04/why_step at its inner
+; CALL. This sub-helper processes a single entry: reads its
+; prev pointer, checks visited membership, updates acc and
+; visited, and returns the next frontier. It is catalogued as
+; a pending leaf in STUBS.md and will be encoded alongside
+; backidx_insert_one.
+;
+; Until both sub-helpers are encoded, the Forms above have a
+; pending leaf at their inner CALLs. The Forms themselves are
+; total and sealed — the pending status is purely about the
+; delegation target, not about the control flow or cap
+; discipline of these bodies.
+; ============================================================

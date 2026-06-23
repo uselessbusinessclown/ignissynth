@@ -262,7 +262,9 @@ jobs:
           # (16 Trie/TrieLeaf/TrieBranch schema helpers in trie-schema.form).
           # Bumped 151 → 166 after the treap schema sub-helpers batch
           # (15 Treap/TreapBranch/CapEntry schema helpers in treap-schema.form).
-          baseline=166
+          # Bumped 166 → 189 after the combined forest/S-04/S-06/S-08 batch
+          # (14 Forest schema + 2 S-04 ops + 5 S-06 ops + 2 S-08 ops).
+          baseline=189
           if [ "$encoded" -lt "$baseline" ]; then
             echo "ERROR: encoded helper count ($encoded) is below baseline ($baseline)" >&2
             exit 1

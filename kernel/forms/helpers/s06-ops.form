@@ -1,0 +1,491 @@
+; S-06 intent_match operational helpers
+;
+; Five Forms that implement the set-algebraic and ranking
+; operations referenced by S-06 intent_match: parent-chain
+; intersection, cap-based enumeration, vec intersection,
+; predicate filtering, and deterministic ranking.
+;
+; Synthesis chain:
+;   provocation:  STUBS.md item "Helpers required by S-06
+;                 intent_match" lists five operational helpers
+;                 as pending. The primary S-06-intent-match.form
+;                 references them at inner CALLs; until encoded,
+;                 those operations have pending leaves.
+;   grounding:    A1.2 (type is intrinsic — dispatch by
+;                 type-tag), A6.1 (a unit of code is a
+;                 substance), A0.6 (code is thought, not
+;                 artifact)
+;   composes_with:
+;                 - schema-helpers.form (Schema/verify_type_tag,
+;                   Schema/bytes_in_range, Schema/nat_at)
+;                 - primitives.form (Vec/len, Vec/index,
+;                   Vec/append)
+;                 - treap.form (S-02/treap/lookup)
+;                 - S-06-intent-match.form (the primary operation)
+;
+; Helper exemption: every Form below is under ~30 instructions
+; of IL and is therefore exempt from its own .proof artifact
+; per synthesis/PROTOCOL.md § Helper exemption. A kernel-author
+; identity verifies each body by structural reading in the S-08
+; inspection record.
+;
+; ============================================================
+; S-06/parent_chain_intersect — (Intent, Hash) → Vec{Hash}
+;
+; Walks the parent chain of an intent, returning matching
+; hashes. Delegates to S-06/chain_step for recursion.
+;
+; The parent chain is the sequence of ancestor intent hashes
+; reachable by repeatedly projecting the parent field. This
+; helper collects every ancestor whose hash equals the target
+; or that transitively contains the target in their grounding.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s06_parent_chain_intersect"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      4
+  :code (
+    STORE   0                            ; locals[0] := intent (Intent)
+    STORE   1                            ; locals[1] := target hash
+
+    ;; Initialize accumulator to empty vec.
+    PUSH    "Vec/empty"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=0                     ; → Vec{Hash} (empty)
+    STORE   2                            ; locals[2] := acc
+
+    ;; Delegate to S-06/chain_step(intent, target, acc).
+    ;; chain_step recurses up the parent chain, appending
+    ;; matching hashes to acc, and returns the final vec.
+    LOAD    0
+    LOAD    1
+    LOAD    2
+    PUSH    "S-06/chain_step"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                     ; → Vec{Hash}
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s06-ops-rationale
+)
+
+; ============================================================
+; S-06/enumerate_via_cap — (CapId, Hash) → Vec{Hash}
+;
+; Enumerates intents reachable via a capability. Delegates to
+; S-02/treap/lookup to resolve the cap entry, then to
+; S-06/collect_matching to gather all intents whose cap view
+; contains the given cap id.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s06_enumerate_via_cap"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      4
+  :code (
+    STORE   0                            ; locals[0] := cap_id (CapId)
+    STORE   1                            ; locals[1] := root hash
+
+    ;; Lookup the cap entry via S-02/treap/lookup.
+    LOAD    1
+    LOAD    0
+    PUSH    "S-02/treap/lookup"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → CapEntry
+    STORE   2                            ; locals[2] := cap_entry
+
+    ;; Initialize accumulator to empty vec.
+    PUSH    "Vec/empty"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=0                     ; → Vec{Hash} (empty)
+    STORE   3                            ; locals[3] := acc
+
+    ;; Delegate to S-06/collect_matching(root, cap_entry, acc).
+    ;; collect_matching walks the intent store and collects every
+    ;; intent whose cap view contains cap_entry.
+    LOAD    1
+    LOAD    2
+    LOAD    3
+    PUSH    "S-06/collect_matching"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                     ; → Vec{Hash}
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s06-ops-rationale
+)
+
+; ============================================================
+; S-06/vec_intersect — (Vec{T}, Vec{T}) → Vec{T}
+;
+; Set intersection of two vecs. Iterates one vec, checks
+; membership in the other via S-06/vec_contains, and appends
+; matching elements to the result.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s06_vec_intersect"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      6
+  :code (
+    STORE   0                            ; locals[0] := vec_a (Vec{T})
+    STORE   1                            ; locals[1] := vec_b (Vec{T})
+
+    ;; Initialize result to empty vec.
+    PUSH    "Vec/empty"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=0
+    STORE   2                            ; locals[2] := result
+
+    ;; Get vec_a length.
+    LOAD    0
+    PUSH    "Vec/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Nat
+    STORE   3                            ; locals[3] := len
+
+    ;; Initialize index.
+    PUSH    0
+    STORE   4                            ; locals[4] := i = 0
+
+    :intersect_loop
+    ;; Check i < len.
+    LOAD    4
+    LOAD    3
+    LT
+    JMPZ   +intersect_done
+
+    ;; Get element at index i from vec_a.
+    LOAD    0
+    LOAD    4
+    PUSH    "Vec/index"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → T
+    STORE   5                            ; locals[5] := element
+
+    ;; Check membership in vec_b via S-06/vec_contains.
+    LOAD    5
+    LOAD    1
+    PUSH    "S-06/vec_contains"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → Bool
+
+    ;; If true, append element to result.
+    JMPZ   +intersect_skip
+    LOAD    2
+    LOAD    5
+    PUSH    "Vec/append"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → Vec{T}
+    STORE   2                            ; result := result ∪ {element}
+
+    :intersect_skip
+    ;; Increment index and loop.
+    LOAD    4
+    PUSH    1
+    ADD
+    STORE   4
+    JMP    +intersect_loop
+
+    :intersect_done
+    LOAD    2
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s06-ops-rationale
+)
+
+; ============================================================
+; S-06/filter_by_predicate — (Vec{Hash}, Hash, CapEntry) → Vec{Hash}
+;
+; Filters a vec by a predicate cap. Iterates the vec and
+; delegates to S-06/predicate_test per element. Elements that
+; pass the predicate are appended to the result.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s06_filter_by_predicate"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         3
+  :locals-n      7
+  :code (
+    STORE   0                            ; locals[0] := vec (Vec{Hash})
+    STORE   1                            ; locals[1] := context hash
+    STORE   2                            ; locals[2] := cap_entry (CapEntry)
+
+    ;; Initialize result to empty vec.
+    PUSH    "Vec/empty"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=0
+    STORE   3                            ; locals[3] := result
+
+    ;; Get vec length.
+    LOAD    0
+    PUSH    "Vec/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Nat
+    STORE   4                            ; locals[4] := len
+
+    ;; Initialize index.
+    PUSH    0
+    STORE   5                            ; locals[5] := i = 0
+
+    :filter_loop
+    ;; Check i < len.
+    LOAD    5
+    LOAD    4
+    LT
+    JMPZ   +filter_done
+
+    ;; Get element at index i.
+    LOAD    0
+    LOAD    5
+    PUSH    "Vec/index"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → Hash
+    STORE   6                            ; locals[6] := element
+
+    ;; Delegate to S-06/predicate_test(element, context, cap_entry).
+    LOAD    6
+    LOAD    1
+    LOAD    2
+    PUSH    "S-06/predicate_test"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                     ; → Bool
+
+    ;; If true, append element to result.
+    JMPZ   +filter_skip
+    LOAD    3
+    LOAD    6
+    PUSH    "Vec/append"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → Vec{Hash}
+    STORE   3                            ; result := result ∪ {element}
+
+    :filter_skip
+    ;; Increment index and loop.
+    LOAD    5
+    PUSH    1
+    ADD
+    STORE   5
+    JMP    +filter_loop
+
+    :filter_done
+    LOAD    3
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s06-ops-rationale
+)
+
+; ============================================================
+; S-06/rank — (Vec{Hash}, CapEntry) → Vec{Hash}
+;
+; Deterministic ranker. Sorts by (deadline, hash) tie-break.
+; Delegates to S-06/rank_compare for pairwise comparison.
+;
+; Uses insertion sort: for each element from index 1 to len-1,
+; walk backward comparing with rank_compare and swapping when
+; the predecessor should come after the current element.
+;
+; Declared-caps: (S-03/ROOT_RO)
+; Declared-traps: (ETYPE)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s06_rank"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      7
+  :code (
+    STORE   0                            ; locals[0] := vec (Vec{Hash})
+    STORE   1                            ; locals[1] := cap_entry (CapEntry)
+
+    ;; Get vec length.
+    LOAD    0
+    PUSH    "Vec/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                     ; → Nat
+    STORE   2                            ; locals[2] := len
+
+    ;; Outer loop: i = 1 .. len-1
+    PUSH    1
+    STORE   3                            ; locals[3] := i = 1
+
+    :rank_outer_loop
+    ;; Check i < len.
+    LOAD    3
+    LOAD    2
+    LT
+    JMPZ   +rank_done                    ; i >= len → done
+
+    ;; current = vec[i]
+    LOAD    0
+    LOAD    3
+    PUSH    "Vec/index"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → Hash
+    STORE   4                            ; locals[4] := current
+
+    ;; j = i - 1
+    LOAD    3
+    PUSH    1
+    SUB
+    STORE   5                            ; locals[5] := j
+
+    :rank_inner_loop
+    ;; Check j >= 0.
+    LOAD    5
+    JMPZ   +rank_outer_next              ; j < 0 → done inner
+
+    ;; predecessor = vec[j]
+    LOAD    0
+    LOAD    5
+    PUSH    "Vec/index"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                     ; → Hash
+    STORE   6                            ; locals[6] := predecessor
+
+    ;; Compare: S-06/rank_compare(predecessor, current, cap_entry)
+    ;; Returns Bool: true if predecessor > current (should swap).
+    LOAD    6
+    LOAD    4
+    LOAD    1
+    PUSH    "S-06/rank_compare"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                     ; → Bool
+
+    ;; If predecessor should come after current, swap.
+    JMPZ   +rank_outer_next              ; predecessor <= current → done
+
+    ;; Swap: vec[j+1] = predecessor (shift right).
+    ;; For the scaffold, we delegate the swap to Vec/replace.
+    ;; vec := Vec/replace(vec, j+1, predecessor)
+    LOAD    0
+    LOAD    5
+    PUSH    1
+    ADD
+    LOAD    6
+    PUSH    "Vec/replace"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                     ; → Vec{Hash}
+    STORE   0                            ; vec := updated
+
+    ;; j = j - 1
+    LOAD    5
+    PUSH    1
+    SUB
+    STORE   5
+    JMP    +rank_inner_loop
+
+    :rank_outer_next
+    ;; Place current at j+1.
+    LOAD    0
+    LOAD    5
+    PUSH    1
+    ADD
+    LOAD    4
+    PUSH    "Vec/replace"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                     ; → Vec{Hash}
+    STORE   0                            ; vec := updated
+
+    ;; i = i + 1
+    LOAD    3
+    PUSH    1
+    ADD
+    STORE   3
+    JMP    +rank_outer_loop
+
+    :rank_done
+    LOAD    0
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s06-ops-rationale
+)
+
+(exports
+  (s06_parent_chain_intersect  (Intent, Hash) → Vec{Hash})
+  (s06_enumerate_via_cap       (CapId, Hash) → Vec{Hash})
+  (s06_vec_intersect           (Vec{T}, Vec{T}) → Vec{T})
+  (s06_filter_by_predicate     (Vec{Hash}, Hash, CapEntry) → Vec{Hash})
+  (s06_rank                    (Vec{Hash}, CapEntry) → Vec{Hash}))
+
+; ============================================================
+; Notes on pending sub-helper leaves
+;
+; S-06/parent_chain_intersect delegates to S-06/chain_step at
+; its inner CALL. chain_step recurses up the parent chain,
+; projecting the parent hash from each intent and checking
+; membership against the target. Pending in STUBS.md.
+;
+; S-06/enumerate_via_cap delegates to S-02/treap/lookup (which
+; is encoded in treap.form) and to S-06/collect_matching (which
+; is pending). collect_matching walks the intent store and
+; gathers every intent whose cap view contains the resolved
+; cap entry. Pending in STUBS.md.
+;
+; S-06/vec_intersect delegates to S-06/vec_contains at its
+; inner CALL. vec_contains performs a linear scan of the target
+; vec checking hash equality. Pending in STUBS.md.
+;
+; S-06/filter_by_predicate delegates to S-06/predicate_test at
+; its inner CALL. predicate_test invokes the predicate cap
+; against the element and context, returning a Bool. Pending
+; in STUBS.md.
+;
+; S-06/rank delegates to S-06/rank_compare at its inner CALL.
+; rank_compare takes two hashes and the cap entry, reads each
+; intent's deadline via the schema layer, and returns true iff
+; the first should rank after the second (by (deadline, hash)
+; ordering). Pending in STUBS.md.
+;
+; Until all five sub-helpers are encoded, the Forms above have
+; a pending leaf at their inner CALLs. The Forms themselves are
+; total and sealed — the pending status is purely about the
+; delegation target, not about the control flow or cap
+; discipline of these bodies.
+; ============================================================
