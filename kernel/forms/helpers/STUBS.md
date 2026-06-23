@@ -193,10 +193,10 @@ instructions.
 
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
-| `Parser/check_record_header`    | `(Bytes, Bytes, Nat) → Bool`               | pending  |
-| `Parser/read_hash_at`           | `(Bytes, Nat) → Hash`                      | pending  |
-| `Parser/read_nat4_at`           | `(Bytes, Nat) → Nat`                       | pending  |
-| `Parser/read_nat8_at`           | `(Bytes, Nat) → Nat`                       | pending  |
+| `Parser/check_record_header`    | `(Bytes, Bytes, Nat) → Bool`               | encoded (s07-ops.form)  |
+| `Parser/read_hash_at`           | `(Bytes, Nat) → Hash`                      | encoded (s07-ops.form)  |
+| `Parser/read_nat4_at`           | `(Bytes, Nat) → Nat`                       | encoded (s07-ops.form)  |
+| `Parser/read_nat8_at`           | `(Bytes, Nat) → Nat`                       | encoded (s07-ops.form)  |
 
 ### Third-generation intrinsics (kernel-level Bytes/Nat/Vec ops)
 
@@ -261,7 +261,7 @@ schema helper depends on them.
 
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
-| `S-03/canon`                    | `(TypeTag, Value) → Hash`                  | pending  |
+| `S-03/canon`                    | `(TypeTag, Value) → Hash`                  | encoded (s09-ops.form) |
 | `S-03/trie/lookup`              | `(TrieRoot, Hash) → Pair{Bool, Cell}`      | encoded  |
 | `S-03/trie/insert`              | `(TrieRoot, Hash, Cell) → TrieRoot`        | encoded  |
 | `S-03/trie/bump_pin`            | `(TrieRoot, Hash) → TrieRoot`              | encoded  |
@@ -363,8 +363,8 @@ CALL" convention from `trie.form`).
 
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
-| `S-02/types/is_root_cap`        | `(Bytes) → Bool`                           | pending  |
-| `S-02/lemma/i2_check`           | `(Cap, Rights, Predicate, Nat, Nat) → Bool`| pending  |
+| `S-02/types/is_root_cap`        | `(Bytes) → Bool`                           | encoded (s09-ops.form) |
+| `S-02/lemma/i2_check`           | `(Cap, Rights, Predicate, Nat, Nat) → Bool`| encoded (s09-ops.form) |
 | `S-02/proj/holder`              | `(CapEntry) → MindId`                      | encoded  |
 | `S-02/proj/generation`          | `(CapEntry) → Nat`                         | encoded  |
 
@@ -423,9 +423,9 @@ delegate to the forest schema sub-helper layer below (the same
 
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
-| `S-05/append_dissolved_entries` | `(Vec{AttId}) → ()`                        | pending  |
-| `S-05/tick/compute_yielded_eligible` | `(ForestRoot) → Vec{AttId}`           | pending  |
-| `S-05/tick/grant_each`          | `(Vec{AttId}) → ()`                        | pending  |
+| `S-05/append_dissolved_entries` | `(Vec{AttId}) → ()`                        | encoded (s09-ops.form) |
+| `S-05/tick/compute_yielded_eligible` | `(ForestRoot) → Vec{AttId}`           | encoded (s09-ops.form) |
+| `S-05/tick/grant_each`          | `(Vec{AttId}) → ()`                        | encoded (s09-ops.form) |
 | `S-05/proj/cap_id`              | `(AttentionRecord) → CapId`                | encoded  |
 | `S-05/proj/mind_id`             | `(AttentionRecord) → MindId`               | encoded  |
 | `S-05/proj/budget_remaining`    | `(AttentionRecord) → Nat`                  | encoded  |
@@ -461,22 +461,22 @@ ordering.
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
 | `S-07/parse_form`               | `(Bytes) → ParsedForm`                     | encoded (parser.form; depends on Parser/* primitives) |
-| `S-07/interp/run`               | `(ExecState) → Pair{Verdict, ExecState}`   | pending  |
+| `S-07/interp/run`               | `(ExecState) → Pair{Verdict, ExecState}`   | encoded (s07-ops.form)  |
 | `S-07/parse_exec_state`         | `(Bytes) → ExecState`                      | encoded (in record-parsers.form) |
-| `S-07/finalise_invocation`      | `(Pair{Verdict, ExecState}) → InvocationResult` | pending |
-| `S-07/canon/opcode_fold`        | `(ParsedForm) → ParsedForm`                | pending  |
-| `S-07/canon/sort_blocks`        | `(ParsedForm) → ParsedForm`                | pending  |
-| `S-07/canon/emit`               | `(ParsedForm) → Bytes`                     | pending  |
+| `S-07/finalise_invocation`      | `(Pair{Verdict, ExecState}) → InvocationResult` | encoded (s07-ops.form) |
+| `S-07/canon/opcode_fold`        | `(ParsedForm) → ParsedForm`                | encoded (s07-ops.form)  |
+| `S-07/canon/sort_blocks`        | `(ParsedForm) → ParsedForm`                | encoded (s07-ops.form)  |
+| `S-07/canon/emit`               | `(ParsedForm) → Bytes`                     | encoded (s07-ops.form)  |
 | `S-07/proj/arity`               | `(ParsedForm) → Nat`                       | encoded  |
 | `S-07/proj/declared_caps`       | `(ParsedForm) → Vec{CapId}`                | encoded  |
 | `S-07/proj/locals_n`            | `(ParsedForm) → Nat`                       | encoded  |
 | `S-07/proj/return_value`        | `(ExecState) → Hash`                       | encoded  |
-| `S-07/zeros`                    | `(Nat) → Vec{Value}`                       | pending  |
-| `S-07/reverse`                  | `(Vec{T}) → Vec{T}`                        | pending  |
-| `S-07/spent`                    | `(ExecState, ExecState) → Nat`             | pending  |
-| `S-07/check/cap_view_contains`  | `(Vec{CapId}, AttId) → Bool`               | pending  |
-| `S-07/vec/len`                  | `(Vec{T}) → Nat`                           | pending  |
-| `S-07/vec/index`                | `(Vec{T}, Nat) → T`                        | pending  |
+| `S-07/zeros`                    | `(Nat) → Vec{Value}`                       | encoded (s07-ops.form)  |
+| `S-07/reverse`                  | `(Vec{T}) → Vec{T}`                        | encoded (s07-ops.form)  |
+| `S-07/spent`                    | `(ExecState, ExecState) → Nat`             | encoded (s07-ops.form)  |
+| `S-07/check/cap_view_contains`  | `(Vec{CapId}, AttId) → Bool`               | encoded (s07-ops.form)  |
+| `S-07/vec/len`                  | `(Vec{T}) → Nat`                           | encoded (s07-ops.form)  |
+| `S-07/vec/index`                | `(Vec{T}, Nat) → T`                        | encoded (s07-ops.form)  |
 
 `S-07/interp/run` is the load-bearing one: it is the 35-opcode
 dispatch table. Its body has one case per IL opcode, each case
@@ -503,47 +503,47 @@ operational form of the IL specification.
 
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
-| `S-09/parse_provocation`        | `(Bytes) → Provocation`                    | pending  |
+| `S-09/parse_provocation`        | `(Bytes) → Provocation`                    | encoded (s09-ops.form) |
 | `S-09/proj/meta_budget`         | `(Provocation) → Nat`                      | encoded  |
 | `S-09/proj/author`              | `(Provocation) → MindId`                   | encoded  |
 | `S-09/proj/generator_form`      | `(Provocation) → Hash`                     | encoded  |
 | `S-09/proj/binding_name`        | `(Provocation) → Hash`                     | encoded  |
-| `S-09/grounding/derive`         | `(Provocation) → Stage2Record`             | pending  |
+| `S-09/grounding/derive`         | `(Provocation) → Stage2Record`             | encoded (s09-ops.form) |
 | `S-09/grounding/proj/axioms`    | `(Stage2Record) → Vec{AxiomId}`            | encoded  |
-| `S-09/run_in_subattention`      | `(AttId, Hash, Stage2Record) → Vec{Candidate}` | pending |
-| `S-09/stage4/simulate_all`      | `(Vec{Candidate}, AttId) → Vec{TrialRecord}` | pending |
-| `S-09/stage4/any_passed`        | `(Vec{TrialRecord}) → Bool`                | pending  |
-| `S-09/stage5/select`            | `(Vec{Candidate}, Vec{TrialRecord}, Provocation) → Stage5Record` | pending |
+| `S-09/run_in_subattention`      | `(AttId, Hash, Stage2Record) → Vec{Candidate}` | encoded (s09-ops.form) |
+| `S-09/stage4/simulate_all`      | `(Vec{Candidate}, AttId) → Vec{TrialRecord}` | encoded (s09-ops.form) |
+| `S-09/stage4/any_passed`        | `(Vec{TrialRecord}) → Bool`                | encoded (s09-ops.form) |
+| `S-09/stage5/select`            | `(Vec{Candidate}, Vec{TrialRecord}, Provocation) → Stage5Record` | encoded (s09-ops.form) |
 | `S-09/stage5/proj/winner_form_hash` | `(Stage5Record) → Hash`                | encoded  |
 | `S-09/stage5/proj/winner_proof_hash` | `(Stage5Record) → Hash`               | encoded  |
 | `S-09/stage5/proj/rationale_hash` | `(Stage5Record) → Hash`                  | encoded  |
 | `S-09/stage5/proj/vigil_declaration` | `(Stage5Record) → VigilDeclaration`   | encoded  |
-| `S-09/stage6/build_claim`       | `(Stage5Record, Provocation) → Hash`       | pending  |
-| `S-09/stage6/check_bootstrap_if_s08` | `(Stage5Record) → Bool`               | pending  |
-| `S-09/stage8/mint_vigil`        | `(VigilDeclaration, Hash) → CapId`         | pending  |
+| `S-09/stage6/build_claim`       | `(Stage5Record, Provocation) → Hash`       | encoded (s09-ops.form) |
+| `S-09/stage6/check_bootstrap_if_s08` | `(Stage5Record) → Bool`               | encoded (s09-ops.form) |
+| `S-09/stage8/mint_vigil`        | `(VigilDeclaration, Hash) → CapId`         | encoded (s09-ops.form) |
 
 ## Helpers required by S-10 `hephaistion_seed`
 
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
 | `S-10/cursor`                   | (slot, not a Form)                         | n/a      |
-| `S-10/observe/fold`             | `(Hash) → Pair{Hash, Summary}`             | pending  |
-| `S-10/hypothesise/rank_top`     | `(Summary) → Hash`                         | pending  |
-| `S-10/hypothesise/build`        | `(Hash, Summary) → Hypothesis`             | pending  |
-| `S-10/propose/build_inheriting_grounding` | `(Hypothesis, Hash) → Hash`      | pending  |
-| `S-10/staged/append`            | `(SynthResult, Nat) → ()`                  | pending  |
-| `S-10/compare/run_due_comparisons` | `(Nat) → ()`                            | pending  |
-| `S-10/vigil/process`            | `() → ()`                                  | pending  |
+| `S-10/observe/fold`             | `(Hash) → Pair{Hash, Summary}`             | encoded (s10-s11-ops.form) |
+| `S-10/hypothesise/rank_top`     | `(Summary) → Hash`                         | encoded (s10-s11-ops.form) |
+| `S-10/hypothesise/build`        | `(Hash, Summary) → Hypothesis`             | encoded (s10-s11-ops.form) |
+| `S-10/propose/build_inheriting_grounding` | `(Hypothesis, Hash) → Hash`      | encoded (s10-s11-ops.form) |
+| `S-10/staged/append`            | `(SynthResult, Nat) → ()`                  | encoded (s10-s11-ops.form) |
+| `S-10/compare/run_due_comparisons` | `(Nat) → ()`                            | encoded (s10-s11-ops.form) |
+| `S-10/vigil/process`            | `() → ()`                                  | encoded (s10-s11-ops.form) |
 
 ## Helpers required by S-11 `bridge_proto`
 
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
-| `S-11/parse_surface`            | `(Bytes) → BridgeRequest`                  | pending  |
-| `S-11/build_intent`             | `(BridgeRequest) → Intent`                 | pending  |
-| `S-11/check/can_read`           | `(Hash) → Bool`                            | pending  |
-| `S-11/check_acceptance`         | `(Hash, Hash) → Bool`                      | pending  |
-| `S-11/intent_inputs_vec`        | `(Intent) → Vec{Value}`                    | pending  |
+| `S-11/parse_surface`            | `(Bytes) → BridgeRequest`                  | encoded (s10-s11-ops.form) |
+| `S-11/build_intent`             | `(BridgeRequest) → Intent`                 | encoded (s10-s11-ops.form) |
+| `S-11/check/can_read`           | `(Hash) → Bool`                            | encoded (s10-s11-ops.form) |
+| `S-11/check_acceptance`         | `(Hash, Hash) → Bool`                      | encoded (s10-s11-ops.form) |
+| `S-11/intent_inputs_vec`        | `(Intent) → Vec{Value}`                    | encoded (s10-s11-ops.form) |
 | `S-11/proj/acceptance_form`     | `(BridgeRequest) → Hash`                   | encoded  |
 | `S-11/proj/match_kind`          | `(MatchResult) → MatchKind`                | encoded  |
 | `S-11/proj/fulfiller_hash`      | `(MatchResult) → Hash`                     | encoded  |
@@ -554,8 +554,8 @@ operational form of the IL specification.
 
 | Category              | Count    |
 |-----------------------|----------|
-| Encoded helpers       | 189      |
-| Stub-only helpers     | ~18      |
+| Encoded helpers       | 230      |
+| Stub-only helpers     | ~4      |
 | Schema/* primitives   | 7 (encoded) |
 | Parser/* primitives   | 13 (encoded) |
 | Parser/* byte-arithmetic leaves | 20 (encoded) |
