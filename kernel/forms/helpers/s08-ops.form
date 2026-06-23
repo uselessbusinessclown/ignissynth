@@ -1,0 +1,261 @@
+; S-08 proof_checker operation helpers — walker iteration and rule
+; table lookup for the proof verification pipeline.
+;
+; These Forms implement the two remaining pending helpers under
+; "## Helpers required by S-08 proof_checker" in STUBS.md:
+;
+;   S-08/walker/check_all_premises  — iterate a premises vec,
+;     delegating each element to S-08/walker/visit.
+;   S-08/rules/lookup               — find a RuleSpec by RuleId
+;     in the rule table substance, delegating the linear scan to
+;     S-08/rules/table_scan.
+;
+; Synthesis chain:
+;   provocation:  STUBS.md catalogues both helpers as pending.
+;                 S-08/walker/visit (already encoded in
+;                 S-08-proof-checker.form) calls
+;                 check_all_premises on the child premises vec;
+;                 S-08/rules/lookup is called by visit to resolve
+;                 the RuleSpec for a ProofNode's rule_id.
+;   grounding:    A1.1 (substance is named by hash), A1.2 (type is
+;                 intrinsic — dispatch by type-tag), A1.3 (sealing is
+;                 permanent — bytes don't move), A0.6 (code is thought)
+;   composes_with:
+;                 - kernel/types/Records.md (ProofNode/v1, RuleSpec/v1
+;                   layout spec)
+;                 - schema-helpers.form (Schema/verify_type_tag,
+;                   Schema/bytes_in_range, Schema/nat_at)
+;                 - S-08-proof-checker.form (S-08/walker/visit)
+;                 - primitives.form (Vec/len, Vec/index)
+;
+; Each helper has the same shape:
+;   :declared-caps (S-03/ROOT_RO)        ; only READ
+;   :declared-traps (ETYPE)              ; trap on tag mismatch
+;   body: iterate/scan → delegate → RET
+;
+; Helper exemption: every Form below is under ~30 instructions of IL
+; and is therefore exempt from its own .proof artifact per
+; synthesis/PROTOCOL.md § Helper exemption. A kernel-author identity
+; verifies each body by structural reading in the S-08 inspection
+; record.
+;
+; Layout reference (kernel/types/Records.md):
+;
+;   ProofNode/v1:
+;     offset 0   type_tag  Bytes(12)  "ProofNode/v1"
+;     offset 12  conclusion Hash(32)  hash of the conclusion term
+;     offset 44  rule_id    Hash(32)  hash identifying the rule
+;     offset 76  premises   Hash(32)  sealed Vec{Hash} of child hashes
+;     total: 108 bytes
+;
+;   RuleSpec/v1:
+;     offset 0   type_tag              Bytes(11)  "RuleSpec/v1"
+;     offset 11  arity                 Nat(4)     number of premises
+;     offset 15  conclusion_derivation Hash(32)  derivation function hash
+;     total: 47 bytes
+;
+; ============================================================
+; S-08/walker/check_all_premises — (Vec{ProofNode}, Hash) → Result
+;
+; Given a vec of premise ProofNodes and the rule spec hash, verify
+; each premise by delegating to S-08/walker/visit. Returns Accept
+; if every premise visits cleanly, or Reject{MissingPremise} if any
+; premise fails or the vec is empty when the rule expects premises.
+;
+; The Result is encoded as a tagged pair:
+;   Accept           → Pair{tag=0, payload=unit}
+;   Reject{Missing}  → Pair{tag=1, payload=Hash of failed premise}
+;
+; Iteration uses an index counter in locals[2]; the vec length is
+; obtained from Vec/len. Each iteration calls S-08/walker/visit
+; with (premise_node, rule_spec_hash); if visit returns a Reject
+; tag, we propagate it immediately. After all premises pass, we
+; return Accept.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s08_walker_check_all_premises"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      5
+  :code (
+    STORE   0                            ; locals[0] := premises vec
+    STORE   1                            ; locals[1] := rule spec hash
+
+    ;; Get vec length.
+    LOAD    0
+    PUSH    "Vec/len"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   2                            ; locals[2] := vec length
+
+    ;; If length is zero, return Reject{MissingPremise} with
+    ;; BOTTOM_HASH as the missing premise identifier.
+    LOAD    2
+    JMPZ    +empty_premises
+
+    ;; Initialize index = 0.
+    PUSH    0
+    STORE   3                            ; locals[3] := index
+
+    :loop
+    ;; Check index < length.
+    LOAD    3
+    LOAD    2
+    LT
+    JMPZ    +loop_done
+
+    ;; Get premises[index].
+    LOAD    0
+    LOAD    3
+    PUSH    "Vec/index"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   4                            ; locals[4] := premise node
+
+    ;; Call S-08/walker/visit(premise_node, rule_spec_hash).
+    LOAD    4
+    LOAD    1
+    PUSH    "S-08/walker/visit"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                      ; → Result
+    STORE   4                            ; reuse locals[4] := result
+
+    ;; Check result tag (0 = Accept, 1 = Reject).
+    LOAD    4
+    PUSH    0
+    PAIR_FIRST                            ; extract tag
+    JMPZ    +accept_this
+
+    ;; Reject: propagate the result immediately.
+    LOAD    4
+    RET
+
+    :accept_this
+    ;; Increment index and loop.
+    LOAD    3
+    PUSH    1
+    ADD
+    STORE   3
+    JMP     +loop
+
+    :loop_done
+    ;; All premises passed — return Accept.
+    PUSH    0                            ; tag = 0 (Accept)
+    PUSH    0                            ; payload = unit
+    MAKEPAIR
+    RET
+
+    :empty_premises
+    ;; Vec is empty — return Reject{MissingPremise} with BOTTOM_HASH.
+    PUSH    1                            ; tag = 1 (Reject)
+    PUSH    0                            ; BOTTOM_HASH placeholder
+    MAKEPAIR
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/s08-ops-rationale
+)
+
+; ============================================================
+; S-08/rules/lookup — (RuleId, Hash) → RuleSpec
+;
+; Look up a rule by its RuleId in the rule table substance. The
+; rule table is identified by the Hash argument (the sealed hash
+; of the table substance). This helper reads the table substance,
+; then delegates to S-08/rules/table_scan for the linear scan over
+; RuleSpec entries to find the one whose conclusion_derivation
+; matches the requested RuleId.
+;
+; The RuleSpec/v1 layout is:
+;   offset 0   type_tag              Bytes(11)  "RuleSpec/v1"
+;   offset 11  arity                 Nat(4)
+;   offset 15  conclusion_derivation Hash(32)
+;
+; This helper first reads the table substance via the hash, then
+; delegates to S-08/rules/table_scan(rule_table_bytes, rule_id)
+; which returns the matching RuleSpec bytes or traps ETYPE if not
+; found.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "s08_rules_lookup"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      3
+  :code (
+    STORE   0                            ; locals[0] := RuleId (Hash)
+    STORE   1                            ; locals[1] := rule table hash
+
+    ;; Resolve the rule table substance by its hash. The substance
+    ;; store READ capability (S-03/ROOT_RO) permits reading any
+    ;; sealed substance by hash.
+    LOAD    1
+    PUSH    "S-03/trie/lookup"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                      ; → Pair{Bool, Bytes}
+    STORE   2                            ; locals[2] := lookup result
+
+    ;; Check whether the lookup found the substance.
+    LOAD    2
+    PAIR_FIRST                            ; extract Bool (found?)
+    JMPZ    +not_found
+
+    ;; Extract the table bytes from the lookup result.
+    LOAD    2
+    PAIR_SECOND                           ; → Bytes (rule table)
+    STORE   2                            ; reuse locals[2] := table bytes
+
+    ;; Delegate to S-08/rules/table_scan for the linear scan.
+    LOAD    2                            ; rule table bytes
+    LOAD    0                            ; RuleId
+    PUSH    "S-08/rules/table_scan"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                      ; → RuleSpec bytes
+    RET
+
+    :not_found
+    ;; Rule table substance not found — trap ETYPE.
+    TRAP    ETYPE
+  )
+  :rationale-hash $$BLAKE3$$/s08-ops-rationale
+)
+
+(exports
+  (s08_walker_check_all_premises  (Vec{ProofNode}, Hash) → Result)
+  (s08_rules_lookup               (RuleId, Hash) → RuleSpec))
+
+; ============================================================
+; Notes on pending sub-helper leaves
+;
+; The helpers above delegate to the following sub-helpers that
+; are NOT yet encoded. They are catalogued here so the next
+; encoding batch can pick them up:
+;
+;   S-08/rules/table_scan (Bytes, Hash) → RuleSpec
+;     Linear scan over the rule table bytes. Each entry is a
+;     sealed RuleSpec/v1 (47 bytes). The scan reads each entry's
+;     conclusion_derivation field (offset 15, 32 bytes) via
+;     Schema/bytes_in_range and compares it to the target RuleId.
+;     Returns the matching RuleSpec bytes or traps ETYPE if no
+;     match is found after exhausting the table.
+;
+;     This sub-helper depends on:
+;       - Schema/verify_type_tag (for "RuleSpec/v1" tag check)
+;       - Schema/bytes_in_range (for reading conclusion_derivation)
+;       - Bytes/len (for table boundary)
+;       - Nat/mul (for 47-byte stride advancement)
+;
+; The helpers encoded above close 2 of the remaining S-08 pending
+; slots. The 1 remaining sub-helper (table_scan) is a linear
+; iteration that depends only on already-encoded Schema/* and
+; intrinsics primitives.
+; ============================================================

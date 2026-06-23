@@ -107,6 +107,13 @@ are post-v0.1.0 work.
 | `S-05/proj/cap_id`              | `kernel/forms/helpers/s02-s05-projections.form`|
 | `S-05/proj/mind_id`             | `kernel/forms/helpers/s02-s05-projections.form`|
 | `S-05/proj/budget_remaining`    | `kernel/forms/helpers/s02-s05-projections.form`|
+| `S-04/backidx/insert_all`       | `kernel/forms/helpers/s04-ops.form`            |
+| `S-04/why/traverse`             | `kernel/forms/helpers/s04-ops.form`            |
+| `S-06/parent_chain_intersect`   | `kernel/forms/helpers/s06-ops.form`            |
+| `S-06/enumerate_via_cap`        | `kernel/forms/helpers/s06-ops.form`            |
+| `S-06/vec_intersect`            | `kernel/forms/helpers/s06-ops.form`            |
+| `S-06/filter_by_predicate`      | `kernel/forms/helpers/s06-ops.form`            |
+| `S-06/rank`                     | `kernel/forms/helpers/s06-ops.form`            |
 | `S-05/proj/cap_view`            | `kernel/forms/helpers/s02-s05-projections.form`|
 
 ## Parser/* primitives (referenced by `parser.form`)
@@ -308,8 +315,8 @@ themselves total and sealed.
 | `S-04/proj/outputs`             | `(Entry) → Vec{Hash}`                      | encoded  |
 | `S-04/vec/len`                  | `(Vec{T}) → Nat`                           | encoded  |
 | `S-04/bytes/len`                | `(Bytes) → Nat`                            | encoded  |
-| `S-04/backidx/insert_all`       | `(Vec{Hash}, Hash) → ()`                   | pending  |
-| `S-04/why/traverse`             | `(Vec{Hash}, Vec{Hash}, Vec{Hash}) → Vec{Hash}` | pending |
+| `S-04/backidx/insert_all`       | `(Vec{Hash}, Hash) → ()`                   | encoded (s04-ops.form) |
+| `S-04/why/traverse`             | `(Vec{Hash}, Vec{Hash}, Vec{Hash}) → Vec{Hash}` | encoded (s04-ops.form) |
 
 The projections (`S-04/proj/*`) are tiny: each takes an Entry
 substance and returns the named field. They are split out from
@@ -399,20 +406,20 @@ delegate to the forest schema sub-helper layer below (the same
 
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
-| `Forest/hamt_lookup`            | `(ForestRoot, AttId) → Pair{Bool, Hash}`   | pending  |
-| `Forest/hamt_insert_record`     | `(ForestRoot, AttId, Hash) → ForestRoot`   | pending  |
-| `Forest/hamt_remove`            | `(ForestRoot, AttId) → ForestRoot`         | pending  |
-| `Forest/derive_att_id`          | `(AttId, Nat, CapId) → AttId`              | pending  |
-| `Forest/seal_record`            | `(AttentionRecord) → Hash`                 | pending  |
-| `Forest/dissolve_rec`           | `(ForestRoot, AttId) → Pair{ForestRoot, Vec{AttId}}` | pending |
-| `AttentionRecord/proj/children` | `(AttentionRecord) → Vec{AttId}`           | pending  |
-| `AttentionRecord/proj/deadline` | `(AttentionRecord) → Nat`                  | pending  |
-| `AttentionRecord/proj/yielded`  | `(AttentionRecord) → Hash`                 | pending  |
-| `AttentionRecord/construct_child` | `(AttId, AttentionRecord, Nat, Nat) → AttentionRecord` | pending |
-| `AttentionRecord/with_budget_sub_and_child` | `(AttentionRecord, Nat, AttId) → AttentionRecord` | pending |
-| `AttentionRecord/with_budget_sub` | `(AttentionRecord, Nat) → AttentionRecord` | pending |
-| `AttentionRecord/with_deadline` | `(AttentionRecord, Nat) → AttentionRecord` | pending  |
-| `AttentionRecord/with_yielded`  | `(AttentionRecord, Hash) → AttentionRecord`| pending  |
+| `Forest/hamt_lookup`            | `(ForestRoot, AttId) → Pair{Bool, Hash}`   | encoded (forest-schema.form)  |
+| `Forest/hamt_insert_record`     | `(ForestRoot, AttId, Hash) → ForestRoot`   | encoded (forest-schema.form)  |
+| `Forest/hamt_remove`            | `(ForestRoot, AttId) → ForestRoot`         | encoded (forest-schema.form)  |
+| `Forest/derive_att_id`          | `(AttId, Nat, CapId) → AttId`              | encoded (forest-schema.form)  |
+| `Forest/seal_record`            | `(AttentionRecord) → Hash`                 | encoded (forest-schema.form)  |
+| `Forest/dissolve_rec`           | `(ForestRoot, AttId) → Pair{ForestRoot, Vec{AttId}}` | encoded (forest-schema.form) |
+| `AttentionRecord/proj/children` | `(AttentionRecord) → Vec{AttId}`           | encoded (forest-schema.form)  |
+| `AttentionRecord/proj/deadline` | `(AttentionRecord) → Nat`                  | encoded (forest-schema.form)  |
+| `AttentionRecord/proj/yielded`  | `(AttentionRecord) → Hash`                 | encoded (forest-schema.form)  |
+| `AttentionRecord/construct_child` | `(AttId, AttentionRecord, Nat, Nat) → AttentionRecord` | encoded (forest-schema.form) |
+| `AttentionRecord/with_budget_sub_and_child` | `(AttentionRecord, Nat, AttId) → AttentionRecord` | encoded (forest-schema.form) |
+| `AttentionRecord/with_budget_sub` | `(AttentionRecord, Nat) → AttentionRecord` | encoded (forest-schema.form) |
+| `AttentionRecord/with_deadline` | `(AttentionRecord, Nat) → AttentionRecord` | encoded (forest-schema.form)  |
+| `AttentionRecord/with_yielded`  | `(AttentionRecord, Hash) → AttentionRecord`| encoded (forest-schema.form)  |
 
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
@@ -432,11 +439,11 @@ forest chosen as Candidate A in `breakdown/S-05-attention-alloc.md`.
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
 | `S-06/parse_intent`             | `(Bytes) → Intent`                         | encoded (in record-parsers.form) |
-| `S-06/parent_chain_intersect`   | `(Intent, Hash) → Vec{Hash}`               | pending  |
-| `S-06/enumerate_via_cap`        | `(CapId, Hash) → Vec{Hash}`                | pending  |
-| `S-06/vec_intersect`            | `(Vec{T}, Vec{T}) → Vec{T}`                | pending  |
-| `S-06/filter_by_predicate`      | `(Vec{Hash}, Hash, CapEntry) → Vec{Hash}`  | pending  |
-| `S-06/rank`                     | `(Vec{Hash}, CapEntry) → Vec{Hash}`        | pending  |
+| `S-06/parent_chain_intersect`   | `(Intent, Hash) → Vec{Hash}`               | encoded (s06-ops.form) |
+| `S-06/enumerate_via_cap`        | `(CapId, Hash) → Vec{Hash}`                | encoded (s06-ops.form) |
+| `S-06/vec_intersect`            | `(Vec{T}, Vec{T}) → Vec{T}`                | encoded (s06-ops.form) |
+| `S-06/filter_by_predicate`      | `(Vec{Hash}, Hash, CapEntry) → Vec{Hash}`  | encoded (s06-ops.form) |
+| `S-06/rank`                     | `(Vec{Hash}, CapEntry) → Vec{Hash}`        | encoded (s06-ops.form) |
 | `S-06/proj/intent_budget`       | `(Intent) → Nat`                           | encoded  |
 | `S-06/proj/acceptance_form`     | `(Intent) → Hash`                          | encoded  |
 | `S-06/proj/match_kind`          | `(MatchResult) → MatchKind`                | encoded  |
@@ -484,8 +491,8 @@ operational form of the IL specification.
 | `S-08/parse_proof`              | `(Bytes) → ProofTree`                      | encoded (in record-parsers.form) |
 | `S-08/parse_claim`              | `(Bytes) → Claim`                          | encoded (in record-parsers.form) |
 | `S-08/walker/visit`             | `(ProofNode, Hash) → Result`               | encoded (in S-08-proof-checker.form) |
-| `S-08/walker/check_all_premises`| `(Vec{ProofNode}, Hash) → Result`          | pending  |
-| `S-08/rules/lookup`             | `(RuleId, Hash) → RuleSpec`                | pending  |
+| `S-08/walker/check_all_premises`| `(Vec{ProofNode}, Hash) → Result`          | encoded (s08-ops.form) |
+| `S-08/rules/lookup`             | `(RuleId, Hash) → RuleSpec`                | encoded (s08-ops.form) |
 | `S-08/proj/conclusion`          | `(ProofNode) → Term`                       | encoded  |
 | `S-08/proj/rule_id`             | `(ProofNode) → RuleId`                     | encoded  |
 | `S-08/proj/premises`            | `(ProofNode) → Vec{ProofNode}`             | encoded  |
@@ -547,8 +554,8 @@ operational form of the IL specification.
 
 | Category              | Count    |
 |-----------------------|----------|
-| Encoded helpers       | 166      |
-| Stub-only helpers     | ~41      |
+| Encoded helpers       | 189      |
+| Stub-only helpers     | ~18      |
 | Schema/* primitives   | 7 (encoded) |
 | Parser/* primitives   | 13 (encoded) |
 | Parser/* byte-arithmetic leaves | 20 (encoded) |

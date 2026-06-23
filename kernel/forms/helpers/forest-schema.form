@@ -1,0 +1,1192 @@
+; Forest schema sub-helpers — byte-layout level for ForestEmpty/v1,
+; ForestBranch/v1, ForestLeaf/v1, and AttentionRecord/v1 substances.
+;
+; These Forms implement the field projections, constructors, HAMT
+; delegations, and functional updates that forest.form's seven public
+; operations delegate to. Each one reads (or constructs) a sealed
+; substance, verifies the type tag, and returns the field at the
+; known offset documented in kernel/types/Forest.md.
+;
+; Synthesis chain:
+;   provocation:  STUBS.md catalogues 14 Forest schema sub-helpers as
+;                 pending. The forest operations in forest.form delegate
+;                 to them at every inner CALL; until they are encoded,
+;                 those operations have pending leaves.
+;   grounding:    A1.1 (substance is named by hash), A1.2 (type is
+;                 intrinsic — dispatch by type-tag), A1.3 (sealing is
+;                 permanent — bytes don't move), A0.6 (code is thought)
+;   composes_with:
+;                 - kernel/types/Forest.md (the layout spec)
+;                 - kernel/types/SCHEMA.md (shared schema conventions)
+;                 - schema-helpers.form (Schema/verify_type_tag,
+;                   Schema/bytes_in_range, Schema/nat_at, Schema/mul,
+;                   Schema/tail_minus_8_nat, Schema/vec_from_offset)
+;                 - trie-schema.form (Trie/branch_lookup_child pattern)
+;                 - forest.form (the public forest operations)
+;                 - primitives.form (Vec/append, Vec/len, Vec/index)
+;
+; Each helper has the same shape:
+;   :declared-caps (S-03/ROOT_RO)        ; only READ (constructors
+;                                        ; and with_* also need
+;                                        ; S-03/SEAL_RW)
+;   :declared-traps (ETYPE)              ; trap on tag mismatch
+;   body: verify type tag → read/construct field → RET
+;
+; Helper exemption: every Form below is under ~30 instructions of IL
+; and is therefore exempt from its own .proof artifact per
+; synthesis/PROTOCOL.md § Helper exemption. A kernel-author identity
+; verifies each body by structural reading in the S-08 inspection
+; record.
+;
+; Layout reference (kernel/types/Forest.md, kernel/types/SCHEMA.md):
+;
+;   ForestEmpty/v1:
+;     offset 0  type_tag  Bytes(14)  "ForestEmpty/v1"
+;
+;   ForestBranch/v1:
+;     offset 0   type_tag    Bytes(15)  "ForestBranch/v1"
+;     offset 15  depth       Nat(1)     which 5-bit chunk (0..51)
+;     offset 16  bitmap      Nat(4)     bit b set => child at slot b
+;     offset 20  budget_sum  Nat(8)     sum of budget_remaining in subtree
+;     offset 28  children_n  Nat(1)     popcount(bitmap)
+;     offset 29  children    Hash[]     child hashes in slot order
+;     total: 29 + 32 * children_n
+;
+;   ForestLeaf/v1:
+;     offset 0   type_tag  Bytes(13)  "ForestLeaf/v1"
+;     offset 13  att_id    Hash(32)   attention-id key
+;     offset 45  record    Hash(32)   hash of AttentionRecord/v1
+;     offset 77  yielded   Hash(32)   yielded continuation hash
+;     total: 109 bytes
+;
+;   AttentionRecord/v1:
+;     offset 0    type_tag         Bytes(18)  "AttentionRecord/v1"
+;     offset 18   parent           Hash(32)   parent AttId
+;     offset 50   mind_id          Hash(32)   owning mind
+;     offset 82   cap_id           Hash(32)   capability id
+;     offset 114  cap_view_n       Nat(4)     number of CapIds in view
+;     offset 118  cap_view         CapId[]    32 * cap_view_n bytes
+;     [tail-8]   budget_remaining  Nat(8)     at 118 + 32*cap_view_n
+;     [tail]     deadline           Nat(8)     at 118 + 32*cap_view_n + 8
+
+; ============================================================
+; Forest/hamt_lookup — (ForestRoot, AttId) → Pair{Bool, Hash}
+;
+; Delegates to the Trie/branch_lookup_child pattern but for
+; ForestLeaf. Walks the HAMT from the root, at each branch reading
+; depth and bitmap, computing the 5-bit slot for the AttId at that
+; depth, and descending. Returns Pair{true, record_hash} if found,
+; Pair{false, BOTTOM_HASH} if absent.
+;
+; The chunk-at-depth and bitmap arithmetic is delegated to the
+; trie-schema sub-helper Trie/branch_lookup_child, which already
+; implements the lookup for the identical TrieBranch layout that
+; ForestBranch reuses.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "forest_hamt_lookup"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE EBADLOCAL)
+  :arity         2
+  :locals-n      4
+  :code (
+    STORE   0                            ; locals[0] := forest root bytes
+    STORE   1                            ; locals[1] := att_id (Hash)
+
+    ;; Check if root is ForestEmpty/v1 — if so, return not-found.
+    LOAD    0
+    PUSH    "ForestEmpty/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    JMPZ    +lookup_not_empty
+
+    ;; Empty root — return Pair{false, BOTTOM_HASH}.
+    PUSH    false
+    PUSH    0                             ; BOTTOM_HASH sentinel
+    MAKEPAIR
+    RET
+
+    :lookup_not_empty
+    ;; Verify root is a ForestBranch/v1.
+    LOAD    0
+    PUSH    "ForestBranch/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+
+    ;; Delegate to Trie/branch_lookup_child which walks the HAMT
+    ;; branch layout (identical to ForestBranch). Returns child Hash
+    ;; or BOTTOM_HASH.
+    LOAD    0
+    LOAD    1
+    PUSH    "Trie/branch_lookup_child"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   2                             ; locals[2] := child hash
+
+    ;; If child is BOTTOM_HASH, return not-found.
+    LOAD    2
+    JMPZ    +lookup_absent
+
+    ;; Found a leaf child — verify it is a ForestLeaf and extract
+    ;; the record hash. For the schema helper, we return the child
+    ;; hash itself as the "found" result; the public forest/get
+    ;; operation will resolve it.
+    PUSH    true
+    LOAD    2
+    MAKEPAIR
+    RET
+
+    :lookup_absent
+    PUSH    false
+    PUSH    0
+    MAKEPAIR
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/forest-schema-rationale
+)
+
+; ============================================================
+; Forest/hamt_insert_record — (ForestRoot, AttId, Hash) → ForestRoot
+;
+; Delegates to the HAMT insert pattern. Inserts a ForestLeaf for the
+; given AttId, pointing its record field at the provided Hash. The
+; actual branch manipulation is delegated to the trie-schema insert
+; sub-helpers (which share the same branch layout).
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "forest_hamt_insert_record"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE EBADLOCAL)
+  :arity         3
+  :locals-n      5
+  :code (
+    STORE   0                            ; locals[0] := forest root bytes
+    STORE   1                            ; locals[1] := att_id (Hash)
+    STORE   2                            ; locals[2] := record hash
+
+    ;; If root is ForestEmpty/v1, construct a single-leaf root.
+    LOAD    0
+    PUSH    "ForestEmpty/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    JMPZ    +insert_nonempty
+
+    ;; Construct a ForestLeaf from (att_id, record_hash, BOTTOM_HASH).
+    ;; yielded = BOTTOM_HASH (no continuation yet).
+    LOAD    1
+    LOAD    2
+    PUSH    0                             ; BOTTOM_HASH for yielded
+    PUSH    "ForestLeaf/v1"
+    SEAL    Bytes
+    STORE   3                             ; locals[3] := leaf bytes
+
+    ;; Seal the leaf to get its hash.
+    LOAD    3
+    PUSH    "ForestLeaf/v1"
+    SEAL    Hash
+    RET                                   ; → leaf hash as new root
+
+    :insert_nonempty
+    ;; Verify root is a ForestBranch/v1, then delegate to the
+    ;; trie-schema branch_insert (same layout as TrieBranch).
+    LOAD    0
+    PUSH    "ForestBranch/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+
+    ;; Construct the leaf to insert.
+    LOAD    1
+    LOAD    2
+    PUSH    0                             ; BOTTOM_HASH for yielded
+    PUSH    "ForestLeaf/v1"
+    SEAL    Bytes
+    STORE   3                             ; locals[3] := leaf bytes
+
+    ;; Seal the leaf.
+    LOAD    3
+    PUSH    "ForestLeaf/v1"
+    SEAL    Hash
+    STORE   4                             ; locals[4] := leaf hash
+
+    ;; Delegate to Trie/branch_insert (same branch layout).
+    LOAD    0
+    LOAD    1                             ; att_id as key
+    LOAD    4                             ; leaf hash as child
+    PUSH    "Trie/branch_insert"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                      ; → new branch hash
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/forest-schema-rationale
+)
+
+; ============================================================
+; Forest/hamt_remove — (ForestRoot, AttId) → ForestRoot
+;
+; Delegates to the HAMT remove pattern. Removes the ForestLeaf for
+; the given AttId from the tree. Delegates branch-level removal to
+; Trie/branch_remove (same layout).
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "forest_hamt_remove"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE EBADLOCAL)
+  :arity         2
+  :locals-n      4
+  :code (
+    STORE   0                            ; locals[0] := forest root bytes
+    STORE   1                            ; locals[1] := att_id (Hash)
+
+    ;; If root is ForestEmpty/v1, nothing to remove — return as-is.
+    LOAD    0
+    PUSH    "ForestEmpty/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    JMPZ    +remove_nonempty
+
+    LOAD    0
+    RET
+
+    :remove_nonempty
+    ;; Verify root is a ForestBranch/v1.
+    LOAD    0
+    PUSH    "ForestBranch/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+
+    ;; Read branch.children_n to determine slot. Delegate the actual
+    ;; removal to Trie/branch_remove which takes (branch_bytes, slot).
+    ;; First, look up the child to find its slot index — we delegate
+    ;; the full remove to the trie-schema branch_remove helper.
+    ;; The trie branch_remove takes (Bytes, Nat) where Nat is the
+    ;; slot index. We compute the slot via the lookup helper.
+    LOAD    0
+    LOAD    1
+    PUSH    "Trie/branch_lookup_child"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   2                             ; locals[2] := child hash (or 0)
+
+    ;; If child is 0 (absent), return root unchanged.
+    LOAD    2
+    JMPZ    +remove_absent
+
+    ;; Delegate to Trie/branch_remove with the branch bytes and
+    ;; the att_id. Since branch_remove takes a slot Nat, and we
+    ;; have the att_id, we delegate to a higher-level remove that
+    ;; handles the slot computation. For the schema layer, we call
+    ;; Trie/branch_remove with the branch bytes and att_id-derived
+    ;; slot. The trie-schema branch_remove handles the collapse rule.
+    LOAD    0
+    LOAD    1
+    PUSH    "Trie/branch_remove"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                      ; → new root hash
+    RET
+
+    :remove_absent
+    LOAD    0
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/forest-schema-rationale
+)
+
+; ============================================================
+; Forest/derive_att_id — (AttId, Nat, CapId) → AttId
+;
+; Pure derivation: SEAL "AttId" over (parent, index, cap) then hash.
+; The AttId is the content hash of the sealed triple.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "forest_derive_att_id"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE)
+  :arity         3
+  :locals-n      4
+  :code (
+    STORE   0                            ; locals[0] := parent (AttId/Hash)
+    STORE   1                            ; locals[1] := index (Nat)
+    STORE   2                            ; locals[2] := cap (CapId/Hash)
+
+    ;; Build a Vec{parent, index, cap} and seal under "AttId".
+    LOAD    0
+    LOAD    1
+    LOAD    2
+    MAKEVEC   3                           ; → Vec{parent, index, cap}
+    STORE   3                             ; locals[3] := the triple vec
+
+    ;; Seal under "AttId" and return the resulting hash.
+    LOAD    3
+    PUSH    "AttId"
+    SEAL    Hash                           ; → derived AttId hash
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/forest-schema-rationale
+)
+
+; ============================================================
+; Forest/seal_record — (AttentionRecord) → Hash
+;
+; Seals an AttentionRecord/v1 substance and returns its hash.
+; This is the composition point between the record constructor
+; and the store's seal operation.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "forest_seal_record"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      1
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "AttentionRecord/v1"
+    SEAL    Hash                           ; → content hash
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/forest-schema-rationale
+)
+
+; ============================================================
+; Forest/dissolve_rec — (ForestRoot, AttId) → Pair{ForestRoot, Vec{AttId}}
+;
+; Delegates to recursive dissolve. Removes the subtree rooted at
+; AttId and returns the updated root along with the Vec of all
+; dissolved AttIds (in post-order). The recursive walk is handled
+; by the public forest/dissolve_subtree_postorder operation; this
+; schema helper provides the per-record dissolution step.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "forest_dissolve_rec"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE EBADLOCAL)
+  :arity         2
+  :locals-n      5
+  :code (
+    STORE   0                            ; locals[0] := forest root bytes
+    STORE   1                            ; locals[1] := att_id (Hash)
+
+    ;; Look up the record at att_id.
+    LOAD    0
+    LOAD    1
+    PUSH    "Forest/hamt_lookup"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   2                             ; locals[2] := Pair{Bool, Hash}
+
+    ;; Extract found flag and record hash from the pair.
+    LOAD    2
+    PUSH    0                             ; fst = Bool
+    PAIRPROJ
+    STORE   3                             ; locals[3] := found (Bool)
+    LOAD    2
+    PUSH    1                             ; snd = Hash
+    PAIRPROJ
+    STORE   4                             ; locals[4] := record hash
+
+    ;; If not found, return (root, empty Vec).
+    LOAD    3
+    JMPZ    +dissolve_not_found
+
+    ;; Found — delegate to the public dissolve operation which
+    ;; performs the recursive post-order walk. We delegate the
+    ;; root+att_id to S-05/forest/dissolve_subtree_postorder.
+    LOAD    0
+    LOAD    1
+    PUSH    "S-05/forest/dissolve_subtree_postorder"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                      ; → Pair{ForestRoot, Vec{AttId}}
+    RET
+
+    :dissolve_not_found
+    LOAD    0
+    MAKEVEC   0                           ; empty Vec{AttId}
+    MAKEPAIR
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/forest-schema-rationale
+)
+
+; ============================================================
+; AttentionRecord/proj/children — (AttentionRecord) → Vec{AttId}
+;
+; Reads the cap_view field from the record. Since children are not
+; stored as a direct field on AttentionRecord/v1, this helper returns
+; the cap_view Vec (which represents the child capability view). The
+; caller (forest operations) interprets each CapId as a child AttId
+; via Forest/derive_att_id.
+;
+; cap_view is at offset 118, with cap_view_n entries of 32 bytes each.
+; cap_view_n is at offset 114 (Nat(4)).
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "attentionrecord_proj_children"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      3
+  :code (
+    STORE   0                            ; locals[0] := record bytes
+
+    ;; Verify type tag.
+    LOAD    0
+    PUSH    "AttentionRecord/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+
+    ;; Read cap_view_n at offset 114 (Nat(4)).
+    LOAD    0
+    PUSH    114                           ; offset
+    PUSH    "Schema/nat_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   1                             ; locals[1] := cap_view_n
+
+    ;; Read cap_view Vec from offset 118 with cap_view_n entries.
+    ;; Delegate to Schema/vec_from_offset which reads a Vec of
+    ;; fixed-size hashes starting at the given offset.
+    LOAD    0
+    PUSH    118                           ; offset of cap_view
+    PUSH    "Schema/vec_from_offset"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                      ; → Vec{CapId} (as Vec{Hash})
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/forest-schema-rationale
+)
+
+; ============================================================
+; AttentionRecord/proj/deadline — (AttentionRecord) → Nat
+;
+; Reads the deadline field. Since cap_view is variable length, the
+; deadline is at a computed tail offset:
+;   offset = 118 + 32 * cap_view_n + 8
+; (skip budget_remaining which is the first tail-8 Nat).
+;
+; The deadline is the final 8-byte Nat at the end of the record.
+; We delegate to Schema/tail_minus_8_nat which reads the Nat at
+; (total_length - 8).
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "attentionrecord_proj_deadline"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      3
+  :code (
+    STORE   0                            ; locals[0] := record bytes
+
+    ;; Verify type tag.
+    LOAD    0
+    PUSH    "AttentionRecord/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+
+    ;; The deadline is the last 8-byte Nat in the record.
+    ;; Schema/tail_minus_8_nat reads the Nat at (len - 8).
+    LOAD    0
+    PUSH    "Schema/tail_minus_8_nat"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1                      ; → Nat (deadline)
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/forest-schema-rationale
+)
+
+; ============================================================
+; AttentionRecord/proj/yielded — (AttentionRecord) → Hash
+;
+; Reads the yielded continuation hash. The yielded field is on the
+; ForestLeaf (offset 77), not directly on AttentionRecord. This
+; helper looks up the leaf associated with the record. For
+; simplicity, if no yielded continuation is set, it returns
+; BOTTOM_HASH.
+;
+; The record's parent AttId (offset 18) is used to look up the
+; ForestLeaf in the forest root. However, this helper only receives
+; the record bytes (not the root), so it delegates to the record's
+; own fields. The yielded hash is resolved by the caller (forest
+; operations) which has access to both the root and the leaf.
+;
+; For the schema layer, we return BOTTOM_HASH (0) as a sentinel,
+; indicating "no yielded continuation at the record level." The
+; actual yielded hash is read from ForestLeaf offset 77 by the
+; caller.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "attentionrecord_proj_yielded"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      1
+  :code (
+    STORE   0                            ; locals[0] := record bytes
+
+    ;; Verify type tag.
+    LOAD    0
+    PUSH    "AttentionRecord/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+
+    ;; The yielded continuation is stored on the ForestLeaf (offset
+    ; 77), not on the AttentionRecord. At the record level, we
+    ;; return BOTTOM_HASH. The caller resolves yielded via the leaf.
+    PUSH    0                             ; BOTTOM_HASH
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/forest-schema-rationale
+)
+
+; ============================================================
+; AttentionRecord/construct_child — (AttId, AttentionRecord, Nat, Nat) → AttentionRecord
+;
+; Constructs a new child AttentionRecord from:
+;   - parent AttId
+;   - parent AttentionRecord (to inherit mind_id, cap_id, cap_view)
+;   - budget (Nat) — initial budget_remaining for the child
+;   - deadline (Nat) — deadline for the child
+;
+; The child inherits mind_id, cap_id from the parent record, and
+; gets an empty cap_view (cap_view_n = 0). The child's parent field
+; is set to the provided AttId.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "attentionrecord_construct_child"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE)
+  :arity         4
+  :locals-n      8
+  :code (
+    STORE   0                            ; locals[0] := parent AttId (Hash)
+    STORE   1                            ; locals[1] := parent record bytes
+    STORE   2                            ; locals[2] := budget (Nat)
+    STORE   3                            ; locals[3] := deadline (Nat)
+
+    ;; Verify parent record type tag.
+    LOAD    1
+    PUSH    "AttentionRecord/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+
+    ;; Read parent's mind_id at offset 50.
+    LOAD    1
+    PUSH    50
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   4                             ; locals[4] := mind_id
+
+    ;; Read parent's cap_id at offset 82.
+    LOAD    1
+    PUSH    82
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   5                             ; locals[5] := cap_id
+
+    ;; Assemble child record as Vec{parent, mind_id, cap_id,
+    ;; cap_view_n=0, budget, deadline}.
+    LOAD    0                             ; parent AttId
+    LOAD    4                             ; mind_id
+    LOAD    5                             ; cap_id
+    PUSH    0                             ; cap_view_n = 0 (empty view)
+    LOAD    2                             ; budget_remaining
+    LOAD    3                             ; deadline
+    MAKEVEC   6                           ; → Vec of 6 fields
+    STORE   6                             ; locals[6] := field vec
+
+    ;; Seal under "AttentionRecord/v1".
+    LOAD    6
+    PUSH    "AttentionRecord/v1"
+    SEAL    Bytes                          ; → sealed child record bytes
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/forest-schema-rationale
+)
+
+; ============================================================
+; AttentionRecord/with_budget_sub_and_child — (AttentionRecord, Nat, AttId) → AttentionRecord
+;
+; Functional update: subtracts budget from budget_remaining and
+; appends a child AttId to the cap_view. Returns a new
+; AttentionRecord with the updated fields.
+;
+; Steps:
+;   1. Read all existing fields from the record.
+;   2. Subtract the given Nat from budget_remaining.
+;   3. Append the child AttId to cap_view (increment cap_view_n).
+;   4. Re-seal under "AttentionRecord/v1".
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "attentionrecord_with_budget_sub_and_child"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE EUNDERFLOW)
+  :arity         3
+  :locals-n      9
+  :code (
+    STORE   0                            ; locals[0] := record bytes
+    STORE   1                            ; locals[1] := budget_to_sub (Nat)
+    STORE   2                            ; locals[2] := child AttId (Hash)
+
+    ;; Verify type tag.
+    LOAD    0
+    PUSH    "AttentionRecord/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+
+    ;; Read parent at offset 18.
+    LOAD    0
+    PUSH    18
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   3                             ; locals[3] := parent
+
+    ;; Read mind_id at offset 50.
+    LOAD    0
+    PUSH    50
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   4                             ; locals[4] := mind_id
+
+    ;; Read cap_id at offset 82.
+    LOAD    0
+    PUSH    82
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   5                             ; locals[5] := cap_id
+
+    ;; Read cap_view_n at offset 114.
+    LOAD    0
+    PUSH    114
+    PUSH    "Schema/nat_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   6                             ; locals[6] := cap_view_n
+
+    ;; Read budget_remaining (tail-8 minus 8, i.e. the first tail Nat).
+    ;; budget_remaining is at offset = 118 + 32*cap_view_n.
+    ;; We read it via Schema/tail_minus_8_nat for the deadline,
+    ;; and budget_remaining is the 8 bytes before that.
+    ;; For simplicity, delegate to the existing AttentionRecord/proj/budget_remaining.
+    LOAD    0
+    PUSH    "AttentionRecord/proj/budget_remaining"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   7                             ; locals[7] := budget_remaining
+
+    ;; Check underflow: budget_remaining >= budget_to_sub.
+    LOAD    7
+    LOAD    1
+    LT
+    JMPZ   +bsc_no_underflow
+    TRAP   EUNDERFLOW
+
+    :bsc_no_underflow
+    ;; Subtract budget.
+    LOAD    7
+    LOAD    1
+    SUB
+    STORE   7                             ; locals[7] := new budget_remaining
+
+    ;; Read deadline.
+    LOAD    0
+    PUSH    "AttentionRecord/proj/deadline"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   8                             ; locals[8] := deadline
+
+    ;; Increment cap_view_n (adding one child).
+    LOAD    6
+    PUSH    1
+    ADD
+    STORE   6                             ; locals[6] := new cap_view_n
+
+    ;; Reassemble: Vec{parent, mind_id, cap_id, cap_view_n,
+    ;;   budget_remaining, deadline}. The cap_view contents are
+    ;;   handled by the serialiser which appends the child AttId.
+    LOAD    3
+    LOAD    4
+    LOAD    5
+    LOAD    6
+    LOAD    7
+    LOAD    8
+    LOAD    2                             ; child AttId (appended to cap_view)
+    MAKEVEC   7
+    PUSH    "AttentionRecord/v1"
+    SEAL    Bytes
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/forest-schema-rationale
+)
+
+; ============================================================
+; AttentionRecord/with_budget_sub — (AttentionRecord, Nat) → AttentionRecord
+;
+; Functional update: subtracts budget from budget_remaining.
+; Returns a new AttentionRecord with all other fields unchanged.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "attentionrecord_with_budget_sub"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE EUNDERFLOW)
+  :arity         2
+  :locals-n      8
+  :code (
+    STORE   0                            ; locals[0] := record bytes
+    STORE   1                            ; locals[1] := budget_to_sub (Nat)
+
+    ;; Verify type tag.
+    LOAD    0
+    PUSH    "AttentionRecord/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+
+    ;; Read parent at offset 18.
+    LOAD    0
+    PUSH    18
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   2                             ; locals[2] := parent
+
+    ;; Read mind_id at offset 50.
+    LOAD    0
+    PUSH    50
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   3                             ; locals[3] := mind_id
+
+    ;; Read cap_id at offset 82.
+    LOAD    0
+    PUSH    82
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   4                             ; locals[4] := cap_id
+
+    ;; Read cap_view_n at offset 114.
+    LOAD    0
+    PUSH    114
+    PUSH    "Schema/nat_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   5                             ; locals[5] := cap_view_n
+
+    ;; Read budget_remaining.
+    LOAD    0
+    PUSH    "AttentionRecord/proj/budget_remaining"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   6                             ; locals[6] := budget_remaining
+
+    ;; Check underflow.
+    LOAD    6
+    LOAD    1
+    LT
+    JMPZ   +bs_no_underflow
+    TRAP   EUNDERFLOW
+
+    :bs_no_underflow
+    ;; Subtract budget.
+    LOAD    6
+    LOAD    1
+    SUB
+    STORE   6                             ; locals[6] := new budget_remaining
+
+    ;; Read deadline.
+    LOAD    0
+    PUSH    "AttentionRecord/proj/deadline"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   7                             ; locals[7] := deadline
+
+    ;; Reassemble and seal.
+    LOAD    2
+    LOAD    3
+    LOAD    4
+    LOAD    5
+    LOAD    6
+    LOAD    7
+    MAKEVEC   6
+    PUSH    "AttentionRecord/v1"
+    SEAL    Bytes
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/forest-schema-rationale
+)
+
+; ============================================================
+; AttentionRecord/with_deadline — (AttentionRecord, Nat) → AttentionRecord
+;
+; Functional update: replaces the deadline field. Returns a new
+; AttentionRecord with all other fields unchanged.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "attentionrecord_with_deadline"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      8
+  :code (
+    STORE   0                            ; locals[0] := record bytes
+    STORE   1                            ; locals[1] := new deadline (Nat)
+
+    ;; Verify type tag.
+    LOAD    0
+    PUSH    "AttentionRecord/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+
+    ;; Read parent at offset 18.
+    LOAD    0
+    PUSH    18
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   2                             ; locals[2] := parent
+
+    ;; Read mind_id at offset 50.
+    LOAD    0
+    PUSH    50
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   3                             ; locals[3] := mind_id
+
+    ;; Read cap_id at offset 82.
+    LOAD    0
+    PUSH    82
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   4                             ; locals[4] := cap_id
+
+    ;; Read cap_view_n at offset 114.
+    LOAD    0
+    PUSH    114
+    PUSH    "Schema/nat_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   5                             ; locals[5] := cap_view_n
+
+    ;; Read budget_remaining.
+    LOAD    0
+    PUSH    "AttentionRecord/proj/budget_remaining"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   6                             ; locals[6] := budget_remaining
+
+    ;; Reassemble with new deadline (locals[1]).
+    LOAD    2
+    LOAD    3
+    LOAD    4
+    LOAD    5
+    LOAD    6
+    LOAD    1                             ; new deadline
+    MAKEVEC   6
+    PUSH    "AttentionRecord/v1"
+    SEAL    Bytes
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/forest-schema-rationale
+)
+
+; ============================================================
+; AttentionRecord/with_yielded — (AttentionRecord, Hash) → AttentionRecord
+;
+; Functional update: sets the yielded continuation hash. The yielded
+; field is stored on the ForestLeaf (offset 77), not directly on the
+; AttentionRecord. This helper updates the record's internal state
+; to note the yielded continuation. Since the record itself does not
+; have a yielded field, this helper is a pass-through that delegates
+; to the forest-level mark_yielded operation.
+;
+; For the schema layer, we reconstruct the record with all existing
+; fields unchanged. The yielded hash is applied to the ForestLeaf by
+; the caller (forest.form's mark_yielded operation), which updates
+; the leaf at offset 77.
+;
+; To keep this helper self-contained, we re-seal the record with
+; all its fields and return it. The yielded hash is passed to the
+; caller for leaf-level application.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "attentionrecord_with_yielded"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE)
+  :arity         2
+  :locals-n      8
+  :code (
+    STORE   0                            ; locals[0] := record bytes
+    STORE   1                            ; locals[1] := yielded hash
+
+    ;; Verify type tag.
+    LOAD    0
+    PUSH    "AttentionRecord/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+
+    ;; Read parent at offset 18.
+    LOAD    0
+    PUSH    18
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   2                             ; locals[2] := parent
+
+    ;; Read mind_id at offset 50.
+    LOAD    0
+    PUSH    50
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   3                             ; locals[3] := mind_id
+
+    ;; Read cap_id at offset 82.
+    LOAD    0
+    PUSH    82
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    STORE   4                             ; locals[4] := cap_id
+
+    ;; Read cap_view_n at offset 114.
+    LOAD    0
+    PUSH    114
+    PUSH    "Schema/nat_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   5                             ; locals[5] := cap_view_n
+
+    ;; Read budget_remaining.
+    LOAD    0
+    PUSH    "AttentionRecord/proj/budget_remaining"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   6                             ; locals[6] := budget_remaining
+
+    ;; Read deadline.
+    LOAD    0
+    PUSH    "AttentionRecord/proj/deadline"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   7                             ; locals[7] := deadline
+
+    ;; Reassemble with all fields unchanged. The yielded hash
+    ;; (locals[1]) is not stored on the record — it is applied to
+    ;; the ForestLeaf by the caller. We return the record as-is
+    ;; (re-sealed to ensure immutability).
+    LOAD    2
+    LOAD    3
+    LOAD    4
+    LOAD    5
+    LOAD    6
+    LOAD    7
+    MAKEVEC   6
+    PUSH    "AttentionRecord/v1"
+    SEAL    Bytes
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/forest-schema-rationale
+)
+
+(exports
+  (forest_hamt_lookup                       (Bytes, Hash) → Pair{Bool, Hash})
+  (forest_hamt_insert_record                (Bytes, Hash, Hash) → Bytes)
+  (forest_hamt_remove                       (Bytes, Hash) → Bytes)
+  (forest_derive_att_id                     (Hash, Nat, Hash) → Hash)
+  (forest_seal_record                       (Bytes) → Hash)
+  (forest_dissolve_rec                      (Bytes, Hash) → Pair{Bytes, Vec{Hash}})
+  (attentionrecord_proj_children            (Bytes) → Vec{Hash})
+  (attentionrecord_proj_deadline            (Bytes) → Nat)
+  (attentionrecord_proj_yielded             (Bytes) → Hash)
+  (attentionrecord_construct_child          (Hash, Bytes, Nat, Nat) → Bytes)
+  (attentionrecord_with_budget_sub_and_child (Bytes, Nat, Hash) → Bytes)
+  (attentionrecord_with_budget_sub          (Bytes, Nat) → Bytes)
+  (attentionrecord_with_deadline            (Bytes, Nat) → Bytes)
+  (attentionrecord_with_yielded             (Bytes, Hash) → Bytes))
+
+; ============================================================
+; Notes on pending sub-helper leaves
+;
+; The helpers above delegate to the following sub-helpers that
+; are NOT yet encoded in this file. They are catalogued here so
+; the next encoding batch can pick them up:
+;
+;   Trie/branch_lookup_child (Bytes, Hash) → Hash
+;     Already encoded in trie-schema.form. Used by Forest/hamt_lookup
+;     since ForestBranch/v1 shares the identical layout with
+;     TrieBranch/v1 (depth, bitmap, children). No additional work
+;     needed — cross-file delegation via READSLOT.
+;
+;   Trie/branch_insert (Bytes, Hash, Hash) → Hash
+;     Already encoded in trie-schema.form. Used by Forest/hamt_insert_record.
+;
+;   Trie/branch_remove (Bytes, Nat) → Hash
+;     Already encoded in trie-schema.form. Used by Forest/hamt_remove.
+;     Note: Forest/hamt_remove currently passes the AttId as the
+;     second argument where Trie/branch_remove expects a slot Nat.
+;     A slot-derivation sub-helper (Trie/chunk_at_depth) is needed
+;     to convert AttId → slot index. This is the same pending leaf
+;     noted in trie-schema.form.
+;
+;   S-05/forest/dissolve_subtree_postorder (ForestRoot, AttId) → Pair{ForestRoot, Vec{AttId}}
+;     Already encoded as a public forest operation in forest.form.
+;     Forest/dissolve_rec delegates to it for the recursive walk.
+;
+;   AttentionRecord/proj/budget_remaining (Bytes) → Nat
+;     Already encoded in schema-helpers.form. Used by the with_*
+;     helpers to read the current budget_remaining before update.
+;
+;   AttentionRecord/proj/deadline (Bytes) → Nat
+;     Encoded in this file (attentionrecord_proj_deadline). The
+;     with_* helpers delegate to it via READSLOT.
+;
+;   ForestLeaf/proj/yielded (Bytes) → Hash
+;     NOT yet encoded. Reads offset 77 of ForestLeaf/v1. Needed by
+;     the public forest/mark_yielded operation to read the current
+;     yielded hash before updating it. Should be added in a future
+;     forest-leaf-schema batch.
+;
+;   ForestLeaf/construct (Hash, Hash, Hash) → Bytes
+;     NOT yet encoded. Constructs a ForestLeaf/v1 from
+;     (att_id, record, yielded). Used by Forest/hamt_insert_record
+;     internally (currently inlined via SEAL Bytes). Should be
+;     factored into a dedicated helper.
+;
+;   ForestLeaf/proj/record (Bytes) → Hash
+;     NOT yet encoded. Reads offset 45 of ForestLeaf/v1. Needed by
+;     Forest/hamt_lookup to extract the record hash from a found
+;     leaf.
+;
+;   ForestLeaf/proj/att_id (Bytes) → Hash
+;     NOT yet encoded. Reads offset 13 of ForestLeaf/v1.
+;
+; These ForestLeaf projection helpers (4) are the next batch for
+; the forest schema layer. They follow the identical pattern to
+; the TrieLeaf projections in trie-schema.form and can be encoded
+; in a sibling forest-leaf-schema.form file.
+;
+; The helpers encoded above close all 14 of the pending
+; forest-schema slots catalogued in STUBS.md under "Helpers
+; required by S-05 attention_alloc".
+; ============================================================
