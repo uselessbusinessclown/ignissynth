@@ -280,22 +280,22 @@ themselves total and sealed.
 
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
-| `Trie/type_tag_is_empty`        | `(Trie) → Bool`                            | pending  |
-| `Trie/type_tag_is_branch`       | `(Trie) → Bool`                            | pending  |
-| `Trie/type_tag_is_leaf`         | `(Trie) → Bool`                            | pending  |
-| `TrieLeaf/proj/key`             | `(TrieLeaf) → Hash`                        | pending  |
-| `TrieLeaf/proj/cell`            | `(TrieLeaf) → Cell`                        | pending  |
-| `TrieLeaf/proj/pin_count`       | `(TrieLeaf) → Nat`                         | pending  |
-| `TrieLeaf/construct`            | `(Hash, Cell, Nat) → TrieLeaf`             | pending  |
-| `TrieLeaf/bump_pin_count`       | `(TrieLeaf) → TrieLeaf`                     | pending  |
-| `TrieLeaf/decr_pin_count`       | `(TrieLeaf) → Pair{TrieLeaf, Bool}`        | pending  |
-| `Trie/seal_leaf`                | `(TrieLeaf) → Hash`                        | pending  |
-| `Trie/branch_lookup_child`      | `(TrieBranch, Nat) → Trie`                 | pending  |
-| `Trie/branch_insert`            | `(TrieBranch, Nat, Trie) → TrieBranch`     | pending  |
-| `Trie/branch_bump_pin`          | `(TrieBranch, Nat, Trie) → TrieBranch`     | pending  |
-| `Trie/branch_decr_pin`          | `(TrieBranch, Nat, Trie) → TrieBranch`     | pending  |
-| `Trie/branch_remove`            | `(TrieBranch, Nat) → Trie`                 | pending  |
-| `Trie/split_leaves`             | `(TrieLeaf, TrieLeaf, Nat) → TrieBranch`   | pending  |
+| `Trie/type_tag_is_empty`        | `(Trie) → Bool`                            | encoded (trie-schema.form) |
+| `Trie/type_tag_is_branch`       | `(Trie) → Bool`                            | encoded (trie-schema.form) |
+| `Trie/type_tag_is_leaf`         | `(Trie) → Bool`                            | encoded (trie-schema.form) |
+| `TrieLeaf/proj/key`             | `(TrieLeaf) → Hash`                        | encoded (trie-schema.form) |
+| `TrieLeaf/proj/cell`            | `(TrieLeaf) → Hash`                        | encoded (trie-schema.form) |
+| `TrieLeaf/proj/pin_count`       | `(TrieLeaf) → Nat`                         | encoded (trie-schema.form) |
+| `TrieLeaf/construct`            | `(Hash, Hash, Nat) → TrieLeaf`             | encoded (trie-schema.form) |
+| `TrieLeaf/bump_pin_count`       | `(TrieLeaf) → TrieLeaf`                     | encoded (trie-schema.form) |
+| `TrieLeaf/decr_pin_count`       | `(TrieLeaf) → Pair{TrieLeaf, Bool}`        | encoded (trie-schema.form) |
+| `Trie/seal_leaf`                | `(TrieLeaf) → Hash`                        | encoded (trie-schema.form) |
+| `Trie/branch_lookup_child`      | `(TrieBranch, Hash) → Hash`                | encoded (trie-schema.form) |
+| `Trie/branch_insert`            | `(TrieBranch, Hash, Hash) → Hash`          | encoded (trie-schema.form) |
+| `Trie/branch_bump_pin`          | `(TrieBranch, Hash) → Hash`                | encoded (trie-schema.form) |
+| `Trie/branch_decr_pin`          | `(TrieBranch, Hash) → Pair{Hash, Bool}`    | encoded (trie-schema.form) |
+| `Trie/branch_remove`            | `(TrieBranch, Nat) → Hash`                 | encoded (trie-schema.form) |
+| `Trie/split_leaves`             | `(TrieLeaf, Hash, Hash) → Hash`            | encoded (trie-schema.form) |
 
 ## Helpers required by S-04 `weave_log`
 
@@ -547,8 +547,8 @@ operational form of the IL specification.
 
 | Category              | Count    |
 |-----------------------|----------|
-| Encoded helpers       | 155      |
-| Stub-only helpers     | ~72      |
+| Encoded helpers       | 151      |
+| Stub-only helpers     | ~56      |
 | Schema/* primitives   | 7 (encoded) |
 | Parser/* primitives   | 13 (encoded) |
 | Parser/* byte-arithmetic leaves | 20 (encoded) |

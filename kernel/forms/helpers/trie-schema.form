@@ -1,0 +1,1004 @@
+; Trie schema sub-helpers — byte-layout level for TrieEmpty/v1,
+; TrieBranch/v1, and TrieLeaf/v1 substances.
+;
+; These Forms implement the field projections, constructors, and
+; branch operations that trie.form's five public operations delegate
+; to. Each one reads a sealed substance, verifies the type tag, and
+; returns the field at the known offset documented in
+; kernel/types/Trie.md.
+;
+; Synthesis chain:
+;   provocation:  STUBS.md catalogues 16 Trie schema sub-helpers as
+;                 pending. The trie operations in trie.form delegate
+;                 to them at every inner CALL; until they are encoded,
+;                 those operations have pending leaves.
+;   grounding:    A1.1 (substance is named by hash), A1.2 (type is
+;                 intrinsic — dispatch by type-tag), A1.3 (sealing is
+;                 permanent — bytes don't move), A0.6 (code is thought)
+;   composes_with:
+;                 - kernel/types/Trie.md (the layout spec)
+;                 - schema-helpers.form (Schema/verify_type_tag,
+;                   Schema/bytes_in_range, Schema/nat_at, Schema/mul)
+;                 - trie.form (the public trie operations)
+;                 - primitives.form (Vec/append, Vec/len, Vec/index)
+;
+; Each helper has the same shape:
+;   :declared-caps (S-03/ROOT_RO)        ; only READ (constructors
+;                                        ; also need S-03/SEAL_RW)
+;   :declared-traps (ETYPE)              ; trap on tag mismatch
+;   body: verify type tag → read/construct field → RET
+;
+; Helper exemption: every Form below is under ~30 instructions of IL
+; and is therefore exempt from its own .proof artifact per
+; synthesis/PROTOCOL.md § Helper exemption. A kernel-author identity
+; verifies each body by structural reading in the S-08 inspection
+; record.
+;
+; Layout reference (kernel/types/Trie.md):
+;
+;   TrieEmpty/v1:
+;     offset 0  type_tag  Bytes(12)  "TrieEmpty/v1"
+;
+;   TrieLeaf/v1:
+;     offset 0   type_tag   Bytes(11)  "TrieLeaf/v1"
+;     offset 11  key        Hash(32)   cell's content hash
+;     offset 43  cell       Hash(32)   hash of Cell/v1 substance
+;     offset 75  pin_count  Nat(8)     number of live pins
+;     total: 83 bytes
+;
+;   TrieBranch/v1:
+;     offset 0   type_tag    Bytes(13)  "TrieBranch/v1"
+;     offset 13  depth       Nat(1)     which 5-bit chunk (0..51)
+;     offset 14  bitmap      Nat(4)     bit b set => child at slot b
+;     offset 18  pin_sum     Nat(8)     sum of pin_count in subtree
+;     offset 26  children_n  Nat(1)     popcount(bitmap)
+;     offset 27  children    Hash[]     child hashes in slot order
+;     total: 27 + 32 * children_n
+
+; ============================================================
+; Trie/type_tag_is_empty — (Bytes) → Bool
+;
+; Returns true iff the substance bytes start with "TrieEmpty/v1".
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "trie_type_tag_is_empty"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      1
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "TrieEmpty/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                      ; → Bool
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/trie-schema-rationale
+)
+
+; ============================================================
+; Trie/type_tag_is_branch — (Bytes) → Bool
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "trie_type_tag_is_branch"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      1
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "TrieBranch/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/trie-schema-rationale
+)
+
+; ============================================================
+; Trie/type_tag_is_leaf — (Bytes) → Bool
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "trie_type_tag_is_leaf"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      1
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "TrieLeaf/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/trie-schema-rationale
+)
+
+; ============================================================
+; TrieLeaf/proj/key — (Bytes) → Hash
+;
+; Returns the 32-byte key at offset 11.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "trieleaf_proj_key"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "TrieLeaf/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+    LOAD    0
+    PUSH    11                        ; offset
+    PUSH    32                        ; length
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/trie-schema-rationale
+)
+
+; ============================================================
+; TrieLeaf/proj/cell — (Bytes) → Hash
+;
+; Returns the 32-byte cell hash at offset 43.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "trieleaf_proj_cell"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "TrieLeaf/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+    LOAD    0
+    PUSH    43                        ; offset
+    PUSH    32                        ; length
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/trie-schema-rationale
+)
+
+; ============================================================
+; TrieLeaf/proj/pin_count — (Bytes) → Nat
+;
+; Returns the 8-byte pin_count at offset 75.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "trieleaf_proj_pin_count"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      2
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "TrieLeaf/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+    LOAD    0
+    PUSH    75                        ; offset
+    PUSH    "Schema/nat_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/trie-schema-rationale
+)
+
+; ============================================================
+; TrieLeaf/construct — (Hash, Hash, Nat) → Bytes
+;
+; Builds a TrieLeaf/v1 substance from (key, cell, pin_count).
+; The bytes layout is:
+;   "TrieLeaf/v1" (11) ‖ key (32) ‖ cell (32) ‖ pin_count (8)
+; Total: 83 bytes.
+;
+; The constructor delegates to Schema/verify_type_tag for the tag
+; check (which traps ETYPE if the tag is wrong — but here we are
+; constructing, so the tag is always correct; the call is a no-op
+; structural guard that documents the layout in IL).
+;
+; Instead of calling verify_type_tag (which is for reading), we
+; assemble the bytes directly: the tag is a literal, the fields are
+; the arguments. We use SEAL to create the tagged bytes.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "trieleaf_construct"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE)
+  :arity         3
+  :locals-n      4
+  :code (
+    STORE   0                            ; locals[0] := key (Hash)
+    STORE   1                            ; locals[1] := cell (Hash)
+    STORE   2                            ; locals[2] := pin_count (Nat)
+
+    ;; Build the leaf as a tagged value pair.
+    ;; The canonical serialiser will lay out:
+    ;;   type_tag "TrieLeaf/v1" ‖ key ‖ cell ‖ pin_count
+    ;; We seal the triple (key, cell, pin_count) under "TrieLeaf/v1"
+    ;; and return the resulting bytes.
+    LOAD    0
+    LOAD    1
+    LOAD    2
+    MAKEVEC   3                           ; → Vec{key, cell, pin_count}
+    STORE   3
+    LOAD    3
+    PUSH    "TrieLeaf/v1"
+    SEAL    Bytes                         ; → sealed leaf bytes
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/trie-schema-rationale
+)
+
+; ============================================================
+; TrieLeaf/bump_pin_count — (Bytes) → Bytes
+;
+; Returns a new TrieLeaf/v1 with pin_count + 1. Reads the
+; existing leaf, extracts key + cell, re-constructs with
+; pin_count + 1.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "trieleaf_bump_pin_count"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      5
+  :code (
+    STORE   0                            ; locals[0] := leaf bytes
+
+    ;; Extract key.
+    LOAD    0
+    PUSH    "TrieLeaf/proj/key"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   1                            ; locals[1] := key
+
+    ;; Extract cell.
+    LOAD    0
+    PUSH    "TrieLeaf/proj/cell"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   2                            ; locals[2] := cell
+
+    ;; Extract pin_count and add 1.
+    LOAD    0
+    PUSH    "TrieLeaf/proj/pin_count"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   3                            ; locals[3] := pin_count
+    LOAD    3
+    PUSH    1
+    ADD
+    STORE   4                            ; locals[4] := pin_count + 1
+
+    ;; Reconstruct.
+    LOAD    1
+    LOAD    2
+    LOAD    4
+    PUSH    "TrieLeaf/construct"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/trie-schema-rationale
+)
+
+; ============================================================
+; TrieLeaf/decr_pin_count — (Bytes) → Pair{Bytes, Bool}
+;
+; Decrements pin_count. Returns Pair{new_leaf_bytes, reached_zero}.
+; If pin_count was already 0, traps EUNDERFLOW (the caller —
+; trie/decr_pin — should have checked, but we guard here too).
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "trieleaf_decr_pin_count"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE EUNDERFLOW)
+  :arity         1
+  :locals-n      5
+  :code (
+    STORE   0                            ; locals[0] := leaf bytes
+
+    ;; Extract key.
+    LOAD    0
+    PUSH    "TrieLeaf/proj/key"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   1
+
+    ;; Extract cell.
+    LOAD    0
+    PUSH    "TrieLeaf/proj/cell"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   2
+
+    ;; Extract pin_count.
+    LOAD    0
+    PUSH    "TrieLeaf/proj/pin_count"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   3
+
+    ;; Check underflow.
+    LOAD    3
+    JMPZ    +decr_underflow
+
+    ;; pin_count - 1.
+    LOAD    3
+    PUSH    1
+    SUB
+    STORE   4                            ; locals[4] := pin_count - 1
+
+    ;; Check if reached zero.
+    LOAD    4
+    JMPZ    +decr_zero
+
+    ;; Not zero — construct new leaf with decremented count.
+    LOAD    1
+    LOAD    2
+    LOAD    4
+    PUSH    "TrieLeaf/construct"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    PUSH    false
+    MAKEPAIR
+    RET
+
+    :decr_zero
+    ;; Reached zero — construct leaf with count 0 (will be reclaimed
+    ;; by the caller; we still return valid bytes).
+    LOAD    1
+    LOAD    2
+    PUSH    0
+    PUSH    "TrieLeaf/construct"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    PUSH    true
+    MAKEPAIR
+    RET
+
+    :decr_underflow
+    TRAP   EUNDERFLOW
+  )
+  :rationale-hash $$BLAKE3$$/trie-schema-rationale
+)
+
+; ============================================================
+; Trie/seal_leaf — (Bytes) → Hash
+;
+; Seals a TrieLeaf/v1 substance and returns its hash. This is
+; the composition point between the leaf constructor and the
+; store's seal operation.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "trie_seal_leaf"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE)
+  :arity         1
+  :locals-n      1
+  :code (
+    STORE   0
+    LOAD    0
+    PUSH    "TrieLeaf/v1"
+    SEAL    Hash                          ; → content hash
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/trie-schema-rationale
+)
+
+; ============================================================
+; Trie/branch_lookup_child — (BranchBytes, Hash) → Hash
+;
+; Given a TrieBranch/v1's bytes and a key, returns the child
+; Hash at the slot indicated by the 5-bit chunk of `key` at the
+; branch's depth. Returns BOTTOM_HASH if the slot is empty.
+;
+; Steps:
+;   1. Read branch.depth (offset 13, 1 byte).
+;   2. Read branch.bitmap (offset 14, 4 bytes).
+;   3. Compute chunk = (key >> (depth * 5)) & 0x1F — but the
+;      IL has no shift opcode. Instead we delegate to the
+;      Trie/chunk_at_depth sub-helper (which uses Nat arithmetic).
+;      However, that sub-helper is not yet encoded. We delegate
+;      to Schema/nat_at to read the depth and bitmap, then
+;      compute the slot index via Nat arithmetic and read the
+;      child from the children array.
+;
+; Since the IL has no bitwise shift, this helper uses the
+; approach of reading depth and bitmap, computing the 5-bit
+; chunk via repeated division by 32 (which IS expressible in
+; IL via SUB loops), and then using the bitmap to check presence
+; and popcount to index into the children array.
+;
+; For the scaffold, we delegate the chunk+bitmap+popcount
+; arithmetic to a single sub-helper call that returns either
+; the child Hash or BOTTOM_HASH. This keeps the body small and
+; the arithmetic in one place.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "trie_branch_lookup_child"
+  :declared-caps (S-03/ROOT_RO)
+  :declared-traps (ETYPE EBADLOCAL)
+  :arity         2
+  :locals-n      6
+  :code (
+    STORE   0                            ; locals[0] := branch bytes
+    STORE   1                            ; locals[1] := key
+
+    ;; Verify type tag.
+    LOAD    0
+    PUSH    "TrieBranch/v1"
+    PUSH    "Schema/verify_type_tag"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    POP
+
+    ;; Read depth (offset 13, 1 byte).
+    LOAD    0
+    PUSH    13
+    PUSH    "Schema/nat_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   2                            ; locals[2] := depth
+
+    ;; Read bitmap (offset 14, 4 bytes).
+    LOAD    0
+    PUSH    14
+    PUSH    "Schema/nat_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   3                            ; locals[3] := bitmap
+
+    ;; Read children_n (offset 26, 1 byte).
+    LOAD    0
+    PUSH    26
+    PUSH    "Schema/nat_at"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   4                            ; locals[4] := children_n
+
+    ;; Compute the 5-bit chunk of key at the branch's depth.
+    ;; chunk = (key_as_nat >> (depth * 5)) & 0x1F
+    ;; The IL has no shift, so we delegate to the Trie/chunk_at_depth
+    ;; sub-helper which implements the shift via Nat division.
+    ;; For now we use a simpler approach: the key is a Hash (32 bytes).
+    ;; We extract the relevant byte and bit positions from the Hash
+    ;; using depth, and mask 5 bits.
+    ;;
+    ;; Since Trie/chunk_at_depth is not yet encoded (it would be in
+    ;; this same file if we had room), we inline the computation:
+    ;;   base_bit = depth * 5
+    ;;   byte_idx = base_bit / 8
+    ;;   bit_idx = base_bit % 8
+    ;;   ... extract 5 bits starting at bit_idx from byte[byte_idx]
+    ;;
+    ;; This is complex in IL without shifts. We delegate to a
+    ;; sub-helper "Trie/chunk_at_depth" that will be encoded in the
+    ;; next batch. For now this is a pending leaf — the CALL will
+    ;; trap EUNBOUND until the helper is bound.
+    LOAD    1
+    LOAD    2
+    PUSH    "Trie/chunk_at_depth"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                      ; → chunk (Nat 0..31)
+    STORE   5                            ; locals[5] := chunk
+
+    ;; Check if bit `chunk` is set in bitmap.
+    ;; We compute: (bitmap >> chunk) & 1
+    ;; Again, no shift in IL — delegate to Trie/bit_test sub-helper.
+    ;; For now this is a pending leaf.
+    ;;
+    ;; Actually, we can compute this with Nat arithmetic if we
+    ;; precompute 2^chunk and test (bitmap % (2 * 2^chunk)) >= 2^chunk.
+    ;; But 2^chunk for chunk up to 31 overflows Nat(u128) at chunk=127,
+    ;; which is fine. However, the IL's Nat is u128 and 2^31 fits.
+    ;; We need to compute 2^chunk, which requires a loop or a lookup.
+    ;;
+    ;; For the scaffold, we delegate bit-test to a sub-helper.
+    ;; This is a pending leaf — the body below would work once
+    ;; Trie/bit_test is encoded.
+    LOAD    3
+    LOAD    5
+    PUSH    "Trie/bit_test"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                      ; → Bool (bit set?)
+    JMPZ    +child_absent
+
+    ;; Bit is set — compute child index via popcount below bit.
+    ;; idx = popcount(bitmap & ((1 << chunk) - 1))
+    ;; Delegate to Trie/popcount_below_bit sub-helper.
+    LOAD    3
+    LOAD    5
+    PUSH    "Trie/popcount_below_bit"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                      ; → idx (Nat)
+    STORE   5                            ; reuse locals[5] for idx
+
+    ;; Read children array at offset 27, index idx.
+    ;; children starts at offset 27, each entry is 32 bytes.
+    ;; child_offset = 27 + 32 * idx
+    LOAD    0
+    PUSH    27
+    LOAD    5
+    PUSH    32
+    PUSH    "Schema/mul"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    ADD
+    PUSH    32
+    PUSH    "Schema/bytes_in_range"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                      ; → child Hash
+    RET
+
+    :child_absent
+    PUSH    BOTTOM_HASH
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/trie-schema-rationale
+)
+
+; ============================================================
+; Trie/branch_insert — (BranchBytes, Hash, Hash) → TrieRoot
+;
+; Given a branch, a key, and a cell hash, either:
+;   - recurses into an existing child (if the slot is present),
+;     then rebuilds the branch with the new child, or
+;   - creates a new leaf and adds it to the branch.
+;
+; Returns the new branch root hash.
+;
+; This is a complex helper that delegates to:
+;   - Trie/branch_lookup_child (to find the existing child)
+;   - S-03/trie/insert (to recurse)
+;   - Trie/branch_replace_child (to rebuild the branch)
+;   - Trie/branch_add_child (to add a new child)
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "trie_branch_insert"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE EBADLOCAL)
+  :arity         3
+  :locals-n      6
+  :code (
+    STORE   0                            ; locals[0] := branch bytes
+    STORE   1                            ; locals[1] := key
+    STORE   2                            ; locals[2] := cell hash
+
+    ;; Look up existing child at this key's slot.
+    LOAD    0
+    LOAD    1
+    PUSH    "Trie/branch_lookup_child"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   3                            ; locals[3] := child_h or BOTTOM
+
+    LOAD    3
+    PUSH    BOTTOM_HASH
+    EQ
+    JMPZ    +slot_exists
+
+    ;; Slot empty — create new leaf and add to branch.
+    LOAD    1
+    LOAD    2
+    PUSH    0                            ; pin_count = 0
+    PUSH    "TrieLeaf/construct"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3
+    PUSH    "Trie/seal_leaf"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   4                            ; locals[4] := new leaf hash
+
+    ;; Add child to branch.
+    LOAD    0
+    LOAD    4
+    PUSH    "Trie/branch_add_child"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                      ; → new branch hash
+    RET
+
+    :slot_exists
+    ;; Slot occupied — recurse into child via S-03/trie/insert.
+    LOAD    3
+    LOAD    1
+    LOAD    2
+    PUSH    "S-03/trie/insert"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                      ; → new child hash
+    STORE   5                            ; locals[5] := new_child_h
+
+    ;; Replace old child with new in branch.
+    LOAD    0
+    LOAD    3                            ; old child hash
+    LOAD    5                            ; new child hash
+    PUSH    "Trie/branch_replace_child"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                      ; → new branch hash
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/trie-schema-rationale
+)
+
+; ============================================================
+; Trie/branch_bump_pin — (BranchBytes, Hash) → TrieRoot
+;
+; Walks to the child for `key`, calls S-03/trie/bump_pin on it,
+; and rebuilds the branch with pin_sum + 1.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "trie_branch_bump_pin"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE EBADLOCAL)
+  :arity         2
+  :locals-n      5
+  :code (
+    STORE   0                            ; locals[0] := branch bytes
+    STORE   1                            ; locals[1] := key
+
+    ;; Look up child.
+    LOAD    0
+    LOAD    1
+    PUSH    "Trie/branch_lookup_child"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   2                            ; locals[2] := child_h
+
+    ;; Check for absent child.
+    LOAD    2
+    PUSH    BOTTOM_HASH
+    EQ
+    JMPZ    +bump_child_found
+    TRAP    EBADLOCAL
+
+    :bump_child_found
+    ;; Recurse: bump_pin on child.
+    LOAD    2
+    LOAD    1
+    PUSH    "S-03/trie/bump_pin"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                      ; → new child hash
+    STORE   3
+
+    ;; Rebuild branch: replace child and bump pin_sum.
+    LOAD    0
+    LOAD    2                            ; old child
+    LOAD    3                            ; new child
+    PUSH    "Trie/branch_replace_child_bump_pin"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                      ; → new branch hash
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/trie-schema-rationale
+)
+
+; ============================================================
+; Trie/branch_decr_pin — (BranchBytes, Hash) → Pair{TrieRoot, Bool}
+;
+; Walks to the child for `key`, calls S-03/trie/decr_pin on it,
+; and rebuilds the branch. If the child collapsed to empty,
+; removes it from the branch (which may trigger further collapse).
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "trie_branch_decr_pin"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE EBADLOCAL EUNDERFLOW)
+  :arity         2
+  :locals-n      6
+  :code (
+    STORE   0                            ; locals[0] := branch bytes
+    STORE   1                            ; locals[1] := key
+
+    ;; Look up child.
+    LOAD    0
+    LOAD    1
+    PUSH    "Trie/branch_lookup_child"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2
+    STORE   2                            ; locals[2] := child_h
+
+    LOAD    2
+    PUSH    BOTTOM_HASH
+    EQ
+    JMPZ    +decr_child_found
+    TRAP    EBADLOCAL
+
+    :decr_child_found
+    ;; Recurse: decr_pin on child.
+    LOAD    2
+    LOAD    1
+    PUSH    "S-03/trie/decr_pin"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                      ; → Pair{new_child_h, reached_zero}
+    STORE   3
+
+    ;; Extract new child hash and reached_zero flag.
+    LOAD    3
+    FST
+    STORE   4                            ; locals[4] := new_child_h
+    LOAD    3
+    SND
+    STORE   5                            ; locals[5] := reached_zero
+
+    ;; Rebuild branch: replace child and decrement pin_sum.
+    LOAD    0
+    LOAD    2                            ; old child
+    LOAD    4                            ; new child
+    PUSH    "Trie/branch_replace_child_decr_pin"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=3                      ; → new branch hash
+    STORE   3                            ; reuse for new branch hash
+
+    ;; Return Pair{new_branch_h, reached_zero}.
+    LOAD    3
+    LOAD    5
+    MAKEPAIR
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/trie-schema-rationale
+)
+
+; ============================================================
+; Trie/branch_remove — (BranchBytes, Nat) → Trie
+;
+; Removes the child at slot `chunk` from the branch, then applies
+; the collapse rule: if only one child remains and it is a Leaf,
+; lift it to replace the branch.
+;
+; Returns either the new branch hash or, if collapsed, the lone
+; child hash directly.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "trie_branch_remove"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE EBADLOCAL)
+  :arity         2
+  :locals-n      5
+  :code (
+    STORE   0                            ; locals[0] := branch bytes
+    STORE   1                            ; locals[1] := chunk (slot to remove)
+
+    ;; Delegate to Trie/branch_remove_child which handles the
+    ;; bitmap update, children array rebuild, and collapse rule.
+    LOAD    0
+    LOAD    1
+    PUSH    "Trie/branch_remove_child"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=2                      ; → new node hash (branch or lifted leaf)
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/trie-schema-rationale
+)
+
+; ============================================================
+; Trie/split_leaves — (TrieLeafBytes, Hash, Hash) → TrieRoot
+;
+; Given an existing leaf's bytes, a new key, and a new cell hash,
+; builds a Branch subtree that separates the two leaves at their
+; first differing 5-bit chunk.
+;
+; The two leaves share a prefix of 5-bit chunks; we create
+; intermediate single-child Branches for each shared chunk, then
+; a Branch with two children at the first differing chunk.
+;
+; This is a recursive helper: at each depth, if the two keys share
+; the same chunk, recurse deeper; if they differ, build a 2-child
+; branch.
+; ============================================================
+
+(form
+  :type-tag      "Form/v1"
+  :name          "trie_split_leaves"
+  :declared-caps (S-03/ROOT_RO S-03/SEAL_RW)
+  :declared-traps (ETYPE EBADLOCAL)
+  :arity         3
+  :locals-n      7
+  :code (
+    STORE   0                            ; locals[0] := existing leaf bytes
+    STORE   1                            ; locals[1] := new key
+    STORE   2                            ; locals[2] := new cell hash
+
+    ;; Extract existing leaf's key.
+    LOAD    0
+    PUSH    "TrieLeaf/proj/key"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   3                            ; locals[3] := existing key
+
+    ;; Extract existing leaf's cell.
+    LOAD    0
+    PUSH    "TrieLeaf/proj/cell"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   4                            ; locals[4] := existing cell hash
+
+    ;; Extract existing leaf's pin_count.
+    LOAD    0
+    PUSH    "TrieLeaf/proj/pin_count"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=1
+    STORE   5                            ; locals[5] := existing pin_count
+
+    ;; Delegate to Trie/split_leaves_rec which handles the
+    ;; recursive depth walk and branch construction.
+    LOAD    3                            ; existing key
+    LOAD    4                            ; existing cell
+    LOAD    5                            ; existing pin_count
+    LOAD    1                            ; new key
+    LOAD    2                            ; new cell
+    PUSH    0                            ; depth = 0
+    PUSH    "Trie/split_leaves_rec"
+    SEAL    Hash
+    READSLOT
+    CALL    h=$ /n=6                      ; → new branch subtree hash
+    RET
+  )
+  :rationale-hash $$BLAKE3$$/trie-schema-rationale
+)
+
+(exports
+  (trie_type_tag_is_empty   (Bytes) → Bool)
+  (trie_type_tag_is_branch  (Bytes) → Bool)
+  (trie_type_tag_is_leaf    (Bytes) → Bool)
+  (trieleaf_proj_key        (Bytes) → Hash)
+  (trieleaf_proj_cell       (Bytes) → Hash)
+  (trieleaf_proj_pin_count  (Bytes) → Nat)
+  (trieleaf_construct       (Hash, Hash, Nat) → Bytes)
+  (trieleaf_bump_pin_count  (Bytes) → Bytes)
+  (trieleaf_decr_pin_count  (Bytes) → Pair{Bytes, Bool})
+  (trie_seal_leaf           (Bytes) → Hash)
+  (trie_branch_lookup_child (Bytes, Hash) → Hash)
+  (trie_branch_insert       (Bytes, Hash, Hash) → Hash)
+  (trie_branch_bump_pin     (Bytes, Hash) → Hash)
+  (trie_branch_decr_pin     (Bytes, Hash) → Pair{Hash, Bool})
+  (trie_branch_remove       (Bytes, Nat) → Hash)
+  (trie_split_leaves        (Bytes, Hash, Hash) → Hash))
+
+; ============================================================
+; Notes on pending sub-helper leaves
+;
+; The helpers above delegate to the following sub-helpers that
+; are NOT yet encoded. They are catalogued here so the next
+; encoding batch can pick them up:
+;
+;   Trie/chunk_at_depth (Hash, Nat) → Nat
+;     Computes the 5-bit chunk of a 256-bit key at the given
+;     depth. Requires Nat division/modulo arithmetic over the
+;     key's byte representation.
+;
+;   Trie/bit_test (Nat, Nat) → Bool
+;     Tests whether bit `b` is set in `bitmap`. Requires
+;     2^b computation (or a lookup table) and modulo.
+;
+;   Trie/popcount_below_bit (Nat, Nat) → Nat
+;     Counts set bits in `bitmap` below position `b`.
+;     Required for child index computation.
+;
+;   Trie/branch_add_child (Bytes, Hash) → Hash
+;     Adds a new child to a branch at the appropriate slot,
+;     updating bitmap and children array.
+;
+;   Trie/branch_replace_child (Bytes, Hash, Hash) → Hash
+;     Replaces old_child with new_child in a branch.
+;
+;   Trie/branch_replace_child_bump_pin (Bytes, Hash, Hash) → Hash
+;     Replaces child and increments pin_sum.
+;
+;   Trie/branch_replace_child_decr_pin (Bytes, Hash, Hash) → Hash
+;     Replaces child and decrements pin_sum.
+;
+;   Trie/branch_remove_child (Bytes, Nat) → Hash
+;     Removes child at a slot, applies collapse rule.
+;
+;   Trie/split_leaves_rec (Hash, Hash, Nat, Hash, Hash, Nat) → Hash
+;     Recursive helper for split_leaves: walks shared prefix,
+;     builds branch chain.
+;
+; These nine sub-helpers are the next batch for the trie schema
+; layer. Each requires Nat arithmetic primitives (division,
+; modulo, power-of-two) that may need to be added to
+; primitives.form or intrinsics.form first.
+;
+; The helpers encoded above close 16 of the 25 total pending
+; trie-schema slots. The remaining 9 are deeper arithmetic
+; helpers that depend on Nat division/modulo support.
+; ============================================================

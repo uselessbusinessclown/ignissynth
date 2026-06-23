@@ -258,7 +258,9 @@ jobs:
           # (S-06/parse_intent + S-08/parse_claim in record-parsers.form).
           # Bumped 133 → 135 after the Phase-1.3 batch B record parsers
           # (S-08/parse_proof + S-07/parse_exec_state in record-parsers.form).
-          baseline=135
+          # Bumped 135 → 151 after the trie schema sub-helpers batch
+          # (16 Trie/TrieLeaf/TrieBranch schema helpers in trie-schema.form).
+          baseline=151
           if [ "$encoded" -lt "$baseline" ]; then
             echo "ERROR: encoded helper count ($encoded) is below baseline ($baseline)" >&2
             exit 1
