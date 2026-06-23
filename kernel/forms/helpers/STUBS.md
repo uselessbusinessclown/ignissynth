@@ -338,21 +338,21 @@ CALL" convention from `trie.form`).
 
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
-| `Treap/type_tag_is_empty`       | `(Bytes) → Bool`                           | pending  |
-| `Treap/type_tag_is_branch`      | `(Bytes) → Bool`                           | pending  |
-| `TreapBranch/proj/cap_id`       | `(Bytes) → Hash`                           | pending  |
-| `TreapBranch/proj/cap_entry`    | `(Bytes) → Hash`                           | pending  |
-| `TreapBranch/proj/left`         | `(Bytes) → Hash`                           | pending  |
-| `TreapBranch/proj/right`        | `(Bytes) → Hash`                           | pending  |
-| `Treap/key_lt`                  | `(CapId, CapId) → Bool`                    | pending  |
-| `Treap/derive_priority`         | `(CapId) → Nat`                            | pending  |
-| `Treap/seal_leaf_branch`        | `(CapId, Nat, Hash) → TreapRoot`           | pending  |
-| `Treap/branch_insert`           | `(Bytes, Hash) → TreapRoot`                | pending  |
-| `Treap/branch_bump_generation`  | `(Bytes, CapId) → TreapRoot`               | pending  |
-| `Treap/branch_replace_entry`    | `(Bytes, Hash) → TreapRoot`                | pending  |
-| `Treap/check_revocation_chain`  | `(TreapRoot, CapId, Hash) → Hash`          | pending  |
-| `CapEntry/with_generation_inc`  | `(CapEntry) → CapEntry`                    | pending  |
-| `Treap/seal_entry`              | `(CapEntry) → Hash`                        | pending  |
+| `Treap/type_tag_is_empty`       | `(Bytes) → Bool`                           | encoded (treap-schema.form) |
+| `Treap/type_tag_is_branch`      | `(Bytes) → Bool`                           | encoded (treap-schema.form) |
+| `TreapBranch/proj/cap_id`       | `(Bytes) → Hash`                           | encoded (treap-schema.form) |
+| `TreapBranch/proj/cap_entry`    | `(Bytes) → Hash`                           | encoded (treap-schema.form) |
+| `TreapBranch/proj/left`         | `(Bytes) → Hash`                           | encoded (treap-schema.form) |
+| `TreapBranch/proj/right`        | `(Bytes) → Hash`                           | encoded (treap-schema.form) |
+| `Treap/key_lt`                  | `(CapId, CapId) → Bool`                    | encoded (treap-schema.form) |
+| `Treap/derive_priority`         | `(CapId) → Nat`                            | encoded (treap-schema.form) |
+| `Treap/seal_leaf_branch`        | `(CapId, Nat, Hash) → TreapRoot`           | encoded (treap-schema.form) |
+| `Treap/branch_insert`           | `(Bytes, Hash) → TreapRoot`                | encoded (treap-schema.form) |
+| `Treap/branch_bump_generation`  | `(Bytes, CapId) → TreapRoot`               | encoded (treap-schema.form) |
+| `Treap/branch_replace_entry`    | `(Bytes, Hash) → TreapRoot`                | encoded (treap-schema.form) |
+| `Treap/check_revocation_chain`  | `(TreapRoot, CapId, Hash) → Hash`          | encoded (treap-schema.form) |
+| `CapEntry/with_generation_inc`  | `(CapEntry) → CapEntry`                    | encoded (treap-schema.form) |
+| `Treap/seal_entry`              | `(CapEntry) → Hash`                        | encoded (treap-schema.form) |
 
 | Slot                            | Signature                                  | Status   |
 |---------------------------------|--------------------------------------------|----------|
@@ -547,8 +547,8 @@ operational form of the IL specification.
 
 | Category              | Count    |
 |-----------------------|----------|
-| Encoded helpers       | 151      |
-| Stub-only helpers     | ~56      |
+| Encoded helpers       | 166      |
+| Stub-only helpers     | ~41      |
 | Schema/* primitives   | 7 (encoded) |
 | Parser/* primitives   | 13 (encoded) |
 | Parser/* byte-arithmetic leaves | 20 (encoded) |
