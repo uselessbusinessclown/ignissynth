@@ -41,7 +41,7 @@ pub use registry::{FormRegistry, LoadedForm};
 pub use runner::{
     run_envelope, run_envelope_with_mode, EnvelopeMode, EnvelopeRunResult, OpDecision,
 };
-pub use store::SubstanceStore;
+pub use store::{Store, SubstanceStore, TrieStore};
 pub use value::{Hash, SubstanceHash, TrapKind, Value};
 // Note: the `verify` function lives at `ignis0::verify::verify`. We do
 // not re-export it at the crate root because the identifier would
